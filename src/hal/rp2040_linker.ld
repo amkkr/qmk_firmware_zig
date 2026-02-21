@@ -30,6 +30,10 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
+    /* ARM exception handling sections (placed in FLASH, not BOOT2) */
+    .ARM.extab : { *(.ARM.extab*) } > FLASH
+    .ARM.exidx : { *(.ARM.exidx*) } > FLASH
+
     /* Initialized data (loaded from flash, copied to RAM at startup) */
     .data : {
         _sdata = .;
