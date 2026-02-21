@@ -65,6 +65,7 @@ var mock_pin_pulls: u32 = 0; // 1 = pull-up enabled
 
 /// Set pin as output
 pub fn setPinOutput(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         // Set function to SIO (function 5)
         rp2040.gpioCtrlAddr(pin).* = 5;
@@ -77,11 +78,12 @@ pub fn setPinOutput(pin: Pin) void {
 
 /// Set pin as input (no pull)
 pub fn setPinInput(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Disable pull-up/down
-        rp2040.padCtrlAddr(pin).* = 0x56; // IE=1, default pad settings
+        // IE=1, DRIVE=4mA, SCHMITT=1, PUE=0, PDE=0
+        rp2040.padCtrlAddr(pin).* = 0x52;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls &= ~(@as(u32, 1) << pin);
@@ -90,11 +92,12 @@ pub fn setPinInput(pin: Pin) void {
 
 /// Set pin as input with internal pull-up
 pub fn setPinInputHigh(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Enable pull-up: PUE=1, PDE=0, IE=1
-        rp2040.padCtrlAddr(pin).* = 0x4E; // PUE | IE | SLEWFAST
+        // IE=1, PUE=1, PDE=0, SCHMITT=1
+        rp2040.padCtrlAddr(pin).* = 0x4A;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls |= @as(u32, 1) << pin;
@@ -103,6 +106,7 @@ pub fn setPinInputHigh(pin: Pin) void {
 
 /// Write pin high
 pub fn writePinHigh(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.GPIO_OUT_SET.* = @as(u32, 1) << pin;
     } else {
@@ -112,6 +116,7 @@ pub fn writePinHigh(pin: Pin) void {
 
 /// Write pin low
 pub fn writePinLow(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.GPIO_OUT_CLR.* = @as(u32, 1) << pin;
     } else {
@@ -121,6 +126,7 @@ pub fn writePinLow(pin: Pin) void {
 
 /// Read pin value
 pub fn readPin(pin: Pin) bool {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         return (rp2040.GPIO_IN.* & (@as(u32, 1) << pin)) != 0;
     } else {
@@ -132,7 +138,7 @@ pub fn readPin(pin: Pin) bool {
 // Mock helpers (test only)
 // ============================================================
 
-/// Set mock pin input value (simulates external signal)
+/// Set mock pin input value (simulates external signal, test only)
 pub fn mockSetPin(pin: Pin, value: bool) void {
     if (value) {
         mock_pin_values |= @as(u32, 1) << pin;
@@ -141,19 +147,19 @@ pub fn mockSetPin(pin: Pin, value: bool) void {
     }
 }
 
-/// Reset all mock state
+/// Reset all mock state (test only)
 pub fn mockReset() void {
     mock_pin_values = 0;
     mock_pin_directions = 0;
     mock_pin_pulls = 0;
 }
 
-/// Check if pin is configured as output (mock)
+/// Check if pin is configured as output (mock, test only)
 pub fn mockIsOutput(pin: Pin) bool {
     return (mock_pin_directions & (@as(u32, 1) << pin)) != 0;
 }
 
-/// Check if pin has pull-up enabled (mock)
+/// Check if pin has pull-up enabled (mock, test only)
 pub fn mockHasPullUp(pin: Pin) bool {
     return (mock_pin_pulls & (@as(u32, 1) << pin)) != 0;
 }
