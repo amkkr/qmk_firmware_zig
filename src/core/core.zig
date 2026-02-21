@@ -10,6 +10,10 @@ pub const report = @import("report.zig");
 pub const matrix = @import("matrix.zig");
 pub const debounce_mod = @import("debounce.zig");
 
+// Test infrastructure - only included in test builds to avoid bloating firmware
+pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
+pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else struct {};
+
 // Commonly used types
 pub const Keycode = keycode.Keycode;
 pub const KC = keycode.KC;
@@ -21,10 +25,6 @@ pub const KeyboardReport = report.KeyboardReport;
 pub const MouseReport = report.MouseReport;
 pub const ExtraReport = report.ExtraReport;
 pub const Matrix = matrix.Matrix;
-
-// Test infrastructure - only included in test builds to avoid bloating firmware
-pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
-pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else struct {};
 
 // Test types (only available in test builds)
 pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;

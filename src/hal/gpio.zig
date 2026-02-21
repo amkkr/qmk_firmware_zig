@@ -53,9 +53,6 @@ const rp2040 = if (is_freestanding) struct {
 
 // ============================================================
 // Mock state (for tests)
-// NOTE: These global variables are NOT thread-safe.
-// The Zig test runner executes tests sequentially by default,
-// so parallel test interference is not a concern currently.
 // ============================================================
 
 var mock_pin_values: u32 = 0;
@@ -68,13 +65,12 @@ var mock_pin_pulls: u32 = 0; // 1 = pull-up enabled
 
 /// Set pin as output
 pub fn setPinOutput(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         // Set function to SIO (function 5)
         rp2040.gpioCtrlAddr(pin).* = 5;
         // Enable output
         rp2040.GPIO_OE_SET.* = @as(u32, 1) << pin;
-        // Configure PAD: OD=0, IE=0, DRIVE=4mA, PUE=0, PDE=0, SCHMITT=0, SLEWFAST=0
-        rp2040.padCtrlAddr(pin).* = 0x10;
     } else {
         mock_pin_directions |= @as(u32, 1) << pin;
     }
@@ -82,11 +78,12 @@ pub fn setPinOutput(pin: Pin) void {
 
 /// Set pin as input (no pull)
 pub fn setPinInput(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Disable pull-up/down
-        rp2040.padCtrlAddr(pin).* = 0x52; // IE=1, DRIVE=4mA, PUE=0, PDE=0, SCHMITT=1
+        // IE=1, DRIVE=4mA, SCHMITT=1, PUE=0, PDE=0
+        rp2040.padCtrlAddr(pin).* = 0x52;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls &= ~(@as(u32, 1) << pin);
@@ -95,11 +92,12 @@ pub fn setPinInput(pin: Pin) void {
 
 /// Set pin as input with internal pull-up
 pub fn setPinInputHigh(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Enable pull-up: PUE=1, PDE=0, IE=1, SCHMITT=1
-        rp2040.padCtrlAddr(pin).* = 0x4A; // IE | PUE | SCHMITT
+        // IE=1, PUE=1, PDE=0, SCHMITT=1
+        rp2040.padCtrlAddr(pin).* = 0x4A;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls |= @as(u32, 1) << pin;
@@ -108,6 +106,7 @@ pub fn setPinInputHigh(pin: Pin) void {
 
 /// Write pin high
 pub fn writePinHigh(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.GPIO_OUT_SET.* = @as(u32, 1) << pin;
     } else {
@@ -117,6 +116,7 @@ pub fn writePinHigh(pin: Pin) void {
 
 /// Write pin low
 pub fn writePinLow(pin: Pin) void {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         rp2040.GPIO_OUT_CLR.* = @as(u32, 1) << pin;
     } else {
@@ -126,6 +126,7 @@ pub fn writePinLow(pin: Pin) void {
 
 /// Read pin value
 pub fn readPin(pin: Pin) bool {
+    std.debug.assert(pin <= 29); // RP2040 has GP0-GP29 only
     if (is_freestanding) {
         return (rp2040.GPIO_IN.* & (@as(u32, 1) << pin)) != 0;
     } else {

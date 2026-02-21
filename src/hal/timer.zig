@@ -45,7 +45,10 @@ pub fn read() u16 {
 /// Read current time in milliseconds (32-bit, wraps at ~49 days)
 pub fn read32() u32 {
     if (is_freestanding) {
-        // RP2040 timer counts in microseconds
+        // RP2040 timer counts in microseconds.
+        // Note: ARM Cortex-M0+ has no hardware divider, so this uses a
+        // software division (~10-20 cycles). Acceptable for keyboard scan
+        // loops; if needed, switch to timer alarm interrupt for ms counting.
         return rp2040_timer.TIMERAWL.* / 1000;
     } else {
         return mock_timer_ms;
