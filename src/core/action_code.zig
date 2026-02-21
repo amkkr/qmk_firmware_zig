@@ -7,6 +7,7 @@
 //!   [11:0]  param - action parameters (12 bits)
 
 const keycode = @import("keycode.zig");
+const extrakey = @import("extrakey.zig");
 const Keycode = keycode.Keycode;
 
 /// Action kind IDs (4 bits, bits 12-15)
@@ -205,6 +206,18 @@ inline fn actionLayerTap(layer: u5, code: u8) u16 {
 pub fn keycodeToAction(kc: Keycode) Action {
     if (kc == keycode.KC.NO) return .{ .code = ACTION_NO };
     if (kc == keycode.KC.TRANSPARENT) return .{ .code = ACTION_TRANSPARENT };
+
+    // System keycodes (KC_SYSTEM_POWER - KC_SYSTEM_WAKE)
+    if (keycode.isSystemKeycode(kc)) {
+        const usage = extrakey.keycodeToSystem(@truncate(kc));
+        return .{ .code = extrakey.actionUsageSystem(@truncate(usage)) };
+    }
+
+    // Consumer keycodes (KC_AUDIO_MUTE - KC_LAUNCHPAD)
+    if (keycode.isConsumerKeycode(kc)) {
+        const usage = extrakey.keycodeToConsumer(@truncate(kc));
+        return .{ .code = extrakey.actionUsageConsumer(@truncate(usage)) };
+    }
 
     // Mouse keycodes (within basic range but handled with ACT_MOUSEKEY)
     if (keycode.isMouseKey(kc)) {

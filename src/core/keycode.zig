@@ -223,6 +223,43 @@ pub const KC = struct {
     pub const MPLY: Keycode = MEDIA_PLAY_PAUSE;
     pub const MEDIA_SELECT: Keycode = 0x00AF;
     pub const MSEL: Keycode = MEDIA_SELECT;
+    pub const MEDIA_EJECT: Keycode = 0x00B0;
+    pub const EJCT: Keycode = MEDIA_EJECT;
+    pub const MAIL: Keycode = 0x00B1;
+    pub const CALCULATOR: Keycode = 0x00B2;
+    pub const CALC: Keycode = CALCULATOR;
+    pub const MY_COMPUTER: Keycode = 0x00B3;
+    pub const MYCM: Keycode = MY_COMPUTER;
+    pub const WWW_SEARCH: Keycode = 0x00B4;
+    pub const WSCH: Keycode = WWW_SEARCH;
+    pub const WWW_HOME: Keycode = 0x00B5;
+    pub const WHOM: Keycode = WWW_HOME;
+    pub const WWW_BACK: Keycode = 0x00B6;
+    pub const WBAK: Keycode = WWW_BACK;
+    pub const WWW_FORWARD: Keycode = 0x00B7;
+    pub const WFWD: Keycode = WWW_FORWARD;
+    pub const WWW_STOP: Keycode = 0x00B8;
+    pub const WSTP: Keycode = WWW_STOP;
+    pub const WWW_REFRESH: Keycode = 0x00B9;
+    pub const WREF: Keycode = WWW_REFRESH;
+    pub const WWW_FAVORITES: Keycode = 0x00BA;
+    pub const WFAV: Keycode = WWW_FAVORITES;
+    pub const MEDIA_FAST_FORWARD: Keycode = 0x00BB;
+    pub const MFFD: Keycode = MEDIA_FAST_FORWARD;
+    pub const MEDIA_REWIND: Keycode = 0x00BC;
+    pub const MRWD: Keycode = MEDIA_REWIND;
+    pub const BRIGHTNESS_UP: Keycode = 0x00BD;
+    pub const BRIU: Keycode = BRIGHTNESS_UP;
+    pub const BRIGHTNESS_DOWN: Keycode = 0x00BE;
+    pub const BRID: Keycode = BRIGHTNESS_DOWN;
+    pub const CONTROL_PANEL: Keycode = 0x00BF;
+    pub const CPNL: Keycode = CONTROL_PANEL;
+    pub const ASSISTANT: Keycode = 0x00C0;
+    pub const ASST: Keycode = ASSISTANT;
+    pub const MISSION_CONTROL: Keycode = 0x00C1;
+    pub const MCTL: Keycode = MISSION_CONTROL;
+    pub const LAUNCHPAD: Keycode = 0x00C2;
+    pub const LPAD: Keycode = LAUNCHPAD;
 
     // Mouse keycodes
     pub const MS_UP: Keycode = 0x00CD;
@@ -459,6 +496,18 @@ pub inline fn isMouseKey(kc: Keycode) bool {
 
 pub inline fn isModifier(kc: Keycode) bool {
     return kc >= KC.LEFT_CTRL and kc <= KC.RIGHT_GUI;
+}
+
+pub inline fn isSystemKeycode(kc: Keycode) bool {
+    return kc >= KC.SYSTEM_POWER and kc <= KC.SYSTEM_WAKE;
+}
+
+pub inline fn isConsumerKeycode(kc: Keycode) bool {
+    return kc >= KC.AUDIO_MUTE and kc <= KC.LAUNCHPAD;
+}
+
+pub inline fn isExtrakeyKeycode(kc: Keycode) bool {
+    return isSystemKeycode(kc) or isConsumerKeycode(kc);
 }
 
 // ============================================================
