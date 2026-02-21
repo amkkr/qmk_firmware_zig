@@ -16,25 +16,7 @@ const KeyRecord = event_mod.KeyRecord;
 const KeyEvent = event_mod.KeyEvent;
 const KeyboardReport = report_mod.KeyboardReport;
 
-const MockDriver = struct {
-    keyboard_count: usize = 0,
-    reports: [32]KeyboardReport = [_]KeyboardReport{KeyboardReport{}} ** 32,
-    leds: u8 = 0,
-
-    pub fn keyboardLeds(self: *MockDriver) u8 {
-        return self.leds;
-    }
-
-    pub fn sendKeyboard(self: *MockDriver, r: KeyboardReport) void {
-        if (self.keyboard_count < 32) {
-            self.reports[self.keyboard_count] = r;
-        }
-        self.keyboard_count += 1;
-    }
-
-    pub fn sendMouse(_: *MockDriver, _: report_mod.MouseReport) void {}
-    pub fn sendExtra(_: *MockDriver, _: report_mod.ExtraReport) void {}
-};
+const MockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 // Test keymap resolver: maps (row, col) to action codes
 // (0,0) = SFT_T(KC_A) = ACTION_MODS_TAP_KEY(0x02, 0x04)
@@ -97,9 +79,9 @@ test "SFT_T tap: quick press and release sends KC_A" {
     try testing.expect(mock.keyboard_count >= 2);
 
     // First report should have KC_A (0x04)
-    try testing.expect(mock.reports[0].hasKey(0x04));
+    try testing.expect(mock.keyboard_reports[0].hasKey(0x04));
     // Last report should be empty (key released)
-    try testing.expect(mock.reports[mock.keyboard_count - 1].isEmpty());
+    try testing.expect(mock.keyboard_reports[mock.keyboard_count - 1].isEmpty());
 }
 
 test "SFT_T hold: hold past TAPPING_TERM sends LSHIFT" {
@@ -117,7 +99,7 @@ test "SFT_T hold: hold past TAPPING_TERM sends LSHIFT" {
     var found_shift = false;
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 32) : (i += 1) {
-        if (mock.reports[i].mods & 0x02 != 0) {
+        if (mock.keyboard_reports[i].mods & 0x02 != 0) {
             found_shift = true;
             break;
         }
@@ -127,7 +109,7 @@ test "SFT_T hold: hold past TAPPING_TERM sends LSHIFT" {
     // Release
     release(0, 0, 400);
     // After release, mods should be cleared
-    try testing.expect(mock.reports[mock.keyboard_count - 1].mods == 0);
+    try testing.expect(mock.keyboard_reports[mock.keyboard_count - 1].mods == 0);
 }
 
 test "LT tap: quick press and release sends KC_B" {
@@ -141,8 +123,8 @@ test "LT tap: quick press and release sends KC_B" {
 
     // Should have sent reports with KC_B (0x05)
     try testing.expect(mock.keyboard_count >= 2);
-    try testing.expect(mock.reports[0].hasKey(0x05));
-    try testing.expect(mock.reports[mock.keyboard_count - 1].isEmpty());
+    try testing.expect(mock.keyboard_reports[0].hasKey(0x05));
+    try testing.expect(mock.keyboard_reports[mock.keyboard_count - 1].isEmpty());
 }
 
 test "normal key press and release" {
@@ -154,11 +136,11 @@ test "normal key press and release" {
 
     // Should register immediately (not a tap action)
     try testing.expect(mock.keyboard_count >= 1);
-    try testing.expect(mock.reports[0].hasKey(0x06));
+    try testing.expect(mock.keyboard_reports[0].hasKey(0x06));
 
     // Release KC_C at time 200
     release(0, 2, 200);
-    try testing.expect(mock.reports[mock.keyboard_count - 1].isEmpty());
+    try testing.expect(mock.keyboard_reports[mock.keyboard_count - 1].isEmpty());
 }
 
 test "tap then normal key" {

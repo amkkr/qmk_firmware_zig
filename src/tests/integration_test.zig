@@ -42,56 +42,7 @@ const ExtraReport = report_mod.ExtraReport;
 const KC = keycode.KC;
 const Keycode = keycode.Keycode;
 
-// ============================================================
-// テスト用モックドライバ（キーボード＋Extraレポートを記録）
-// ============================================================
-
-const IntegrationMockDriver = struct {
-    keyboard_count: usize = 0,
-    extra_count: usize = 0,
-    keyboard_reports: [64]KeyboardReport = [_]KeyboardReport{KeyboardReport{}} ** 64,
-    extra_reports: [16]ExtraReport = [_]ExtraReport{ExtraReport{}} ** 16,
-    leds: u8 = 0,
-
-    pub fn keyboardLeds(self: *IntegrationMockDriver) u8 {
-        return self.leds;
-    }
-
-    pub fn sendKeyboard(self: *IntegrationMockDriver, r: KeyboardReport) void {
-        if (self.keyboard_count < 64) {
-            self.keyboard_reports[self.keyboard_count] = r;
-        }
-        self.keyboard_count += 1;
-    }
-
-    pub fn sendMouse(_: *IntegrationMockDriver, _: report_mod.MouseReport) void {}
-
-    pub fn sendExtra(self: *IntegrationMockDriver, r: ExtraReport) void {
-        if (self.extra_count < 16) {
-            self.extra_reports[self.extra_count] = r;
-        }
-        self.extra_count += 1;
-    }
-
-    fn lastKeyboardReport(self: *const IntegrationMockDriver) KeyboardReport {
-        if (self.keyboard_count == 0) return KeyboardReport{};
-        const idx = if (self.keyboard_count > 64) 63 else self.keyboard_count - 1;
-        return self.keyboard_reports[idx];
-    }
-
-    fn lastExtraReport(self: *const IntegrationMockDriver) ExtraReport {
-        if (self.extra_count == 0) return ExtraReport{};
-        const idx = if (self.extra_count > 16) 15 else self.extra_count - 1;
-        return self.extra_reports[idx];
-    }
-
-    fn reset(self: *IntegrationMockDriver) void {
-        self.keyboard_count = 0;
-        self.extra_count = 0;
-        self.keyboard_reports = [_]KeyboardReport{KeyboardReport{}} ** 64;
-        self.extra_reports = [_]ExtraReport{ExtraReport{}} ** 16;
-    }
-};
+const IntegrationMockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
 
 // ============================================================
 // madbd34 キーマップからアクションを解決するリゾルバ
