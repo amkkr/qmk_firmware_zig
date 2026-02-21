@@ -217,17 +217,20 @@ pub const TestFixture = struct {
                         const basic_kc: u8 = @truncate(kc);
                         const mod_bits: u8 = @truncate(kc >> 8);
                         // Convert 5-bit mod to 8-bit mod bits
+                        // bit4 is the right-modifier flag: when set, bits 0-3
+                        // refer to right modifiers instead of left ones.
                         var mods: u8 = 0;
-                        if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.LCTRL;
-                        if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.LSHIFT;
-                        if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.LALT;
-                        if (mod_bits & 0x08 != 0) mods |= report_mod.ModBit.LGUI;
                         if (mod_bits & 0x10 != 0) {
                             // Right modifier flag
                             if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.RCTRL;
                             if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.RSHIFT;
                             if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.RALT;
                             if (mod_bits & 0x08 != 0) mods |= report_mod.ModBit.RGUI;
+                        } else {
+                            if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.LCTRL;
+                            if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.LSHIFT;
+                            if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.LALT;
+                            if (mod_bits & 0x08 != 0) mods |= report_mod.ModBit.LGUI;
                         }
                         new_report.mods |= mods;
                         if (basic_kc >= 0x04) {
