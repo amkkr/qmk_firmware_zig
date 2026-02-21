@@ -5,6 +5,10 @@ pub const keycode = @import("keycode.zig");
 pub const action_code = @import("action_code.zig");
 pub const event = @import("event.zig");
 pub const report = @import("report.zig");
+pub const host = @import("host.zig");
+pub const layer = @import("layer.zig");
+pub const action_mod = @import("action.zig");
+pub const action_tapping = @import("action_tapping.zig");
 pub const test_driver = @import("test_driver.zig");
 pub const test_fixture = @import("test_fixture.zig");
 
