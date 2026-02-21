@@ -128,6 +128,13 @@ pub fn keycodeToAction(kc: Keycode) Action {
         return .{ .code = kc }; // Mods keycodes map directly to action codes
     }
 
+    // Layer-Tap keycodes: bits[11:8] = layer, bits[7:0] = keycode
+    if (keycode.isLayerTap(kc)) {
+        const layer: u5 = @truncate(kc >> 8);
+        const key: u8 = @truncate(kc);
+        return .{ .code = ACTION_LAYER_TAP_KEY(layer, key) };
+    }
+
     // For other ranges, return the keycode as-is (action code == keycode)
     return .{ .code = kc };
 }
@@ -162,4 +169,15 @@ test "keycodeToAction basic keys" {
 
     const action_no = keycodeToAction(keycode.KC.NO);
     try testing.expectEqual(@as(u16, 0x0000), action_no.code);
+}
+
+test "keycodeToAction layer-tap" {
+    // LT(1, KC_A) = 0x4104 → ACTION_LAYER_TAP_KEY(1, 0x04) = (0xA << 12) | (1 << 8) | 0x04 = 0xA104
+    const action_lt = keycodeToAction(keycode.LT(1, keycode.KC.A));
+    try testing.expectEqual(@as(u16, ACTION_LAYER_TAP_KEY(1, keycode.KC.A)), action_lt.code);
+    try testing.expectEqual(ActionKind.layer_tap, action_lt.kind.id);
+
+    // LT(2, KC_SPC) = 0x422C → ACTION_LAYER_TAP_KEY(2, 0x2C)
+    const action_lt2 = keycodeToAction(keycode.LT(2, keycode.KC.SPC));
+    try testing.expectEqual(@as(u16, ACTION_LAYER_TAP_KEY(2, keycode.KC.SPC)), action_lt2.code);
 }
