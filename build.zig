@@ -50,6 +50,12 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+
+    // Verify step: run tests + check firmware ELF compilation succeeds
+    // CI向け: `zig build verify` でテストとファームウェアコンパイルの両方を検証
+    const verify_step = b.step("verify", "Run tests and verify firmware ELF compilation");
+    verify_step.dependOn(&run_tests.step);
+    verify_step.dependOn(&firmware.step);
 }
 
 fn addUf2Step(
