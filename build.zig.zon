@@ -1,0 +1,12 @@
+.{
+    .name = .qmk_firmware_zig,
+    .version = "0.1.0",
+    .fingerprint = 0x4c7107f9978aa6da,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
