@@ -31,7 +31,36 @@
 | Feature | Bootmagic, Mousekey, Extrakey | 未着手 |
 | Keyboard | madbd34 キーボード定義、統合テスト | 未着手 |
 
-## ビルド（既存 C 版）
+## ビルド
+
+### 前提条件
+
+- [Zig](https://ziglang.org/download/)（0.14.0 以降）
+- 外部依存なし（`git clone` + `zig build` で即ビルド可能）
+
+### Zig 版
+
+```bash
+# ファームウェアビルド（RP2040 クロスコンパイル）
+zig build
+
+# ユニットテスト実行（ホストネイティブ）
+zig build test
+
+# UF2 ファイル生成（フラッシュ書き込み用）
+zig build uf2
+
+# キーボード・キーマップの指定
+zig build -Dkeyboard=madbd34 -Dkeymap=default
+
+# リリースビルド
+zig build -Doptimize=ReleaseSafe
+
+# ビルドキャッシュの削除
+rm -rf .zig-cache zig-out
+```
+
+### 既存 C 版
 
 ```bash
 # madbd34 のデフォルトキーマップをビルド
