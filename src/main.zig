@@ -71,7 +71,10 @@ pub const startup = if (is_freestanding) struct {
 } else struct {};
 
 comptime {
-    _ = startup; // Ensure startup code is analyzed for freestanding
+    // On freestanding: forces Zig to analyze the startup struct so that
+    // `vector_table` (export) and `_start` (export) are emitted in the binary.
+    // On native test builds: `startup` is an empty struct, so this is a no-op.
+    _ = startup;
 }
 
 // ============================================================

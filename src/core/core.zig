@@ -1,6 +1,8 @@
 //! QMK Core module - data types and logic
 //! Re-exports all core sub-modules.
 
+const builtin = @import("builtin");
+
 pub const keycode = @import("keycode.zig");
 pub const action_code = @import("action_code.zig");
 pub const event = @import("event.zig");
@@ -8,8 +10,10 @@ pub const report = @import("report.zig");
 pub const matrix = @import("matrix.zig");
 pub const debounce_mod = @import("debounce.zig");
 pub const host_mod = @import("host.zig");
-pub const test_driver = @import("test_driver.zig");
-pub const test_fixture = @import("test_fixture.zig");
+
+// Test infrastructure - only included in test builds to avoid bloating firmware
+pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
+pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else struct {};
 
 // Commonly used types
 pub const Keycode = keycode.Keycode;
@@ -24,10 +28,10 @@ pub const ExtraReport = report.ExtraReport;
 pub const Matrix = matrix.Matrix;
 pub const HostDriver = host_mod.HostDriver;
 
-// Test types
-pub const TestDriver = test_driver.TestDriver;
-pub const TestFixture = test_fixture.TestFixture;
-pub const KeymapKey = test_fixture.KeymapKey;
+// Test types (only available in test builds)
+pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;
+pub const TestFixture = if (builtin.is_test) test_fixture.TestFixture else void;
+pub const KeymapKey = if (builtin.is_test) test_fixture.KeymapKey else void;
 
 test {
     @import("std").testing.refAllDecls(@This());

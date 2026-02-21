@@ -1,0 +1,40 @@
+name: Zig Tests
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+    - master
+    paths:
+    - 'src/**'
+    - 'build.zig'
+    - 'build.zig.zon'
+    - 'tools/**'
+    - '.github/workflows/zig_test.yml'
+  pull_request:
+    paths:
+    - 'src/**'
+    - 'build.zig'
+    - 'build.zig.zon'
+    - 'tools/**'
+    - '.github/workflows/zig_test.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: 0.15.2
+
+    - name: Run tests
+      run: zig build test
+
+    - name: Build (native check)
+      run: zig build

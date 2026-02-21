@@ -45,7 +45,10 @@ pub fn read() u16 {
 /// Read current time in milliseconds (32-bit, wraps at ~49 days)
 pub fn read32() u32 {
     if (is_freestanding) {
-        // RP2040 timer counts in microseconds
+        // RP2040 timer counts in microseconds.
+        // Note: ARM Cortex-M0+ has no hardware divider, so this uses a
+        // software division (~10-20 cycles). Acceptable for keyboard scan
+        // loops; if needed, switch to timer alarm interrupt for ms counting.
         return rp2040_timer.TIMERAWL.* / 1000;
     } else {
         return mock_timer_ms;
@@ -91,17 +94,17 @@ pub fn waitUs(us: u32) void {
 // Mock helpers (test only)
 // ============================================================
 
-/// Advance mock timer by the given milliseconds
+/// テスト専用: モックタイマーをミリ秒単位で進める
 pub fn mockAdvance(ms: u32) void {
     mock_timer_ms += ms;
 }
 
-/// Set mock timer to specific value
+/// テスト専用: モックタイマーを指定値に設定する
 pub fn mockSet(ms: u32) void {
     mock_timer_ms = ms;
 }
 
-/// Reset mock timer
+/// テスト専用: モックタイマーをリセットする
 pub fn mockReset() void {
     mock_timer_ms = 0;
 }
