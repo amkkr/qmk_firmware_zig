@@ -48,7 +48,6 @@
 | アクション処理 | `action.zig` | アクション解決・実行の中核 |
 | タッピング | `action_tapping.zig` | タップ/ホールド判定ステートマシン |
 | ホストドライバ | `host.zig` | HID レポート送信インターフェース |
-| Bootmagic | `bootmagic.zig` | Bootmagic Lite（起動時キー検出） |
 | テストドライバ | `test_driver.zig` | モック HID ドライバ（テスト用） |
 | テストフィクスチャ | `test_fixture.zig` | キーボードシミュレーション環境（テスト用） |
 

@@ -82,7 +82,6 @@ src/
 │   ├── action_tapping.zig         # タップ/ホールド判定ステートマシン
 │   ├── action_tapping_test.zig    # タッピングのユニットテスト
 │   ├── host.zig                   # HostDriver インターフェース、レポート状態管理
-│   ├── bootmagic.zig              # Bootmagic Lite（起動時キー検出→BOOTSEL）
 │   ├── test_driver.zig            # モック HID ドライバ（テスト用）
 │   └── test_fixture.zig           # キーボードシミュレーション環境（テスト用）
 ├── hal/                           # ハードウェア抽象化層（RP2040）
