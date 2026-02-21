@@ -12,155 +12,158 @@ const debounce = @import("debounce.zig");
 
 pub const MatrixRow = u32;
 
-/// Matrix configuration (set by keyboard definition)
+/// Matrix configuration (set by keyboard definition).
+/// `rows` and `cols` are provided as comptime parameters to `Matrix(rows, cols)`.
 pub const Config = struct {
-    rows: u8,
-    cols: u8,
     col_pins: []const gpio.Pin,
     row_pins: []const gpio.Pin,
     debounce_ms: u16 = 5,
 };
 
-/// Matrix state
-pub const Matrix = struct {
-    config: Config,
-    /// Current debounced matrix state
-    current: [32]MatrixRow,
-    /// Previous matrix state (for change detection)
-    previous: [32]MatrixRow,
-    /// Raw (undebounced) matrix state
-    raw: [32]MatrixRow,
-    /// Debounce state
-    debounce_state: debounce.DebounceState,
+/// Matrix state, parameterized by actual matrix dimensions.
+///
+/// Using comptime `rows` and `cols` avoids the previous 32x32 over-allocation
+/// and sizes all arrays exactly to the keyboard's matrix.
+pub fn Matrix(comptime rows: u8, comptime cols: u8) type {
+    return struct {
+        config: Config,
+        /// Current debounced matrix state
+        current: [rows]MatrixRow,
+        /// Previous matrix state (for change detection)
+        previous: [rows]MatrixRow,
+        /// Raw (undebounced) matrix state
+        raw: [rows]MatrixRow,
+        /// Debounce state
+        debounce_state: debounce.DebounceState(rows, cols),
 
-    pub fn init(config: Config) Matrix {
-        std.debug.assert(config.rows <= 32);
-        std.debug.assert(config.cols <= 32);
+        pub fn init(config: Config) @This() {
+            std.debug.assert(config.row_pins.len == rows);
+            std.debug.assert(config.col_pins.len == cols);
 
+            var m = @This(){
+                .config = config,
+                .current = .{0} ** rows,
+                .previous = .{0} ** rows,
+                .raw = .{0} ** rows,
+                .debounce_state = debounce.DebounceState(rows, cols).init(config.debounce_ms),
+            };
 
-        var m = Matrix{
-            .config = config,
-            .current = .{0} ** 32,
-            .previous = .{0} ** 32,
-            .raw = .{0} ** 32,
-            .debounce_state = debounce.DebounceState.init(config.debounce_ms),
-        };
-
-        // Configure pins
-        m.initPins();
-        return m;
-    }
-
-    fn initPins(self: *Matrix) void {
-        // Rows as input with pull-up (COL2ROW: rows are read)
-        for (self.config.row_pins[0..self.config.rows]) |pin| {
-            gpio.setPinInputHigh(pin);
+            // Configure pins
+            m.initPins();
+            return m;
         }
 
-        // Columns as output, initially high (inactive)
-        for (self.config.col_pins[0..self.config.cols]) |pin| {
-            gpio.setPinOutput(pin);
-            gpio.writePinHigh(pin);
-        }
-    }
+        fn initPins(self: *@This()) void {
+            // Rows as input with pull-up (COL2ROW: rows are read)
+            for (self.config.row_pins) |pin| {
+                gpio.setPinInputHigh(pin);
+            }
 
-    /// Perform a full matrix scan. Returns true if any key changed.
-    pub fn scan(self: *Matrix) bool {
-        self.previous = self.current;
-
-        // Scan each column
-        for (0..self.config.cols) |col| {
-            self.scanColumn(@intCast(col));
-        }
-
-        // Apply debounce
-        const time = timer.read();
-        self.debounce_state.debounce(&self.raw, &self.current, time);
-
-        return self.hasChanged();
-    }
-
-    fn scanColumn(self: *Matrix, col: u8) void {
-        const col_pin = self.config.col_pins[col];
-
-        // Activate column (drive low)
-        gpio.writePinLow(col_pin);
-
-        // Small delay for signal to settle
-        // On real hardware: a few NOPs. In mock: instant.
-        matrixOutputSelectDelay();
-
-        // Read all rows
-        for (0..self.config.rows) |row| {
-            const row_pin = self.config.row_pins[row];
-            // With pull-up, unpressed = high (1), pressed = low (0)
-            const pressed = !gpio.readPin(row_pin);
-            if (pressed) {
-                self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
-            } else {
-                self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
+            // Columns as output, initially high (inactive)
+            for (self.config.col_pins) |pin| {
+                gpio.setPinOutput(pin);
+                gpio.writePinHigh(pin);
             }
         }
 
-        // Deactivate column (drive high)
-        gpio.writePinHigh(col_pin);
-    }
+        /// Perform a full matrix scan. Returns true if any key changed.
+        pub fn scan(self: *@This()) bool {
+            self.previous = self.current;
 
-    fn matrixOutputSelectDelay() void {
-        // On RP2040: ~30ns per NOP at 125MHz, need ~1µs settling time
-        // In tests: no delay needed
-        if (@import("builtin").os.tag == .freestanding) {
-            var i: u32 = 0;
-            while (i < 30) : (i += 1) {
-                asm volatile ("nop");
+            // Scan each column
+            for (0..cols) |col| {
+                self.scanColumn(@intCast(col));
+            }
+
+            // Apply debounce
+            const time = timer.read();
+            self.debounce_state.debounce(&self.raw, &self.current, time);
+
+            return self.hasChanged();
+        }
+
+        fn scanColumn(self: *@This(), col: u8) void {
+            const col_pin = self.config.col_pins[col];
+
+            // Activate column (drive low)
+            gpio.writePinLow(col_pin);
+
+            // Small delay for signal to settle
+            // On real hardware: a few NOPs. In mock: instant.
+            matrixOutputSelectDelay();
+
+            // Read all rows
+            for (0..rows) |row| {
+                const row_pin = self.config.row_pins[row];
+                // With pull-up, unpressed = high (1), pressed = low (0)
+                const pressed = !gpio.readPin(row_pin);
+                if (pressed) {
+                    self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
+                } else {
+                    self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
+                }
+            }
+
+            // Deactivate column (drive high)
+            gpio.writePinHigh(col_pin);
+        }
+
+        fn matrixOutputSelectDelay() void {
+            // On RP2040: ~30ns per NOP at 125MHz, need ~1µs settling time
+            // In tests: no delay needed
+            if (@import("builtin").os.tag == .freestanding) {
+                var i: u32 = 0;
+                while (i < 30) : (i += 1) {
+                    asm volatile ("nop");
+                }
             }
         }
-    }
 
-    /// Check if key at (row, col) is currently pressed
-    pub fn isOn(self: *const Matrix, row: u8, col: u8) bool {
-        return (self.current[row] & (@as(MatrixRow, 1) << @intCast(col))) != 0;
-    }
-
-    /// Get the state of a row
-    pub fn getRow(self: *const Matrix, row: u8) MatrixRow {
-        return self.current[row];
-    }
-
-    /// Check if any key changed since last scan
-    pub fn hasChanged(self: *const Matrix) bool {
-        for (0..self.config.rows) |row| {
-            if (self.current[row] != self.previous[row]) return true;
+        /// Check if key at (row, col) is currently pressed
+        pub fn isOn(self: *const @This(), row: u8, col: u8) bool {
+            return (self.current[row] & (@as(MatrixRow, 1) << @intCast(col))) != 0;
         }
-        return false;
-    }
 
-    /// Check if a specific key changed since last scan
-    pub fn keyChanged(self: *const Matrix, row: u8, col: u8) bool {
-        const mask = @as(MatrixRow, 1) << @intCast(col);
-        return (self.current[row] & mask) != (self.previous[row] & mask);
-    }
+        /// Get the state of a row
+        pub fn getRow(self: *const @This(), row: u8) MatrixRow {
+            return self.current[row];
+        }
 
-    // ============================================================
-    // Mock helpers (test only)
-    // ============================================================
+        /// Check if any key changed since last scan
+        pub fn hasChanged(self: *const @This()) bool {
+            for (0..rows) |row| {
+                if (self.current[row] != self.previous[row]) return true;
+            }
+            return false;
+        }
 
-    /// Directly set a key's raw state (bypasses GPIO, for testing)
-    pub fn mockPress(self: *Matrix, row: u8, col: u8) void {
-        self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
-    }
+        /// Check if a specific key changed since last scan
+        pub fn keyChanged(self: *const @This(), row: u8, col: u8) bool {
+            const mask = @as(MatrixRow, 1) << @intCast(col);
+            return (self.current[row] & mask) != (self.previous[row] & mask);
+        }
 
-    /// Directly clear a key's raw state (bypasses GPIO, for testing)
-    pub fn mockRelease(self: *Matrix, row: u8, col: u8) void {
-        self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
-    }
+        // ============================================================
+        // Mock helpers (test only)
+        // ============================================================
 
-    /// Apply raw state directly to current (bypasses debounce, for testing)
-    pub fn mockApply(self: *Matrix) void {
-        self.previous = self.current;
-        self.current = self.raw;
-    }
-};
+        /// Directly set a key's raw state (bypasses GPIO, for testing)
+        pub fn mockPress(self: *@This(), row: u8, col: u8) void {
+            self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
+        }
+
+        /// Directly clear a key's raw state (bypasses GPIO, for testing)
+        pub fn mockRelease(self: *@This(), row: u8, col: u8) void {
+            self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
+        }
+
+        /// Apply raw state directly to current (bypasses debounce, for testing)
+        pub fn mockApply(self: *@This()) void {
+            self.previous = self.current;
+            self.current = self.raw;
+        }
+    };
+}
 
 // ============================================================
 // Tests
@@ -171,9 +174,7 @@ test "Matrix init" {
     const row_pins = [_]gpio.Pin{ 14, 15, 16, 17 };
 
     gpio.mockReset();
-    var m = Matrix.init(.{
-        .rows = 4,
-        .cols = 4,
+    var m = Matrix(4, 4).init(.{
         .col_pins = &col_pins,
         .row_pins = &row_pins,
     });
@@ -189,9 +190,7 @@ test "Matrix mock press/release" {
     const row_pins = [_]gpio.Pin{ 14, 15, 16, 17 };
 
     gpio.mockReset();
-    var m = Matrix.init(.{
-        .rows = 4,
-        .cols = 4,
+    var m = Matrix(4, 4).init(.{
         .col_pins = &col_pins,
         .row_pins = &row_pins,
     });
@@ -214,9 +213,7 @@ test "Matrix multiple keys" {
     const row_pins = [_]gpio.Pin{ 14, 15, 16, 17 };
 
     gpio.mockReset();
-    var m = Matrix.init(.{
-        .rows = 4,
-        .cols = 4,
+    var m = Matrix(4, 4).init(.{
         .col_pins = &col_pins,
         .row_pins = &row_pins,
     });
@@ -237,9 +234,7 @@ test "Matrix keyChanged" {
     const row_pins = [_]gpio.Pin{ 14, 15, 16, 17 };
 
     gpio.mockReset();
-    var m = Matrix.init(.{
-        .rows = 4,
-        .cols = 4,
+    var m = Matrix(4, 4).init(.{
         .col_pins = &col_pins,
         .row_pins = &row_pins,
     });
