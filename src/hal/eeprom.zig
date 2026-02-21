@@ -99,7 +99,7 @@ pub fn erase() void {
 // Mock helpers (test only)
 // ============================================================
 
-/// テスト専用: EEPROMを消去状態（0xFF）にリセットする
+/// Reset EEPROM to erased state (test only)
 pub fn mockReset() void {
     erase();
 }
