@@ -94,17 +94,17 @@ pub fn waitUs(us: u32) void {
 // Mock helpers (test only)
 // ============================================================
 
-/// テスト専用: モックタイマーをミリ秒単位で進める
+/// Advance mock timer by the given milliseconds (test only)
 pub fn mockAdvance(ms: u32) void {
     mock_timer_ms += ms;
 }
 
-/// テスト専用: モックタイマーを指定値に設定する
+/// Set mock timer to specific value (test only)
 pub fn mockSet(ms: u32) void {
     mock_timer_ms = ms;
 }
 
-/// テスト専用: モックタイマーをリセットする
+/// Reset mock timer (test only)
 pub fn mockReset() void {
     mock_timer_ms = 0;
 }

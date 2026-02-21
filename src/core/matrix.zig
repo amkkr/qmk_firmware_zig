@@ -5,6 +5,7 @@
 //! When a key is pressed, it connects a column to a row.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const gpio = @import("../hal/gpio.zig");
 const timer = @import("../hal/timer.zig");
 const debounce = @import("debounce.zig");
@@ -33,6 +34,10 @@ pub const Matrix = struct {
     debounce_state: debounce.DebounceState,
 
     pub fn init(config: Config) Matrix {
+        std.debug.assert(config.rows <= 32);
+        std.debug.assert(config.cols <= 32);
+
+
         var m = Matrix{
             .config = config,
             .current = .{0} ** 32,
@@ -137,7 +142,7 @@ pub const Matrix = struct {
     }
 
     // ============================================================
-    // Mock helpers (for testing)
+    // Mock helpers (test only)
     // ============================================================
 
     /// Directly set a key's raw state (bypasses GPIO, for testing)

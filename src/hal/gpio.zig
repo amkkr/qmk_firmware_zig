@@ -82,8 +82,8 @@ pub fn setPinInput(pin: Pin) void {
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // IE=1, DRIVE=4mA, SCHMITT=1, PUE=0, PDE=0 → 0x52 = 0b01010010
-        rp2040.padCtrlAddr(pin).* = 0x52; // IE=1, DRIVE=01, SCHMITT=1, no pull
+        // IE=1, DRIVE=4mA, SCHMITT=1, PUE=0, PDE=0
+        rp2040.padCtrlAddr(pin).* = 0x52;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls &= ~(@as(u32, 1) << pin);
@@ -96,8 +96,8 @@ pub fn setPinInputHigh(pin: Pin) void {
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // IE=1, DRIVE=2mA, SCHMITT=1, PUE=1, PDE=0 → 0x4A = 0b01001010
-        rp2040.padCtrlAddr(pin).* = 0x4A; // IE=1, PUE=1, PDE=0, SCHMITT=1
+        // IE=1, PUE=1, PDE=0, SCHMITT=1
+        rp2040.padCtrlAddr(pin).* = 0x4A;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls |= @as(u32, 1) << pin;
@@ -138,7 +138,7 @@ pub fn readPin(pin: Pin) bool {
 // Mock helpers (test only)
 // ============================================================
 
-/// テスト専用: モックのピン入力値を設定する（外部信号をシミュレート）
+/// Set mock pin input value (simulates external signal, test only)
 pub fn mockSetPin(pin: Pin, value: bool) void {
     if (value) {
         mock_pin_values |= @as(u32, 1) << pin;
@@ -147,19 +147,19 @@ pub fn mockSetPin(pin: Pin, value: bool) void {
     }
 }
 
-/// テスト専用: 全モック状態をリセットする
+/// Reset all mock state (test only)
 pub fn mockReset() void {
     mock_pin_values = 0;
     mock_pin_directions = 0;
     mock_pin_pulls = 0;
 }
 
-/// テスト専用: ピンが出力に設定されているか確認する
+/// Check if pin is configured as output (mock, test only)
 pub fn mockIsOutput(pin: Pin) bool {
     return (mock_pin_directions & (@as(u32, 1) << pin)) != 0;
 }
 
-/// テスト専用: ピンにプルアップが有効か確認する
+/// Check if pin has pull-up enabled (mock, test only)
 pub fn mockHasPullUp(pin: Pin) bool {
     return (mock_pin_pulls & (@as(u32, 1) << pin)) != 0;
 }
