@@ -482,11 +482,16 @@ test "basic keycode values match upstream" {
 test "modified keycodes" {
     try testing.expectEqual(@as(Keycode, 0x0104), LCTL(KC.A));
     try testing.expectEqual(@as(Keycode, 0x0204), LSFT(KC.A));
-    try testing.expectEqual(@as(Keycode, 0x1212), RSFT(LSFT(KC.O))); // RSFT(LCTL(KC_O)) equivalent
+    try testing.expectEqual(@as(Keycode, 0x1212), RSFT(LSFT(KC.O)));
 
-    // Compound: RSFT(LCTL(KC_O)) = 0x1100 | 0x0200 | 0x12 ... actually this works differently
-    // In QMK: RSFT(LCTL(KC_O)) = 0x1200 | (0x0100 | 0x12) = won't work with nested calls
-    // The correct way is direct bit manipulation
+    // Note: Nested modifier calls do not accumulate modifiers correctly.
+    // e.g. RSFT(LSFT(KC.O)) = 0x1200 | 0x0212 = 0x1212 (LSFT bit is lost in upper byte)
+    // Use direct OR for compound modifiers: 0x1200 | 0x0200 | KC.O
+    try testing.expectEqual(@as(Keycode, 0x1212), RSFT(LSFT(KC.O)));
+
+    // Note: Nested modifier calls do not accumulate modifiers correctly.
+    // e.g. RSFT(LSFT(KC.O)) = 0x1200 | 0x0212 = 0x1212 (LSFT bit is lost in upper byte)
+    // Use direct OR for compound modifiers: 0x1200 | 0x0200 | KC.O
 }
 
 test "layer keycodes" {
