@@ -1,36 +1,51 @@
-# Quantum Mechanical Keyboard Firmware
+# QMK Firmware Zig
 
-[![Current Version](https://img.shields.io/github/tag/qmk/qmk_firmware.svg)](https://github.com/qmk/qmk_firmware/tags)
-[![Discord](https://img.shields.io/discord/440868230475677696.svg)](https://discord.gg/qmk)
-[![Docs Status](https://img.shields.io/badge/docs-ready-orange.svg)](https://docs.qmk.fm)
-[![GitHub contributors](https://img.shields.io/github/contributors/qmk/qmk_firmware.svg)](https://github.com/qmk/qmk_firmware/pulse/monthly)
-[![GitHub forks](https://img.shields.io/github/forks/qmk/qmk_firmware.svg?style=social&label=Fork)](https://github.com/qmk/qmk_firmware/)
+[QMK Firmware](https://github.com/qmk/qmk_firmware) のカスタムキーボードファームウェアを C から Zig へ移行するプロジェクト。
 
-This is a keyboard firmware based on the [tmk\_keyboard firmware](https://github.com/tmk/tmk_keyboard) with some useful features for Atmel AVR and ARM controllers, and more specifically, the [OLKB product line](https://olkb.com), the [ErgoDox EZ](https://ergodox-ez.com) keyboard, and the Clueboard product line.
+## 概要
 
-## Documentation
+このリポジトリは [qmk/qmk_firmware](https://github.com/qmk/qmk_firmware) のフォークをベースに、ファームウェアのコア部分を Zig で再実装することを目指しています。
 
-* [See the official documentation on docs.qmk.fm](https://docs.qmk.fm)
+### 対象キーボード
 
-The docs are powered by [VitePress](https://vitepress.dev/). They are also viewable offline; see [Previewing the Documentation](https://docs.qmk.fm/#/contributing?id=previewing-the-documentation) for more details.
+| キーボード | プロセッサ | 説明 |
+|-----------|-----------|------|
+| madbd34 | RP2040 | 4x12 スプリットキーボード（38キー、4レイヤー） |
 
-You can request changes by making a fork and opening a [pull request](https://github.com/qmk/qmk_firmware/pulls).
+### 移行方針
 
-## Supported Keyboards
+- RP2040 (ARM Cortex-M0+) をターゲットプラットフォームとする
+- ChibiOS への依存を排除し、Zig で直接ハードウェアを制御する
+- upstream のテストケースと論理的に等価なテストを Zig で実装する
+- コンパイル時機能を活用し、C のマクロベース設計を型安全な設計に置き換える
 
-* [Planck](/keyboards/planck/)
-* [Preonic](/keyboards/preonic/)
-* [ErgoDox EZ](/keyboards/ergodox_ez/)
-* [Clueboard](/keyboards/clueboard/)
-* [Cluepad](/keyboards/clueboard/17/)
-* [Atreus](/keyboards/atreus/)
+## プロジェクト状況
 
-The project also includes community support for [lots of other keyboards](/keyboards/).
+移行は以下のフェーズで進行中です。詳細は [Issues](https://github.com/amkkr/qmk_firmware_zig/issues) を参照してください。
 
-## Maintainers
+| フェーズ | 内容 | 状態 |
+|---------|------|------|
+| Foundation | ビルドシステム、コアデータ型、テストインフラ | 未着手 |
+| HAL | GPIO, Timer, EEPROM, マトリックススキャン, USB HID | 未着手 |
+| Core | キーマップシステム、レイヤー管理、アクション処理 | 未着手 |
+| Feature | Bootmagic, Mousekey, Extrakey | 未着手 |
+| Keyboard | madbd34 キーボード定義、統合テスト | 未着手 |
 
-QMK is developed and maintained by Jack Humbert of OLKB with contributions from the community, and of course, [Hasu](https://github.com/tmk). The OLKB product firmwares are maintained by [Jack Humbert](https://github.com/jackhumbert), the Ergodox EZ by [ZSA Technology Labs](https://github.com/zsa), the Clueboard by [Zach White](https://github.com/skullydazed), and the Atreus by [Phil Hagelberg](https://github.com/technomancy).
+## ビルド（既存 C 版）
 
-## Official Website
+```bash
+# madbd34 のデフォルトキーマップをビルド
+make madbd34:default
 
-[qmk.fm](https://qmk.fm) is the official website of QMK, where you can find links to this page, the documentation, and the keyboards supported by QMK.
+# ビルド＋フラッシュ
+make madbd34:default:flash
+```
+
+## upstream
+
+- [QMK Firmware](https://github.com/qmk/qmk_firmware)
+- [QMK ドキュメント](https://docs.qmk.fm)
+
+## ライセンス
+
+[GPL-2.0-or-later](LICENSE)
