@@ -19,6 +19,7 @@ const is_freestanding = builtin.os.tag == .freestanding;
 pub const startup = if (is_freestanding) struct {
     const vector_table_mod = @import("hal/vector_table.zig");
     const boot2_mod = @import("hal/boot2.zig");
+    const clock = @import("hal/clock.zig");
 
     extern var _stack_top: anyopaque;
 
@@ -36,12 +37,18 @@ pub const startup = if (is_freestanding) struct {
     export const vector_table linksection(".vectors") = vector_table_mod.vectorTable(&_start);
 
     /// Entry point for RP2040 firmware
+    /// Note: Cortex-M0+ は ldr r0, =symbol のリテラルプール距離に制限があるため、
+    /// PC相対ロードで明示的にリテラルプールを関数内に配置する。
     pub export fn _start() callconv(.naked) noreturn {
         @setRuntimeSafety(false);
         asm volatile (
-            \\ldr r0, =_stack_top
+            \\ldr r0, .Lstack_top_addr
             \\mov sp, r0
-            \\bl %[main]
+            \\ldr r0, .Lmain_addr
+            \\bx r0
+            \\.align 2
+            \\.Lstack_top_addr: .word _stack_top
+            \\.Lmain_addr: .word %[main]
             :
             : [main] "X" (&zigMain),
         );
@@ -68,6 +75,8 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn main() !void {
+        // クロックツリー初期化（XOSC, PLL, システムクロック設定）
+        clock.init();
         // TODO: Initialize keyboard matrix (Issue #5)
         // TODO: Initialize USB HID (Issue #6)
         // TODO: Main loop - keyboard_task() (Issue #8)
