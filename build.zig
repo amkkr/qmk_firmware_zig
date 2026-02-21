@@ -40,6 +40,11 @@ pub fn build(b: *std.Build) void {
     const uf2_install = addUf2Step(b, firmware, native_target, keyboard, keymap, boot2_path);
     uf2_step.dependOn(&uf2_install.step);
 
+    // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
+    const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
+    const flash_install = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
+    flash_step.dependOn(&flash_install.step);
+
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");
     const tests = b.addTest(.{
@@ -50,6 +55,28 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+}
+
+fn addFlashStep(
+    b: *std.Build,
+    uf2_install: *std.Build.Step.InstallFile,
+    native_target: std.Build.ResolvedTarget,
+    keyboard: []const u8,
+    keymap: []const u8,
+) *std.Build.Step.Run {
+    const flash_tool = b.addExecutable(.{
+        .name = "flash",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/flash.zig"),
+            .target = native_target,
+        }),
+    });
+
+    const flash_run = b.addRunArtifact(flash_tool);
+    flash_run.addArg(b.getInstallPath(.prefix, b.fmt("{s}_{s}.uf2", .{ keyboard, keymap })));
+    flash_run.step.dependOn(&uf2_install.step);
+
+    return flash_run;
 }
 
 fn addUf2Step(
