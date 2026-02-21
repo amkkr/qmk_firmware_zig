@@ -8,7 +8,9 @@ const builtin = @import("builtin");
 pub const core = @import("core/core.zig");
 pub const hal = @import("hal/hal.zig");
 pub const drivers = struct {};
-pub const keyboards = struct {};
+pub const keyboards = struct {
+    pub const madbd34 = @import("keyboards/madbd34.zig");
+};
 
 const is_freestanding = builtin.os.tag == .freestanding;
 
@@ -109,6 +111,7 @@ test {
     // Run all sub-module tests
     @import("std").testing.refAllDecls(core);
     @import("std").testing.refAllDecls(hal);
+    @import("std").testing.refAllDecls(keyboards);
     // Boot2モジュールのテストを実行
     _ = @import("hal/boot2.zig");
 }
