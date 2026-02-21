@@ -13,6 +13,7 @@ pub const host_mod = @import("host.zig");
 pub const layer = @import("layer.zig");
 pub const action_mod = @import("action.zig");
 pub const action_tapping = @import("action_tapping.zig");
+pub const keymap = @import("keymap.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
@@ -22,6 +23,7 @@ pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else s
 pub const Keycode = keycode.Keycode;
 pub const KC = keycode.KC;
 pub const Action = action_code.Action;
+pub const LayerState = layer.LayerState;
 pub const KeyEvent = event.KeyEvent;
 pub const KeyRecord = event.KeyRecord;
 pub const KeyPos = event.KeyPos;

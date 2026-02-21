@@ -8,7 +8,7 @@ QMK Firmware のカスタムキーボードファームウェアを C から Zig
 upstream: https://github.com/qmk/qmk_firmware
 
 - **一方向同期のみ**: upstream から取り込むことはあるが、upstream へ push しない
-- 対象キーボード: madbd34（RP2040, 4x12スプリット, 38キー）
+- 対象キーボード: madbd34（RP2040, 4x12スプリット, 41キー）
 
 ## Communication Rules
 

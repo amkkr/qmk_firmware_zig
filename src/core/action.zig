@@ -164,7 +164,7 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 /// TODO: C版のbitwise layer操作（OP_BIT_AND/OR/XOR/SET）の完全な移植
 fn processLayerAction(ev: KeyEvent, act: Action) void {
     const param = act.kind.param;
-    const action_layer: u4 = @truncate(param);
+    const action_layer: u5 = @truncate(param);
 
     // OP_ON_OFF: プレスでレイヤーON、リリースでレイヤーOFF
     if (ev.pressed) {
@@ -176,7 +176,7 @@ fn processLayerAction(ev: KeyEvent, act: Action) void {
 
 /// Process layer + modifier actions
 fn processLayerModsAction(ev: KeyEvent, act: Action) void {
-    const l: u4 = act.layer_mods.layer;
+    const l: u5 = act.layer_mods.layer;
     const mods = act.layer_mods.mods;
 
     if (ev.pressed) {
@@ -196,7 +196,7 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
     const code = act.key.code;
 
     // Calculate layer from val field
-    const l: u4 = @truncate(act.layer_tap.val);
+    const l: u5 = @truncate(act.layer_tap.val);
 
     if (code >= OP_TAP_TOGGLE) {
         // Special layer operations
@@ -231,7 +231,7 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
 }
 
 /// Process special layer tap operations (MO, TG, TO, etc.)
-fn processLayerTapSpecial(ev: KeyEvent, l: u4, code: u8) void {
+fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
     switch (code) {
         OP_TAP_TOGGLE => {
             // Layer tap toggle (TT)
@@ -273,7 +273,7 @@ fn modFourBitToFiveBit(mods4: u4, is_right: bool) u8 {
 
 pub fn reset() void {
     host.hostReset();
-    layer.reset();
+    layer.resetState();
     tapping.reset();
 }
 
@@ -383,12 +383,12 @@ test "layer-tap hold" {
     // Hold -> activate layer
     var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
     processAction(&press, act);
-    try testing.expect(layer.isLayerOn(1));
+    try testing.expect(layer.layerStateIs(1));
 
     // Release -> deactivate layer
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processAction(&release, act);
-    try testing.expect(!layer.isLayerOn(1));
+    try testing.expect(!layer.layerStateIs(1));
 }
 
 test "layer-tap tap" {
@@ -406,7 +406,7 @@ test "layer-tap tap" {
     };
     processAction(&press, act);
     try testing.expect(mock.last_keyboard.hasKey(0x04));
-    try testing.expect(!layer.isLayerOn(1));
+    try testing.expect(!layer.layerStateIs(1));
 
     // Release tap
     var release = KeyRecord{
@@ -435,11 +435,11 @@ test "MO layer action" {
     // But our ACTION_LAYER_MOMENTARY just sets code=0
 
     // With code=0, tap check returns false, so hold path activates layer
-    try testing.expect(layer.isLayerOn(1));
+    try testing.expect(layer.layerStateIs(1));
 
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processAction(&release, act);
-    try testing.expect(!layer.isLayerOn(1));
+    try testing.expect(!layer.layerStateIs(1));
 }
 
 test "isTapAction" {
