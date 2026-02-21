@@ -6,9 +6,7 @@ const builtin = @import("builtin");
 
 // Module declarations
 pub const core = @import("core/core.zig");
-pub const hal = struct {
-    pub const clock = @import("hal/clock.zig");
-};
+pub const hal = @import("hal/hal.zig");
 pub const drivers = struct {};
 pub const keyboards = struct {};
 
@@ -76,7 +74,10 @@ pub const startup = if (is_freestanding) struct {
 } else struct {};
 
 comptime {
-    _ = startup; // Ensure startup code is analyzed for freestanding
+    // On freestanding: forces Zig to analyze the startup struct so that
+    // `vector_table` (export) and `_start` (export) are emitted in the binary.
+    // On native test builds: `startup` is an empty struct, so this is a no-op.
+    _ = startup;
 }
 
 // ============================================================
@@ -97,4 +98,5 @@ test "module structure exists" {
 test {
     // Run all sub-module tests
     @import("std").testing.refAllDecls(core);
+    @import("std").testing.refAllDecls(hal);
 }
