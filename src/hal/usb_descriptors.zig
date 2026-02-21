@@ -421,7 +421,7 @@ pub const configuration_descriptor = blk: {
         NUM_INTERFACES, // bNumInterfaces
         1, // bConfigurationValue
         0, // iConfiguration
-        0xA0, // bmAttributes (bus-powered, remote wakeup)
+        0x80, // bmAttributes (bus-powered)
         250, // bMaxPower (500mA)
     };
 

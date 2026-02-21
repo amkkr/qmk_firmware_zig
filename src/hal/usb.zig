@@ -168,30 +168,35 @@ pub const UsbDriver = struct {
         return self.keyboard_leds;
     }
 
+    /// Get keyboard LED state (HostDriver.from() compatible name)
+    pub fn keyboardLeds(self: *const UsbDriver) u8 {
+        return self.keyboard_leds;
+    }
+
     /// Send a keyboard report
-    pub fn sendKeyboard(self: *UsbDriver, r: *const KeyboardReport) void {
+    pub fn sendKeyboard(self: *UsbDriver, r: KeyboardReport) void {
         if (!self.isConfigured()) return;
         self.sendEndpoint(
             usb_descriptors.KEYBOARD_ENDPOINT,
-            std.mem.asBytes(r),
+            std.mem.asBytes(&r),
         );
     }
 
     /// Send a mouse report
-    pub fn sendMouse(self: *UsbDriver, r: *const MouseReport) void {
+    pub fn sendMouse(self: *UsbDriver, r: MouseReport) void {
         if (!self.isConfigured()) return;
         self.sendEndpoint(
             usb_descriptors.MOUSE_ENDPOINT,
-            std.mem.asBytes(r),
+            std.mem.asBytes(&r),
         );
     }
 
     /// Send an extra report
-    pub fn sendExtra(self: *UsbDriver, r: *const ExtraReport) void {
+    pub fn sendExtra(self: *UsbDriver, r: ExtraReport) void {
         if (!self.isConfigured()) return;
         self.sendEndpoint(
             usb_descriptors.EXTRA_ENDPOINT,
-            std.mem.asBytes(r),
+            std.mem.asBytes(&r),
         );
     }
 
@@ -343,17 +348,23 @@ pub const UsbDriver = struct {
         const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
         const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
 
+        // Wait for previous packet to be consumed by host before overwriting
+        while (buf_ctrl.* & BufCtrl.AVAILABLE != 0) {}
+
         // Calculate buffer address in DPRAM
         const buf_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE + @as(u32, ep) * 64;
         const buf = @as([*]volatile u8, @ptrFromInt(buf_addr));
 
+        // Clamp data length to endpoint buffer size (64 bytes max)
+        const len = @min(data.len, 64);
+
         // Copy data to buffer
-        for (data, 0..) |byte, i| {
+        for (data[0..len], 0..) |byte, i| {
             buf[i] = byte;
         }
 
         // Set buffer control
-        var ctrl: u32 = @as(u32, @intCast(data.len)) & BufCtrl.LEN_MASK;
+        var ctrl: u32 = @as(u32, @intCast(len)) & BufCtrl.LEN_MASK;
         ctrl |= BufCtrl.FULL | BufCtrl.LAST | BufCtrl.AVAILABLE;
         if (self.data_toggle[ep]) {
             ctrl |= BufCtrl.DATA_PID;
@@ -365,34 +376,7 @@ pub const UsbDriver = struct {
 
     /// Create a HostDriver interface from this USB driver
     pub fn hostDriver(self: *UsbDriver) host.HostDriver {
-        const vtable = struct {
-            fn keyboardLedsFn(ctx: *anyopaque) u8 {
-                const drv: *UsbDriver = @ptrCast(@alignCast(ctx));
-                return drv.getLeds();
-            }
-            fn sendKeyboardFn(ctx: *anyopaque, r: *const KeyboardReport) void {
-                const drv: *UsbDriver = @ptrCast(@alignCast(ctx));
-                drv.sendKeyboard(r);
-            }
-            fn sendMouseFn(ctx: *anyopaque, r: *const MouseReport) void {
-                const drv: *UsbDriver = @ptrCast(@alignCast(ctx));
-                drv.sendMouse(r);
-            }
-            fn sendExtraFn(ctx: *anyopaque, r: *const ExtraReport) void {
-                const drv: *UsbDriver = @ptrCast(@alignCast(ctx));
-                drv.sendExtra(r);
-            }
-        };
-
-        return .{
-            .context = @ptrCast(self),
-            .vtable = &.{
-                .keyboard_leds = vtable.keyboardLedsFn,
-                .send_keyboard = vtable.sendKeyboardFn,
-                .send_mouse = vtable.sendMouseFn,
-                .send_extra = vtable.sendExtraFn,
-            },
-        };
+        return host.HostDriver.from(self);
     }
 };
 
@@ -521,10 +505,10 @@ test "UsbDriver send does nothing when not configured" {
     drv.init();
 
     // Should not crash when sending without configuration
-    var r = KeyboardReport{};
-    drv.sendKeyboard(&r);
-    drv.sendMouse(&MouseReport{});
-    drv.sendExtra(&ExtraReport{});
+    const r = KeyboardReport{};
+    drv.sendKeyboard(r);
+    drv.sendMouse(MouseReport{});
+    drv.sendExtra(ExtraReport{});
 }
 
 test "UsbDriver hostDriver interface" {
