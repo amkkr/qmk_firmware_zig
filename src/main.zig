@@ -33,12 +33,18 @@ pub const startup = if (is_freestanding) struct {
     export const vector_table linksection(".vectors") = vector_table_mod.vectorTable(&_start);
 
     /// Entry point for RP2040 firmware
+    /// Note: Cortex-M0+ は ldr r0, =symbol のリテラルプール距離に制限があるため、
+    /// PC相対ロードで明示的にリテラルプールを関数内に配置する。
     pub export fn _start() callconv(.naked) noreturn {
         @setRuntimeSafety(false);
         asm volatile (
-            \\ldr r0, =_stack_top
+            \\ldr r0, .Lstack_top_addr
             \\mov sp, r0
-            \\bl %[main]
+            \\ldr r0, .Lmain_addr
+            \\bx r0
+            \\.align 2
+            \\.Lstack_top_addr: .word _stack_top
+            \\.Lmain_addr: .word %[main]
             :
             : [main] "X" (&zigMain),
         );
