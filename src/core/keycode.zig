@@ -453,6 +453,10 @@ pub inline fn isMomentary(kc: Keycode) bool {
     return kc >= QK_MOMENTARY and kc <= QK_MOMENTARY_MAX;
 }
 
+pub inline fn isMouseKey(kc: Keycode) bool {
+    return kc >= KC.MS_UP and kc <= KC.MS_ACCEL2;
+}
+
 pub inline fn isModifier(kc: Keycode) bool {
     return kc >= KC.LEFT_CTRL and kc <= KC.RIGHT_GUI;
 }

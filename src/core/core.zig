@@ -7,6 +7,8 @@ pub const event = @import("event.zig");
 pub const report = @import("report.zig");
 pub const matrix = @import("matrix.zig");
 pub const debounce_mod = @import("debounce.zig");
+pub const layer = @import("layer.zig");
+pub const keymap = @import("keymap.zig");
 pub const test_driver = @import("test_driver.zig");
 pub const test_fixture = @import("test_fixture.zig");
 
@@ -14,6 +16,7 @@ pub const test_fixture = @import("test_fixture.zig");
 pub const Keycode = keycode.Keycode;
 pub const KC = keycode.KC;
 pub const Action = action_code.Action;
+pub const LayerState = layer.LayerState;
 pub const KeyEvent = event.KeyEvent;
 pub const KeyRecord = event.KeyRecord;
 pub const KeyPos = event.KeyPos;
