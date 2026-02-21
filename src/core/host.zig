@@ -13,6 +13,7 @@ const MouseReport = report_mod.MouseReport;
 const ExtraReport = report_mod.ExtraReport;
 
 /// Host driver virtual table (type-erased interface)
+/// Zig equivalent of C's host_driver_t function pointer struct.
 pub const HostDriver = struct {
     context: *anyopaque,
     vtable: *const VTable,
@@ -41,11 +42,12 @@ pub const HostDriver = struct {
     }
 
     /// Create a HostDriver from a typed pointer.
+    /// The type T must have methods: keyboardLeds, sendKeyboard, sendMouse, sendExtra.
     pub fn from(ptr: anytype) HostDriver {
         const T = @TypeOf(ptr);
         const Child = @typeInfo(T).pointer.child;
 
-        const gen = struct {
+        const vtable = struct {
             fn keyboardLedsFn(ctx: *anyopaque) u8 {
                 const self: *Child = @ptrCast(@alignCast(ctx));
                 return self.keyboardLeds();
@@ -67,10 +69,10 @@ pub const HostDriver = struct {
         return .{
             .context = @ptrCast(ptr),
             .vtable = &.{
-                .keyboard_leds = gen.keyboardLedsFn,
-                .send_keyboard = gen.sendKeyboardFn,
-                .send_mouse = gen.sendMouseFn,
-                .send_extra = gen.sendExtraFn,
+                .keyboard_leds = vtable.keyboardLedsFn,
+                .send_keyboard = vtable.sendKeyboardFn,
+                .send_mouse = vtable.sendMouseFn,
+                .send_extra = vtable.sendExtraFn,
             },
         };
     }
@@ -95,6 +97,35 @@ pub fn getDriver() ?HostDriver {
 
 pub fn clearDriver() void {
     current_driver = null;
+}
+
+/// Send a keyboard report via the current host driver
+pub fn sendKeyboard(r: *const KeyboardReport) void {
+    if (current_driver) |driver| {
+        driver.sendKeyboard(r);
+    }
+}
+
+/// Send a mouse report via the current host driver
+pub fn sendMouse(r: *const MouseReport) void {
+    if (current_driver) |driver| {
+        driver.sendMouse(r);
+    }
+}
+
+/// Send an extra report via the current host driver
+pub fn sendExtra(r: *const ExtraReport) void {
+    if (current_driver) |driver| {
+        driver.sendExtra(r);
+    }
+}
+
+/// Get keyboard LEDs state from the host
+pub fn keyboardLeds() u8 {
+    if (current_driver) |driver| {
+        return driver.keyboardLeds();
+    }
+    return 0;
 }
 
 // ============================================================
@@ -217,8 +248,11 @@ fn modFiveBitToEightBit(mods5: u8) u8 {
 
 const testing = std.testing;
 
+/// Simple mock driver for testing the HostDriver interface
 const MockDriver = struct {
     keyboard_count: usize = 0,
+    mouse_count: usize = 0,
+    extra_count: usize = 0,
     last_keyboard: KeyboardReport = .{},
     leds: u8 = 0,
 
@@ -231,9 +265,66 @@ const MockDriver = struct {
         self.last_keyboard = r;
     }
 
-    pub fn sendMouse(_: *MockDriver, _: MouseReport) void {}
-    pub fn sendExtra(_: *MockDriver, _: ExtraReport) void {}
+    pub fn sendMouse(self: *MockDriver, _: MouseReport) void {
+        self.mouse_count += 1;
+    }
+
+    pub fn sendExtra(self: *MockDriver, _: ExtraReport) void {
+        self.extra_count += 1;
+    }
 };
+
+test "HostDriver interface dispatch" {
+    var mock = MockDriver{};
+    const driver = HostDriver.from(&mock);
+
+    var r = KeyboardReport{};
+    _ = r.addKey(0x04);
+    r.mods = 0x02;
+    driver.sendKeyboard(&r);
+
+    try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
+    try testing.expect(mock.last_keyboard.hasKey(0x04));
+    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods);
+}
+
+test "HostDriver mouse and extra" {
+    var mock = MockDriver{};
+    const driver = HostDriver.from(&mock);
+
+    driver.sendMouse(&MouseReport{});
+    driver.sendExtra(&ExtraReport{});
+
+    try testing.expectEqual(@as(usize, 1), mock.mouse_count);
+    try testing.expectEqual(@as(usize, 1), mock.extra_count);
+}
+
+test "HostDriver keyboard LEDs" {
+    var mock = MockDriver{ .leds = 0x02 };
+    const driver = HostDriver.from(&mock);
+
+    try testing.expectEqual(@as(u8, 0x02), driver.keyboardLeds());
+}
+
+test "global host driver" {
+    var mock = MockDriver{};
+    const driver = HostDriver.from(&mock);
+
+    // Initially no driver
+    clearDriver();
+    try testing.expectEqual(@as(u8, 0), keyboardLeds());
+
+    // Set driver
+    setDriver(driver);
+    defer clearDriver();
+
+    mock.leds = 0x04;
+    try testing.expectEqual(@as(u8, 0x04), keyboardLeds());
+
+    var r = KeyboardReport{};
+    sendKeyboard(&r);
+    try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
+}
 
 test "registerCode / unregisterCode" {
     hostReset();
