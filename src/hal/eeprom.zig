@@ -74,7 +74,7 @@ pub fn writeDword(address: u16, data: u32) void {
 /// Out-of-bounds bytes are filled with 0xFF (erased state).
 pub fn readBlock(address: u16, buf: []u8) void {
     for (buf, 0..) |*b, i| {
-        const addr = @as(u32, address) + @as(u32, i);
+        const addr = @as(u32, address) + @as(u32, @intCast(i));
         b.* = if (addr < EEPROM_SIZE) storage[@intCast(addr)] else 0xFF;
     }
 }
@@ -84,7 +84,7 @@ pub fn readBlock(address: u16, buf: []u8) void {
 /// Stops writing when address exceeds EEPROM_SIZE.
 pub fn writeBlock(address: u16, data: []const u8) void {
     for (data, 0..) |b, i| {
-        const addr = @as(u32, address) + @as(u32, i);
+        const addr = @as(u32, address) + @as(u32, @intCast(i));
         if (addr >= EEPROM_SIZE) break;
         storage[@intCast(addr)] = b;
     }

@@ -7,10 +7,6 @@ pub const keycode = @import("keycode.zig");
 pub const action_code = @import("action_code.zig");
 pub const event = @import("event.zig");
 pub const report = @import("report.zig");
-pub const matrix = @import("matrix.zig");
-pub const debounce_mod = @import("debounce.zig");
-pub const layer = @import("layer.zig");
-pub const keymap = @import("keymap.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
@@ -20,14 +16,12 @@ pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else s
 pub const Keycode = keycode.Keycode;
 pub const KC = keycode.KC;
 pub const Action = action_code.Action;
-pub const LayerState = layer.LayerState;
 pub const KeyEvent = event.KeyEvent;
 pub const KeyRecord = event.KeyRecord;
 pub const KeyPos = event.KeyPos;
 pub const KeyboardReport = report.KeyboardReport;
 pub const MouseReport = report.MouseReport;
 pub const ExtraReport = report.ExtraReport;
-pub const Matrix = matrix.Matrix;
 
 // Test types (only available in test builds)
 pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;
