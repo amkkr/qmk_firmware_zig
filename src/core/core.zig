@@ -5,6 +5,8 @@ pub const keycode = @import("keycode.zig");
 pub const action_code = @import("action_code.zig");
 pub const event = @import("event.zig");
 pub const report = @import("report.zig");
+pub const test_driver = @import("test_driver.zig");
+pub const test_fixture = @import("test_fixture.zig");
 
 // Commonly used types
 pub const Keycode = keycode.Keycode;
@@ -16,6 +18,11 @@ pub const KeyPos = event.KeyPos;
 pub const KeyboardReport = report.KeyboardReport;
 pub const MouseReport = report.MouseReport;
 pub const ExtraReport = report.ExtraReport;
+
+// Test types
+pub const TestDriver = test_driver.TestDriver;
+pub const TestFixture = test_fixture.TestFixture;
+pub const KeymapKey = test_fixture.KeymapKey;
 
 test {
     @import("std").testing.refAllDecls(@This());
