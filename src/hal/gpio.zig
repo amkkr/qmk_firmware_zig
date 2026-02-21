@@ -81,7 +81,7 @@ pub fn setPinInput(pin: Pin) void {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
         // Disable pull-up/down
-        rp2040.padCtrlAddr(pin).* = 0x56; // IE=1, default pad settings
+        rp2040.padCtrlAddr(pin).* = 0x52; // IE=1, DRIVE=4mA, PUE=0, PDE=0, SCHMITT=1
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls &= ~(@as(u32, 1) << pin);
