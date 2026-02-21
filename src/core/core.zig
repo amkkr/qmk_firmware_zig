@@ -22,14 +22,14 @@ pub const MouseReport = report.MouseReport;
 pub const ExtraReport = report.ExtraReport;
 pub const Matrix = matrix.Matrix;
 
-// Test-only types (not compiled into firmware)
-pub usingnamespace if (builtin.is_test) struct {
-    pub const test_driver = @import("test_driver.zig");
-    pub const test_fixture = @import("test_fixture.zig");
-    pub const TestDriver = @import("test_driver.zig").TestDriver;
-    pub const TestFixture = @import("test_fixture.zig").TestFixture;
-    pub const KeymapKey = @import("test_fixture.zig").KeymapKey;
-} else struct {};
+// Test infrastructure - only included in test builds to avoid bloating firmware
+pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
+pub const test_fixture = if (builtin.is_test) @import("test_fixture.zig") else struct {};
+
+// Test types (only available in test builds)
+pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;
+pub const TestFixture = if (builtin.is_test) test_fixture.TestFixture else void;
+pub const KeymapKey = if (builtin.is_test) test_fixture.KeymapKey else void;
 
 test {
     @import("std").testing.refAllDecls(@This());

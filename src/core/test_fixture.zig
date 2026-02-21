@@ -17,7 +17,7 @@ const KeyboardReport = report_mod.KeyboardReport;
 pub const MAX_LAYERS = 16;
 pub const MATRIX_ROWS = 4;
 pub const MATRIX_COLS = 12;
-pub const TAPPING_TERM: u16 = 200; // Reserved for tap/hold implementation (Issue #8)
+pub const TAPPING_TERM: u16 = 200;
 
 /// Key definition for test keymaps
 pub const KeymapKey = struct {
@@ -217,16 +217,16 @@ pub const TestFixture = struct {
                         const basic_kc: u8 = @truncate(kc);
                         const mod_bits: u8 = @truncate(kc >> 8);
                         // Convert 5-bit mod to 8-bit mod bits
-                        // bit4 is the right-modifier flag: when set, bits 0-3
-                        // refer to right modifiers instead of left ones.
+                        // bit4 is the right modifier flag; left and right are mutually exclusive
                         var mods: u8 = 0;
                         if (mod_bits & 0x10 != 0) {
-                            // Right modifier flag
+                            // Right modifiers
                             if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.RCTRL;
                             if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.RSHIFT;
                             if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.RALT;
                             if (mod_bits & 0x08 != 0) mods |= report_mod.ModBit.RGUI;
                         } else {
+                            // Left modifiers
                             if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.LCTRL;
                             if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.LSHIFT;
                             if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.LALT;

@@ -38,15 +38,15 @@ pub const TestDriver = struct {
     // ============================================================
 
     pub fn sendKeyboard(self: *TestDriver, r: KeyboardReport) void {
-        self.reports.append(self.allocator, .{ .keyboard = r }) catch {};
+        self.reports.append(self.allocator, .{ .keyboard = r }) catch @panic("TestDriver: OOM");
     }
 
     pub fn sendMouse(self: *TestDriver, r: MouseReport) void {
-        self.reports.append(self.allocator, .{ .mouse = r }) catch {};
+        self.reports.append(self.allocator, .{ .mouse = r }) catch @panic("TestDriver: OOM");
     }
 
     pub fn sendExtra(self: *TestDriver, r: ExtraReport) void {
-        self.reports.append(self.allocator, .{ .extra = r }) catch {};
+        self.reports.append(self.allocator, .{ .extra = r }) catch @panic("TestDriver: OOM");
     }
 
     pub fn keyboardLeds(self: *const TestDriver) u8 {

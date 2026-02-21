@@ -91,22 +91,20 @@ pub fn waitUs(us: u32) void {
 // Mock helpers (test only)
 // ============================================================
 
-pub usingnamespace if (builtin.is_test) struct {
-    /// Advance mock timer by the given milliseconds
-    pub fn mockAdvance(ms: u32) void {
-        mock_timer_ms += ms;
-    }
+/// Advance mock timer by the given milliseconds (test only)
+pub fn mockAdvance(ms: u32) void {
+    mock_timer_ms += ms;
+}
 
-    /// Set mock timer to specific value
-    pub fn mockSet(ms: u32) void {
-        mock_timer_ms = ms;
-    }
+/// Set mock timer to specific value (test only)
+pub fn mockSet(ms: u32) void {
+    mock_timer_ms = ms;
+}
 
-    /// Reset mock timer
-    pub fn mockReset() void {
-        mock_timer_ms = 0;
-    }
-} else struct {};
+/// Reset mock timer (test only)
+pub fn mockReset() void {
+    mock_timer_ms = 0;
+}
 
 // ============================================================
 // Tests
