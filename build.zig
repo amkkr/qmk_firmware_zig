@@ -42,8 +42,8 @@ pub fn build(b: *std.Build) void {
 
     // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
     const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
-    const flash_install = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
-    flash_step.dependOn(&flash_install.step);
+    const flash_run = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
+    flash_step.dependOn(&flash_run.step);
 
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");

@@ -146,6 +146,7 @@ fn detectBootselWindows(allocator: std.mem.Allocator) ![]const u8 {
     const drive_letters = "DEFGHIJKLMNOPQRSTUVWXYZ";
     for (drive_letters) |letter| {
         const drive_path = try std.fmt.allocPrint(allocator, "{c}:\\", .{letter});
+        errdefer allocator.free(drive_path);
 
         // Check if the drive exists and is accessible
         if (isDirectory(drive_path)) {
@@ -164,8 +165,8 @@ fn detectBootselWindows(allocator: std.mem.Allocator) ![]const u8 {
 }
 
 fn isDirectory(path: []const u8) bool {
-    const dir = std.fs.cwd().openDir(path, .{}) catch return false;
-    @constCast(&dir).close();
+    var dir = std.fs.cwd().openDir(path, .{}) catch return false;
+    dir.close();
     return true;
 }
 
