@@ -36,5 +36,5 @@ jobs:
     - name: Run tests
       run: zig build test
 
-    - name: Build (native check)
+    - name: Build firmware (RP2040 cross-compile)
       run: zig build
