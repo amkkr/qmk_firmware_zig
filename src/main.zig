@@ -4,8 +4,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Module declarations (to be implemented in later issues)
-pub const core = struct {};
+// Module declarations
+pub const core = @import("core/core.zig");
 pub const hal = struct {};
 pub const drivers = struct {};
 pub const keyboards = struct {};
@@ -68,4 +68,9 @@ test "module structure exists" {
     _ = hal;
     _ = drivers;
     _ = keyboards;
+}
+
+test {
+    // Run all sub-module tests
+    @import("std").testing.refAllDecls(core);
 }
