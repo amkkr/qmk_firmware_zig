@@ -204,6 +204,8 @@ inline fn regClear(address: u32, bits: u32) void {
 /// 7. clk_periをclk_sysから設定
 /// 8. Watchdogのtickを設定
 pub fn init() void {
+    if (is_test) return;
+
     // 1. XOSC起動
     initXosc();
 
