@@ -132,3 +132,7 @@ via*.json
 # Zig
 zig-out/
 .zig-cache/
+
+# Claude Code
+.claude/settings.local.json
+.claude/worktrees/
