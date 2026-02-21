@@ -34,8 +34,7 @@ pub const DebounceState = struct {
             const changed = raw_row ^ cooked[row_idx];
             if (changed == 0 and self.active[row_idx] == 0) continue;
 
-            var col: u6 = 0;
-            while (col < MAX_COLS) : (col += 1) {
+            for (0..MAX_COLS) |col| {
                 const mask = @as(MatrixRow, 1) << @as(u5, @intCast(col));
 
                 if (self.active[row_idx] & mask != 0) {

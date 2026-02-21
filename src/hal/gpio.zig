@@ -53,6 +53,9 @@ const rp2040 = if (is_freestanding) struct {
 
 // ============================================================
 // Mock state (for tests)
+// NOTE: These global variables are NOT thread-safe.
+// The Zig test runner executes tests sequentially by default,
+// so parallel test interference is not a concern currently.
 // ============================================================
 
 var mock_pin_values: u32 = 0;
@@ -70,6 +73,8 @@ pub fn setPinOutput(pin: Pin) void {
         rp2040.gpioCtrlAddr(pin).* = 5;
         // Enable output
         rp2040.GPIO_OE_SET.* = @as(u32, 1) << pin;
+        // Configure PAD: OD=0, IE=0, DRIVE=4mA, PUE=0, PDE=0, SCHMITT=0, SLEWFAST=0
+        rp2040.padCtrlAddr(pin).* = 0x10;
     } else {
         mock_pin_directions |= @as(u32, 1) << pin;
     }
@@ -132,31 +137,33 @@ pub fn readPin(pin: Pin) bool {
 // Mock helpers (test only)
 // ============================================================
 
-/// Set mock pin input value (simulates external signal)
-pub fn mockSetPin(pin: Pin, value: bool) void {
-    if (value) {
-        mock_pin_values |= @as(u32, 1) << pin;
-    } else {
-        mock_pin_values &= ~(@as(u32, 1) << pin);
+pub usingnamespace if (builtin.is_test) struct {
+    /// Set mock pin input value (simulates external signal)
+    pub fn mockSetPin(pin: Pin, value: bool) void {
+        if (value) {
+            mock_pin_values |= @as(u32, 1) << pin;
+        } else {
+            mock_pin_values &= ~(@as(u32, 1) << pin);
+        }
     }
-}
 
-/// Reset all mock state
-pub fn mockReset() void {
-    mock_pin_values = 0;
-    mock_pin_directions = 0;
-    mock_pin_pulls = 0;
-}
+    /// Reset all mock state
+    pub fn mockReset() void {
+        mock_pin_values = 0;
+        mock_pin_directions = 0;
+        mock_pin_pulls = 0;
+    }
 
-/// Check if pin is configured as output (mock)
-pub fn mockIsOutput(pin: Pin) bool {
-    return (mock_pin_directions & (@as(u32, 1) << pin)) != 0;
-}
+    /// Check if pin is configured as output (mock)
+    pub fn mockIsOutput(pin: Pin) bool {
+        return (mock_pin_directions & (@as(u32, 1) << pin)) != 0;
+    }
 
-/// Check if pin has pull-up enabled (mock)
-pub fn mockHasPullUp(pin: Pin) bool {
-    return (mock_pin_pulls & (@as(u32, 1) << pin)) != 0;
-}
+    /// Check if pin has pull-up enabled (mock)
+    pub fn mockHasPullUp(pin: Pin) bool {
+        return (mock_pin_pulls & (@as(u32, 1) << pin)) != 0;
+    }
+} else struct {};
 
 // ============================================================
 // Tests

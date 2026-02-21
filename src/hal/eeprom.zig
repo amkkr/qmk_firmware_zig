@@ -92,10 +92,12 @@ pub fn erase() void {
 // Mock helpers (test only)
 // ============================================================
 
-/// Reset EEPROM to erased state
-pub fn mockReset() void {
-    erase();
-}
+pub usingnamespace if (builtin.is_test) struct {
+    /// Reset EEPROM to erased state
+    pub fn mockReset() void {
+        erase();
+    }
+} else struct {};
 
 // ============================================================
 // Tests

@@ -17,7 +17,7 @@ const KeyboardReport = report_mod.KeyboardReport;
 pub const MAX_LAYERS = 16;
 pub const MATRIX_ROWS = 4;
 pub const MATRIX_COLS = 12;
-pub const TAPPING_TERM: u16 = 200;
+pub const TAPPING_TERM: u16 = 200; // Reserved for tap/hold implementation (Issue #8)
 
 /// Key definition for test keymaps
 pub const KeymapKey = struct {
