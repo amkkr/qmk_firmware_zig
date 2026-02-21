@@ -1,0 +1,176 @@
+//! RP2040 BOOTSEL flash tool
+//! Detects RP2040 in BOOTSEL mode and copies UF2 firmware file to it.
+//!
+//! Usage:
+//!   flash <firmware.uf2>
+//!
+//! The tool searches for the RP2040 BOOTSEL drive ("RPI-RP2") at:
+//!   - macOS:   /Volumes/RPI-RP2
+//!   - Linux:   /media/<user>/RPI-RP2, /mnt/RPI-RP2, /run/media/<user>/RPI-RP2
+//!   - Windows: D:\ through Z:\ (checks volume label "RPI-RP2")
+
+const std = @import("std");
+const builtin = @import("builtin");
+
+const BOOTSEL_VOLUME_NAME = "RPI-RP2";
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len != 2) {
+        std.debug.print("Usage: flash <firmware.uf2>\n", .{});
+        return error.InvalidArgs;
+    }
+
+    const uf2_path = args[1];
+
+    // Verify UF2 file exists
+    std.fs.cwd().access(uf2_path, .{}) catch {
+        std.debug.print("Error: UF2 file not found: {s}\n", .{uf2_path});
+        return error.Uf2NotFound;
+    };
+
+    // Detect BOOTSEL drive
+    const bootsel_path = detectBootselDrive(allocator) catch |err| {
+        switch (err) {
+            error.BootselNotFound => {
+                std.debug.print(
+                    \\Error: RP2040 が BOOTSEL モードで検出されませんでした。
+                    \\
+                    \\以下の手順で BOOTSEL モードに入ってください:
+                    \\  1. RP2040 の BOOT ボタンを押しながら USB ケーブルを接続
+                    \\  2. 「RPI-RP2」ドライブがマウントされるのを確認
+                    \\  3. 再度 zig build flash を実行
+                    \\
+                , .{});
+                return error.BootselNotFound;
+            },
+            else => return err,
+        }
+    };
+    defer allocator.free(bootsel_path);
+
+    std.debug.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
+
+    // Copy UF2 file to BOOTSEL drive
+    const dest_path = std.fs.path.join(allocator, &.{ bootsel_path, std.fs.path.basename(uf2_path) }) catch {
+        return error.OutOfMemory;
+    };
+    defer allocator.free(dest_path);
+
+    std.debug.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
+
+    copyFile(uf2_path, dest_path) catch |err| {
+        std.debug.print("Error: UF2 ファイルのコピーに失敗しました: {}\n", .{err});
+        return error.CopyFailed;
+    };
+
+    std.debug.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
+}
+
+fn copyFile(src_path: []const u8, dest_path: []const u8) !void {
+    const src_file = try std.fs.cwd().openFile(src_path, .{});
+    defer src_file.close();
+
+    const dest_dir = std.fs.path.dirname(dest_path);
+    const dest_basename = std.fs.path.basename(dest_path);
+
+    var dir = if (dest_dir) |d|
+        try std.fs.cwd().openDir(d, .{})
+    else
+        std.fs.cwd();
+    defer if (dest_dir != null) dir.close();
+
+    const dest_file = try dir.createFile(dest_basename, .{});
+    defer dest_file.close();
+
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const bytes_read = try src_file.read(&buf);
+        if (bytes_read == 0) break;
+        try dest_file.writeAll(buf[0..bytes_read]);
+    }
+}
+
+fn detectBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
+    return switch (builtin.os.tag) {
+        .macos => detectBootselMacos(allocator),
+        .linux => detectBootselLinux(allocator),
+        .windows => detectBootselWindows(allocator),
+        else => {
+            std.debug.print("Warning: 未対応の OS です。手動で UF2 ファイルをコピーしてください。\n", .{});
+            return error.BootselNotFound;
+        },
+    };
+}
+
+fn detectBootselMacos(allocator: std.mem.Allocator) ![]const u8 {
+    const path = "/Volumes/" ++ BOOTSEL_VOLUME_NAME;
+    if (isDirectory(path)) {
+        return try allocator.dupe(u8, path);
+    }
+    return error.BootselNotFound;
+}
+
+fn detectBootselLinux(allocator: std.mem.Allocator) ![]const u8 {
+    // Try /media/$USER/RPI-RP2
+    if (std.posix.getenv("USER")) |user| {
+        const media_path = try std.fmt.allocPrint(allocator, "/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
+        if (isDirectory(media_path)) {
+            return media_path;
+        }
+        allocator.free(media_path);
+
+        // Try /run/media/$USER/RPI-RP2
+        const run_media_path = try std.fmt.allocPrint(allocator, "/run/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
+        if (isDirectory(run_media_path)) {
+            return run_media_path;
+        }
+        allocator.free(run_media_path);
+    }
+
+    // Try /mnt/RPI-RP2
+    const mnt_path = "/mnt/" ++ BOOTSEL_VOLUME_NAME;
+    if (isDirectory(mnt_path)) {
+        return try allocator.dupe(u8, mnt_path);
+    }
+
+    return error.BootselNotFound;
+}
+
+fn detectBootselWindows(allocator: std.mem.Allocator) ![]const u8 {
+    // Check drive letters D: through Z:
+    const drive_letters = "DEFGHIJKLMNOPQRSTUVWXYZ";
+    for (drive_letters) |letter| {
+        const drive_path = try std.fmt.allocPrint(allocator, "{c}:\\", .{letter});
+        errdefer allocator.free(drive_path);
+
+        // Check if the drive exists and is accessible
+        if (isDirectory(drive_path)) {
+            // Check for INFO_UF2.TXT which is present on RP2040 BOOTSEL drives
+            const info_path = try std.fmt.allocPrint(allocator, "{c}:\\INFO_UF2.TXT", .{letter});
+            defer allocator.free(info_path);
+
+            if (fileExists(info_path)) {
+                return drive_path;
+            }
+        }
+        allocator.free(drive_path);
+    }
+
+    return error.BootselNotFound;
+}
+
+fn isDirectory(path: []const u8) bool {
+    var dir = std.fs.cwd().openDir(path, .{}) catch return false;
+    dir.close();
+    return true;
+}
+
+fn fileExists(path: []const u8) bool {
+    std.fs.cwd().access(path, .{}) catch return false;
+    return true;
+}
