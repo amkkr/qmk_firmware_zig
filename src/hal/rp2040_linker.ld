@@ -2,12 +2,16 @@
  * Flash: 2MB XIP at 0x10000000
  * SRAM:  256KB at 0x20000000
  *
- * Note: Boot2 (second stage bootloader, 256 bytes) will be
- * prepended separately when generating UF2 output.
+ * Note: The first 256 bytes of flash (0x10000000-0x100000FF) are reserved
+ * for boot2 (second stage bootloader). Boot2 configures XIP flash and
+ * jumps to the reset handler at 0x10000104 (vector table offset 4).
+ * Boot2 is prepended by uf2gen when building the UF2 firmware image.
+ * Use `zig build uf2 -Dboot2=<path/to/boot2.bin>` to include it.
+ * Boot2 binaries can be obtained from pico-sdk (boot_stage2/).
  */
 MEMORY
 {
-    FLASH  (rx)  : ORIGIN = 0x10000000, LENGTH = 2048K
+    FLASH  (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K - 256
     RAM    (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
