@@ -6,7 +6,9 @@ const builtin = @import("builtin");
 
 // Module declarations (to be implemented in later issues)
 pub const core = struct {};
-pub const hal = struct {};
+pub const hal = struct {
+    pub const clock = @import("hal/clock.zig");
+};
 pub const drivers = struct {};
 pub const keyboards = struct {};
 
@@ -18,6 +20,7 @@ const is_freestanding = builtin.os.tag == .freestanding;
 
 pub const startup = if (is_freestanding) struct {
     const vector_table_zig = @import("hal/vector_table.zig");
+    const clock = @import("hal/clock.zig");
 
     extern var _stack_top: anyopaque;
 
@@ -63,7 +66,8 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn main() !void {
-        // TODO: Initialize hardware (Issue #4)
+        // クロックツリー初期化（XOSC, PLL, システムクロック設定）
+        clock.init();
         // TODO: Initialize keyboard matrix (Issue #5)
         // TODO: Initialize USB HID (Issue #6)
         // TODO: Main loop - keyboard_task() (Issue #8)
