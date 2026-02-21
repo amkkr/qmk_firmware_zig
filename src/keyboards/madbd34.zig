@@ -25,6 +25,13 @@ pub const rows: u8 = 4;
 pub const cols: u8 = 12;
 pub const key_count: usize = 41;
 
+/// ダイオード方向（マトリックススキャン方式）
+pub const DiodeDirection = enum { col2row, row2col };
+pub const diode_direction: DiodeDirection = .col2row;
+
+/// ブートローダ種別
+pub const bootloader = "rp2040";
+
 /// カラムピン: GP8, GP9, GP10, GP11, GP12, GP13, GP18, GP19, GP20, GP21, GP22, GP26
 pub const col_pins = [_]gpio.Pin{ 8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 26 };
 
@@ -72,6 +79,9 @@ pub fn LAYOUT(comptime keys: [key_count]Keycode) [keymap.MATRIX_ROWS][keymap.MAT
 // デフォルトキーマップ
 // ============================================================
 
+/// このキーボードで定義されているレイヤー数。
+/// keymap.Keymap 型は常に MAX_LAYERS（16）スロット分確保するが、
+/// この値は実際に使用するレイヤー数のメタデータとして使用する。
 pub const num_layers: u8 = 4;
 
 /// Layer 0: QWERTY ベースレイヤー
