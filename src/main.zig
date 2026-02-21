@@ -4,8 +4,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Module declarations (to be implemented in later issues)
-pub const core = struct {};
+// Module declarations
+pub const core = @import("core/core.zig");
 pub const hal = struct {};
 pub const drivers = struct {};
 pub const keyboards = struct {};
@@ -17,11 +17,11 @@ const is_freestanding = builtin.os.tag == .freestanding;
 // ============================================================
 
 pub const startup = if (is_freestanding) struct {
-    const vector_table_zig = @import("hal/vector_table.zig");
+    const vector_table_mod = @import("hal/vector_table.zig");
 
     extern var _stack_top: anyopaque;
 
-    // Linker-provided section symbols (must be at struct scope, not function scope)
+    // Linker-provided section symbols
     extern var _sdata: u8;
     extern var _edata: u8;
     extern const _sidata: u8;
@@ -29,7 +29,7 @@ pub const startup = if (is_freestanding) struct {
     extern var _ebss: u8;
 
     /// Vector table placed in .vectors section
-    export const vector_table linksection(".vectors") = vector_table_zig.vectorTable(&_start);
+    export const vector_table linksection(".vectors") = vector_table_mod.vectorTable(&_start);
 
     /// Entry point for RP2040 firmware
     pub export fn _start() callconv(.naked) noreturn {
@@ -88,4 +88,9 @@ test "module structure exists" {
     _ = hal;
     _ = drivers;
     _ = keyboards;
+}
+
+test {
+    // Run all sub-module tests
+    @import("std").testing.refAllDecls(core);
 }
