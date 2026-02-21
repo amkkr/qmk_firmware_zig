@@ -25,11 +25,45 @@
 
 | フェーズ | 内容 | 状態 |
 |---------|------|------|
-| Foundation | ビルドシステム、コアデータ型、テストインフラ | 未着手 |
-| HAL | GPIO, Timer, EEPROM, マトリックススキャン, USB HID | 未着手 |
-| Core | キーマップシステム、レイヤー管理、アクション処理 | 未着手 |
-| Feature | Bootmagic, Mousekey, Extrakey | 未着手 |
+| Foundation | ビルドシステム、コアデータ型、テストインフラ | 完了 |
+| HAL | GPIO, Timer, EEPROM, Boot2, クロック初期化, USB HID | 完了 |
+| Core | マトリックススキャン, デバウンス, キーマップ, レイヤー管理, アクション処理 | 完了 |
+| Feature | Bootmagic, Mousekey, Extrakey | 進行中 |
 | Keyboard | madbd34 キーボード定義、統合テスト | 未着手 |
+
+### 実装済みモジュール
+
+**Core** (`src/core/`)
+
+| モジュール | ファイル | 説明 |
+|-----------|---------|------|
+| キーコード | `keycode.zig` | キーコード定義（HID Usage Table 準拠、u16） |
+| アクションコード | `action_code.zig` | 16bit packed union によるアクション型定義 |
+| イベント | `event.zig` | キーイベント・キーポジション構造体 |
+| HIDレポート | `report.zig` | USB HID レポート構造体（キーボード、マウス、Consumer） |
+| マトリックススキャン | `matrix.zig` | COL2ROW 方式のキーマトリックススキャン |
+| デバウンス | `debounce.zig` | 対称遅延キー単位デバウンス（sym_defer_pk） |
+| キーマップ | `keymap.zig` | キーマップデータ構造と comptime LAYOUT 関数 |
+| レイヤー管理 | `layer.zig` | レイヤー状態ビットマスクとレイヤー操作 |
+| アクション処理 | `action.zig` | アクション解決・実行の中核 |
+| タッピング | `action_tapping.zig` | タップ/ホールド判定ステートマシン |
+| ホストドライバ | `host.zig` | HID レポート送信インターフェース |
+| テストドライバ | `test_driver.zig` | モック HID ドライバ（テスト用） |
+| テストフィクスチャ | `test_fixture.zig` | キーボードシミュレーション環境（テスト用） |
+
+**HAL** (`src/hal/`)
+
+| モジュール | ファイル | 説明 |
+|-----------|---------|------|
+| GPIO | `gpio.zig` | RP2040 GPIO ドライバ（レジスタ直接アクセス / テスト時モック） |
+| タイマー | `timer.zig` | RP2040 タイマー（ミリ秒精度 / テスト時モック） |
+| EEPROM | `eeprom.zig` | RP2040 フラッシュによる EEPROM エミュレーション |
+| USB | `usb.zig` | RP2040 USB デバイスドライバ（ChibiOS 不要） |
+| USB ディスクリプタ | `usb_descriptors.zig` | USB/HID ディスクリプタ定義 |
+| Boot2 | `boot2.zig` | RP2040 第2段ブートローダー（W25Q080 互換） |
+| クロック | `clock.zig` | RP2040 クロックツリー初期化（XOSC, PLL, clk_sys） |
+| ブートローダー | `bootloader.zig` | BOOTSEL モードへのジャンプ |
+| ベクタテーブル | `vector_table.zig` | ARM Cortex-M0+ 割り込みベクタテーブル |
 
 ## ビルド
 
@@ -74,4 +108,3 @@ make madbd34:default:flash
 
 - [QMK Firmware](https://github.com/qmk/qmk_firmware)
 - [QMK ドキュメント](https://docs.qmk.fm)
-
