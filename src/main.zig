@@ -17,12 +17,19 @@ const is_freestanding = builtin.os.tag == .freestanding;
 // ============================================================
 
 pub const startup = if (is_freestanding) struct {
-    const vector_table_zig = @import("hal/vector_table.zig");
+    const vector_table_mod = @import("hal/vector_table.zig");
 
     extern var _stack_top: anyopaque;
 
+    // Linker-provided section symbols
+    extern var _sdata: u8;
+    extern var _edata: u8;
+    extern const _sidata: u8;
+    extern var _sbss: u8;
+    extern var _ebss: u8;
+
     /// Vector table placed in .vectors section
-    export const vector_table linksection(".vectors") = vector_table_zig.vectorTable();
+    export const vector_table linksection(".vectors") = vector_table_mod.vectorTable(&_start);
 
     /// Entry point for RP2040 firmware
     pub export fn _start() callconv(.naked) noreturn {
@@ -37,6 +44,19 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn zigMain() callconv(.c) noreturn {
+        // Initialize .data section (copy from flash to RAM)
+        const data_start: [*]u8 = @ptrCast(&_sdata);
+        const data_end: [*]u8 = @ptrCast(&_edata);
+        const data_src: [*]const u8 = @ptrCast(&_sidata);
+        const data_size = @intFromPtr(data_end) - @intFromPtr(data_start);
+        @memcpy(data_start[0..data_size], data_src[0..data_size]);
+
+        // Initialize .bss section (zero fill)
+        const bss_start: [*]u8 = @ptrCast(&_sbss);
+        const bss_end: [*]u8 = @ptrCast(&_ebss);
+        const bss_size = @intFromPtr(bss_end) - @intFromPtr(bss_start);
+        @memset(bss_start[0..bss_size], 0);
+
         main() catch {};
         while (true) {
             asm volatile ("wfi");
@@ -44,7 +64,6 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn main() !void {
-        // TODO: Initialize hardware (Issue #4)
         // TODO: Initialize keyboard matrix (Issue #5)
         // TODO: Initialize USB HID (Issue #6)
         // TODO: Main loop - keyboard_task() (Issue #8)
