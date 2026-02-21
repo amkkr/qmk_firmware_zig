@@ -37,8 +37,7 @@ pub fn main() !void {
     defer std.process.argsFree(std.heap.page_allocator, args);
 
     if (args.len != 3) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print("Usage: uf2gen <input.bin> <output.uf2>\n", .{});
+        std.debug.print("Usage: uf2gen <input.bin> <output.uf2>\n", .{});
         return error.InvalidArgs;
     }
 
@@ -71,6 +70,5 @@ pub fn main() !void {
         try output_file.writeAll(std.mem.asBytes(&block));
     }
 
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("Created {s}: {d} blocks, {d} bytes\n", .{ output_path, num_blocks, data.len });
+    std.debug.print("Created {s}: {d} blocks, {d} bytes\n", .{ output_path, num_blocks, data.len });
 }
