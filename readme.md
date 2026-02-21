@@ -46,6 +46,3 @@ make madbd34:default:flash
 - [QMK Firmware](https://github.com/qmk/qmk_firmware)
 - [QMK ドキュメント](https://docs.qmk.fm)
 
-## ライセンス
-
-[GPL-2.0-or-later](LICENSE)
