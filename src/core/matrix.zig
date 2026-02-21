@@ -144,21 +144,23 @@ pub const Matrix = struct {
     // Mock helpers (test only)
     // ============================================================
 
-    /// Directly set a key's raw state (bypasses GPIO, for testing)
-    pub fn mockPress(self: *Matrix, row: u8, col: u8) void {
-        self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
-    }
+    pub usingnamespace if (builtin.is_test) struct {
+        /// Directly set a key's raw state (bypasses GPIO, for testing)
+        pub fn mockPress(self: *Matrix, row: u8, col: u8) void {
+            self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
+        }
 
-    /// Directly clear a key's raw state (bypasses GPIO, for testing)
-    pub fn mockRelease(self: *Matrix, row: u8, col: u8) void {
-        self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
-    }
+        /// Directly clear a key's raw state (bypasses GPIO, for testing)
+        pub fn mockRelease(self: *Matrix, row: u8, col: u8) void {
+            self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
+        }
 
-    /// Apply raw state directly to current (bypasses debounce, for testing)
-    pub fn mockApply(self: *Matrix) void {
-        self.previous = self.current;
-        self.current = self.raw;
-    }
+        /// Apply raw state directly to current (bypasses debounce, for testing)
+        pub fn mockApply(self: *Matrix) void {
+            self.previous = self.current;
+            self.current = self.raw;
+        }
+    } else struct {};
 };
 
 // ============================================================
