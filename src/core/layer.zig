@@ -141,7 +141,7 @@ pub fn getHighestLayer(state: LayerState) u5 {
 const MATRIX_ROWS = 4;
 const MATRIX_COLS = 12;
 const CACHE_ENTRIES = MATRIX_ROWS * MATRIX_COLS;
-const MAX_LAYER_BITS = 5; // log2(MAX_LAYERS) rounded up
+const MAX_LAYER_BITS = 4; // log2(MAX_LAYERS) = log2(16) = 4
 
 var source_layers_cache: [cacheStorageSize(CACHE_ENTRIES)][MAX_LAYER_BITS]u8 = .{.{0} ** MAX_LAYER_BITS} ** cacheStorageSize(CACHE_ENTRIES);
 
