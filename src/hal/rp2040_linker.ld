@@ -19,7 +19,7 @@ SECTIONS
     /* Boot2 second stage bootloader (256 bytes at flash origin) */
     .boot2 : {
         KEEP(*(.boot2))
-        . = 0x100;
+        . = ORIGIN(BOOT2) + 0x100;
     } > BOOT2
 
     /* Vector table and code */
