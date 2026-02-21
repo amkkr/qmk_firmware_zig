@@ -1,4 +1,4 @@
-name: Unit Tests
+name: C Unit Tests
 
 permissions:
   contents: read
@@ -7,7 +7,6 @@ on:
   push:
     branches:
     - master
-    - develop
   pull_request:
     paths:
     - 'builddefs/**'
@@ -15,6 +14,7 @@ on:
     - 'platforms/**'
     - 'tmk_core/**'
     - 'tests/**'
+    - 'lib/googletest/**'
     - '*.mk'
     - 'Makefile'
     - '.github/workflows/unit_test.yml'
@@ -26,12 +26,15 @@ jobs:
     container: ghcr.io/qmk/qmk_cli
 
     steps:
-    - uses: actions/checkout@v6
+    - name: Disable safe.directory check
+      run: git config --global --add safe.directory '*'
+
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
     - name: Install dependencies
       run: pip3 install -r requirements-dev.txt
 
-    - name: Run tests
-      run: qmk test-c
+    - name: Run C unit tests
+      run: make test:all
