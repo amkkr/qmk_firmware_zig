@@ -40,11 +40,68 @@ jobs:
           additional_permissions: |
             actions: read
 
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
+          # PR レビュー用カスタムプロンプト
+          prompt: |
+            日本語でレビューすること。Zig、組み込みシステム（RP2040 ARM Cortex-M0+）、USB HIDプロトコルのプロフェッショナルとして、PRの差分および差分が影響を与える既存コードをレビュー対象とする。
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr:*)'
+            # レビュースコープ
+            - PRの差分、および差分が影響を与える既存コードをレビュー対象とする
+            - ただし、差分と無関係な既存コードのリファクタリング提案はしない
+            - PRのスコープ外の改善提案はしない
+
+            # チェック観点（内部チェックリスト）
+            以下の観点で差分をチェックし、問題がある場合のみ指摘する。問題がない観点については言及不要。
+
+            ## 設計
+            - アーキテクチャへの適合性（CLAUDE.md の Architecture セクション準拠）
+            - オーバーエンジニアリング
+            - C版（upstream）との論理的等価性
+
+            ## コード品質
+            - 命名の適切さ、可読性
+            - ループ・ロジックの単純さ、早期リターン、ネストの深さ
+            - マジックナンバー、未使用変数
+            - Zig のイディオム（comptime、エラーハンドリング、defer/errdefer）
+
+            ## セキュリティ・堅牢性
+            - メモリ安全性（バッファオーバーフロー、解放漏れ、二重解放）
+            - 整数オーバーフロー（特に u8/u16 の packed struct 操作）
+            - エラーパスでのリソースリーク
+            - ハードウェアレジスタアクセスの volatile 正確性
+
+            ## プロジェクト規約（CLAUDE.md準拠）
+            - HAL モジュールの freestanding/テスト切り替えパターン
+            - packed union/struct によるビットフィールド表現
+            - comptime 関数によるマクロ置換パターン
+            - テストは upstream の googletest と論理的に等価であること
+            - コミットメッセージに Co-Authored-By を含めない
+            - 日本語でのコミュニケーション
+
+            # 出力ルール
+            - 問題がない場合: 「レビュー完了。指摘事項なし。」とだけ出力する
+            - 問題がある場合: 以下のフォーマットで出力する
+
+            ## 出力フォーマット（問題がある場合のみ）
+
+            ### 指摘事項
+            指摘のみを箇条書きで記載する。各指摘は以下の形式:
+            - **[重要度]** ファイルパス:行番号 — 指摘内容
+
+            重要度は以下の2段階:
+            - 🔴 must: マージ前に修正が必要
+            - 🟡 suggestion: 修正を推奨するが、ブロッキングではない
+
+            ### 確認済み
+            問題がなかった観点をチェックリストで示す:
+            - [x] 設計
+            - [x] コード品質
+            - [x] セキュリティ・堅牢性
+            - [x] プロジェクト規約
+
+            # 禁止事項
+            - 良い点・褒める記述は書かない
+            - 総合評価・スコア・点数は書かない
+            - コード品質の表やマトリクスは作らない
+            - 差分と無関係なリファクタリング提案はしない
+            - 「改善の余地がある」程度の曖昧な指摘はしない（具体的な問題のみ指摘）
 
