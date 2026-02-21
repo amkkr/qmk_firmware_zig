@@ -25,8 +25,11 @@ pub const Config = struct {
     move_delta: u8 = 8,
     /// 最大移動値（HID レポートの i8 範囲内）
     move_max: u8 = 127,
-    /// キー押下からリピート開始までの遅延（ms）。実際は delay * 10 で適用。
-    delay: u16 = 10,
+    /// キー押下からリピート開始までの遅延（ms）
+    /// upstream MOUSEKEY_DELAY=10 → mk_delay=1 → 実遅延 10ms だが、
+    /// 本実装では直接 ms 値を保持する（upstream デフォルト: 300ms は未使用の古い定義、
+    /// 実際のデフォルトは MOUSEKEY_DELAY=10 → 10*10=100ms）
+    delay_ms: u16 = 100,
     /// リピート間隔（ms）
     interval: u16 = 20,
     /// 最大速度倍率
@@ -38,7 +41,7 @@ pub const Config = struct {
     /// ホイール最大値
     wheel_max: u8 = 127,
     /// ホイールキー押下からリピート開始までの遅延（ms）
-    wheel_delay: u16 = 10,
+    wheel_delay_ms: u16 = 100,
     /// ホイールリピート間隔（ms）
     wheel_interval: u16 = 80,
     /// ホイール最大速度倍率
@@ -79,20 +82,21 @@ fn timesInvSqrt2(x: i8) i8 {
 }
 
 /// 移動速度を計算（加速カーブ付き）
+/// u32 中間値で計算し、大きな設定値でもオーバーフローしない
 fn moveUnit() u8 {
-    var unit: u16 = undefined;
+    var unit: u32 = 0;
     if (mousekey_accel & (1 << 0) != 0) {
-        unit = (@as(u16, config.move_delta) * @as(u16, config.max_speed)) / 4;
+        unit = (@as(u32, config.move_delta) * @as(u32, config.max_speed)) / 4;
     } else if (mousekey_accel & (1 << 1) != 0) {
-        unit = (@as(u16, config.move_delta) * @as(u16, config.max_speed)) / 2;
+        unit = (@as(u32, config.move_delta) * @as(u32, config.max_speed)) / 2;
     } else if (mousekey_accel & (1 << 2) != 0) {
-        unit = @as(u16, config.move_delta) * @as(u16, config.max_speed);
+        unit = @as(u32, config.move_delta) * @as(u32, config.max_speed);
     } else if (mousekey_repeat == 0) {
-        unit = @as(u16, config.move_delta);
+        unit = @as(u32, config.move_delta);
     } else if (mousekey_repeat >= config.time_to_max) {
-        unit = @as(u16, config.move_delta) * @as(u16, config.max_speed);
+        unit = @as(u32, config.move_delta) * @as(u32, config.max_speed);
     } else {
-        unit = (@as(u16, config.move_delta) * @as(u16, config.max_speed) * @as(u16, mousekey_repeat)) / @as(u16, config.time_to_max);
+        unit = (@as(u32, config.move_delta) * @as(u32, config.max_speed) * @as(u32, mousekey_repeat)) / @as(u32, config.time_to_max);
     }
     if (unit > config.move_max) return config.move_max;
     if (unit == 0) return 1;
@@ -100,20 +104,21 @@ fn moveUnit() u8 {
 }
 
 /// ホイール速度を計算（加速カーブ付き）
+/// u32 中間値で計算し、大きな設定値でもオーバーフローしない
 fn wheelUnit() u8 {
-    var unit: u16 = undefined;
+    var unit: u32 = 0;
     if (mousekey_accel & (1 << 0) != 0) {
-        unit = (@as(u16, config.wheel_delta) * @as(u16, config.wheel_max_speed)) / 4;
+        unit = (@as(u32, config.wheel_delta) * @as(u32, config.wheel_max_speed)) / 4;
     } else if (mousekey_accel & (1 << 1) != 0) {
-        unit = (@as(u16, config.wheel_delta) * @as(u16, config.wheel_max_speed)) / 2;
+        unit = (@as(u32, config.wheel_delta) * @as(u32, config.wheel_max_speed)) / 2;
     } else if (mousekey_accel & (1 << 2) != 0) {
-        unit = @as(u16, config.wheel_delta) * @as(u16, config.wheel_max_speed);
+        unit = @as(u32, config.wheel_delta) * @as(u32, config.wheel_max_speed);
     } else if (mousekey_wheel_repeat == 0) {
-        unit = @as(u16, config.wheel_delta);
+        unit = @as(u32, config.wheel_delta);
     } else if (mousekey_wheel_repeat >= config.wheel_time_to_max) {
-        unit = @as(u16, config.wheel_delta) * @as(u16, config.wheel_max_speed);
+        unit = @as(u32, config.wheel_delta) * @as(u32, config.wheel_max_speed);
     } else {
-        unit = (@as(u16, config.wheel_delta) * @as(u16, config.wheel_max_speed) * @as(u16, mousekey_wheel_repeat)) / @as(u16, config.wheel_time_to_max);
+        unit = (@as(u32, config.wheel_delta) * @as(u32, config.wheel_max_speed) * @as(u32, mousekey_wheel_repeat)) / @as(u32, config.wheel_time_to_max);
     }
     if (unit > config.wheel_max) return config.wheel_max;
     if (unit == 0) return 1;
@@ -150,7 +155,7 @@ pub fn task() void {
 
     // カーソル移動の処理
     if ((tmpmr.x != 0 or tmpmr.y != 0) and
-        timer.elapsed(last_timer_c) > if (mousekey_repeat != 0) config.interval else config.delay * 10)
+        timer.elapsed(last_timer_c) > if (mousekey_repeat != 0) config.interval else config.delay_ms)
     {
         if (mousekey_repeat != 255) mousekey_repeat += 1;
         if (tmpmr.x != 0) {
@@ -169,17 +174,18 @@ pub fn task() void {
         }
 
         // 対角移動の補正 [1/sqrt(2)]
+        // 補正後に0になった場合は元の方向を維持する
         if (mouse_report.x != 0 and mouse_report.y != 0) {
             mouse_report.x = timesInvSqrt2(mouse_report.x);
-            if (mouse_report.x == 0) mouse_report.x = 1;
+            if (mouse_report.x == 0) mouse_report.x = if (tmpmr.x > 0) @as(i8, 1) else -1;
             mouse_report.y = timesInvSqrt2(mouse_report.y);
-            if (mouse_report.y == 0) mouse_report.y = 1;
+            if (mouse_report.y == 0) mouse_report.y = if (tmpmr.y > 0) @as(i8, 1) else -1;
         }
     }
 
     // スクロールの処理
     if ((tmpmr.v != 0 or tmpmr.h != 0) and
-        timer.elapsed(last_timer_w) > if (mousekey_wheel_repeat != 0) config.wheel_interval else config.wheel_delay * 10)
+        timer.elapsed(last_timer_w) > if (mousekey_wheel_repeat != 0) config.wheel_interval else config.wheel_delay_ms)
     {
         if (mousekey_wheel_repeat != 255) mousekey_wheel_repeat += 1;
         if (tmpmr.v != 0) {
@@ -198,11 +204,12 @@ pub fn task() void {
         }
 
         // 対角スクロールの補正
+        // 補正後に0になった場合は元の方向を維持する
         if (mouse_report.v != 0 and mouse_report.h != 0) {
             mouse_report.v = timesInvSqrt2(mouse_report.v);
-            if (mouse_report.v == 0) mouse_report.v = 1;
+            if (mouse_report.v == 0) mouse_report.v = if (tmpmr.v > 0) @as(i8, 1) else -1;
             mouse_report.h = timesInvSqrt2(mouse_report.h);
-            if (mouse_report.h == 0) mouse_report.h = 1;
+            if (mouse_report.h == 0) mouse_report.h = if (tmpmr.h > 0) @as(i8, 1) else -1;
         }
     }
 
