@@ -18,8 +18,12 @@ const is_freestanding = builtin.os.tag == .freestanding;
 
 pub const startup = if (is_freestanding) struct {
     const vector_table_zig = @import("hal/vector_table.zig");
+    const boot2_mod = @import("hal/boot2.zig");
 
     extern var _stack_top: anyopaque;
+
+    /// Boot2 second stage bootloader (256 bytes at 0x10000000)
+    export const boot2_entry linksection(".boot2") = boot2_mod.boot2;
 
     /// Vector table placed in .vectors section
     export const vector_table linksection(".vectors") = vector_table_zig.vectorTable(&_start);
@@ -87,4 +91,9 @@ test "module structure exists" {
     _ = hal;
     _ = drivers;
     _ = keyboards;
+}
+
+test {
+    // Boot2モジュールのテストを実行
+    _ = @import("hal/boot2.zig");
 }

@@ -2,12 +2,13 @@
  * Flash: 2MB XIP at 0x10000000
  * SRAM:  256KB at 0x20000000
  *
- * Note: Boot2 (second stage bootloader, 256 bytes) will be
- * prepended separately when generating UF2 output.
+ * Boot2 (256 bytes) is placed at flash origin (0x10000000).
+ * The main program starts at 0x10000100 (after Boot2).
  */
 MEMORY
 {
-    FLASH  (rx)  : ORIGIN = 0x10000000, LENGTH = 2048K
+    BOOT2  (rx)  : ORIGIN = 0x10000000, LENGTH = 256
+    FLASH  (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K - 256
     RAM    (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
@@ -15,6 +16,12 @@ ENTRY(_start);
 
 SECTIONS
 {
+    /* Boot2 second stage bootloader (256 bytes at flash origin) */
+    .boot2 : {
+        KEEP(*(.boot2))
+        . = 0x100;
+    } > BOOT2
+
     /* Vector table and code */
     .text : {
         KEEP(*(.vectors))
