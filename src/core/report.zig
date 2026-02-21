@@ -54,8 +54,9 @@ pub const KeyboardReport = extern struct {
         self.keys = .{0} ** KEYBOARD_REPORT_KEYS;
     }
 
-    /// Add a keycode to the report. Returns false if report is full.
+    /// Add a keycode to the report. Returns false if report is full or kc is 0 (KC.NO).
     pub fn addKey(self: *KeyboardReport, kc: u8) bool {
+        if (kc == 0) return false;
         // Check if already present
         for (&self.keys) |*k| {
             if (k.* == kc) return true;

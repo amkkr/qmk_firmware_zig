@@ -80,8 +80,8 @@ pub fn setPinInput(pin: Pin) void {
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Disable pull-up/down
-        rp2040.padCtrlAddr(pin).* = 0x56; // IE=1, default pad settings
+        // IE=1, DRIVE=01, SCHMITT=1, PUE=0, PDE=0
+        rp2040.padCtrlAddr(pin).* = 0x52;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls &= ~(@as(u32, 1) << pin);
@@ -93,8 +93,8 @@ pub fn setPinInputHigh(pin: Pin) void {
     if (is_freestanding) {
         rp2040.gpioCtrlAddr(pin).* = 5;
         rp2040.GPIO_OE_CLR.* = @as(u32, 1) << pin;
-        // Enable pull-up: PUE=1, PDE=0, IE=1
-        rp2040.padCtrlAddr(pin).* = 0x4E; // PUE | IE | SLEWFAST
+        // IE=1, SCHMITT=1, PUE=1, PDE=0
+        rp2040.padCtrlAddr(pin).* = 0x4A;
     } else {
         mock_pin_directions &= ~(@as(u32, 1) << pin);
         mock_pin_pulls |= @as(u32, 1) << pin;
