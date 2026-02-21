@@ -138,6 +138,8 @@ pub const UsbDriver = struct {
     keyboard_leds: u8 = 0,
     /// Data toggle tracking per endpoint (IN)
     data_toggle: [4]bool = .{ false, false, false, false },
+    /// Mock EP0 OUT data (for testing SET_REPORT etc.)
+    mock_ep0_out_data: u8 = 0,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -149,6 +151,7 @@ pub const UsbDriver = struct {
         self.keyboard_idle = 0;
         self.keyboard_leds = 0;
         self.data_toggle = .{ false, false, false, false };
+        self.mock_ep0_out_data = 0;
 
         if (is_freestanding) {
             self.hwInit();
@@ -198,7 +201,7 @@ pub const UsbDriver = struct {
         switch (req_type) {
             0x00 => self.handleStandardRequest(setup),
             0x20 => self.handleClassRequest(setup),
-            else => {},
+            else => self.stallEndpoint0(),
         }
     }
 
@@ -228,7 +231,7 @@ pub const UsbDriver = struct {
                 const desc_index: u8 = @truncate(setup.wValue);
                 self.handleGetDescriptor(desc_type, desc_index, setup.wLength);
             },
-            else => {},
+            else => self.stallEndpoint0(),
         }
     }
 
@@ -248,14 +251,21 @@ pub const UsbDriver = struct {
             },
             HidRequest.SET_REPORT => {
                 // LED report from host (1 byte, bits: NumLock, CapsLock, ScrollLock, Compose, Kana)
-                // In real implementation, read the data from EP0 OUT buffer
-                // For now, store wValue low byte
-                self.keyboard_leds = @truncate(setup.wValue);
+                // The LED data is sent in the data phase of the control transfer (EP0 OUT buffer),
+                // not in wValue. wValue contains (ReportType << 8 | ReportID).
+                if (is_freestanding) {
+                    // Read LED byte from EP0 OUT data buffer
+                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE));
+                    self.keyboard_leds = ep0_buf.*;
+                } else {
+                    // Mock: use ep0_out_data if set, otherwise no-op
+                    self.keyboard_leds = self.mock_ep0_out_data;
+                }
             },
             HidRequest.GET_PROTOCOL => {
                 // Would send protocol value back
             },
-            else => {},
+            else => self.stallEndpoint0(),
         }
     }
 
@@ -267,6 +277,14 @@ pub const UsbDriver = struct {
         // In real implementation, this would copy the descriptor to EP0 IN buffer
         // and start the transfer. The actual descriptor data is in usb_descriptors.zig.
         // For the mock/test version, this is a no-op.
+    }
+
+    fn stallEndpoint0(self: *UsbDriver) void {
+        if (is_freestanding) {
+            const ep_stall_arm = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.EP_STALL_ARM));
+            ep_stall_arm.* = 0x03; // Stall EP0 IN and OUT
+        }
+        _ = self;
     }
 
     fn sendEndpoint(self: *UsbDriver, ep: u8, data: []const u8) void {
@@ -485,10 +503,12 @@ test "UsbDriver SET_REPORT (LEDs)" {
     var drv = UsbDriver{};
     drv.init();
 
+    // Simulate LED data in EP0 OUT data buffer (mock)
+    drv.mock_ep0_out_data = 0x02; // CapsLock
     drv.handleSetup(&.{
         .bmRequestType = 0x21,
         .bRequest = HidRequest.SET_REPORT,
-        .wValue = 0x02, // CapsLock
+        .wValue = 0x0200, // ReportType=Output(0x02), ReportID=0
         .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
     });
 

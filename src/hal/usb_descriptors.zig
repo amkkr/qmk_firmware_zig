@@ -299,7 +299,7 @@ pub const extra_report_descriptor = blk: {
 pub const device_descriptor = [18]u8{
     18, // bLength
     DescriptorType.DEVICE, // bDescriptorType
-    0x10, 0x01, // bcdUSB (USB 1.1)
+    0x00, 0x02, // bcdUSB (USB 2.0)
     DeviceClass.PER_INTERFACE, // bDeviceClass
     0x00, // bDeviceSubClass
     0x00, // bDeviceProtocol
