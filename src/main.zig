@@ -21,6 +21,13 @@ pub const startup = if (is_freestanding) struct {
 
     extern var _stack_top: anyopaque;
 
+    // Linker-provided section symbols (must be at struct scope, not function scope)
+    extern var _sdata: u8;
+    extern var _edata: u8;
+    extern const _sidata: u8;
+    extern var _sbss: u8;
+    extern var _ebss: u8;
+
     /// Vector table placed in .vectors section
     export const vector_table linksection(".vectors") = vector_table_zig.vectorTable(&_start);
 
@@ -37,25 +44,19 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn zigMain() callconv(.c) noreturn {
-        @setRuntimeSafety(false);
-        // Initialize .data section: copy initial values from FLASH to RAM
-        {
-            extern var _sdata: u8;
-            extern var _edata: u8;
-            extern const _sidata: u8;
-            const data_len = @intFromPtr(&_edata) - @intFromPtr(&_sdata);
-            @memcpy(
-                @as([*]u8, @ptrCast(&_sdata))[0..data_len],
-                @as([*]const u8, @ptrCast(&_sidata))[0..data_len],
-            );
-        }
-        // Zero-initialize .bss section
-        {
-            extern var _sbss: u8;
-            extern var _ebss: u8;
-            const bss_len = @intFromPtr(&_ebss) - @intFromPtr(&_sbss);
-            @memset(@as([*]u8, @ptrCast(&_sbss))[0..bss_len], 0);
-        }
+        // Initialize .data section (copy from flash to RAM)
+        const data_start: [*]u8 = @ptrCast(&_sdata);
+        const data_end: [*]u8 = @ptrCast(&_edata);
+        const data_src: [*]const u8 = @ptrCast(&_sidata);
+        const data_size = @intFromPtr(data_end) - @intFromPtr(data_start);
+        @memcpy(data_start[0..data_size], data_src[0..data_size]);
+
+        // Initialize .bss section (zero fill)
+        const bss_start: [*]u8 = @ptrCast(&_sbss);
+        const bss_end: [*]u8 = @ptrCast(&_ebss);
+        const bss_size = @intFromPtr(bss_end) - @intFromPtr(bss_start);
+        @memset(bss_start[0..bss_size], 0);
+
         main() catch {};
         while (true) {
             asm volatile ("wfi");
