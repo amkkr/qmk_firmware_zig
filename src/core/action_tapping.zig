@@ -187,6 +187,11 @@ fn withinTappingTerm(ev: KeyEvent) bool {
     return timerDiff16(ev.time, tapping_key.event.time) < TAPPING_TERM;
 }
 
+/// Quick Tap判定: 前回のタップから十分短い時間内かどうか
+///
+/// 注意: C版との差異あり。C版（action_tapping.c）では前回タップの「リリース時刻」を
+/// 基準にしているが、本実装では前回タップの「プレス時刻」（tapping_key.event.time）を
+/// 基準にしている。Quick Tap Termが十分に長い場合は実用上の差異は小さい。
 fn withinQuickTapTerm(ev: KeyEvent) bool {
     return timerDiff16(ev.time, tapping_key.event.time) < QUICK_TAP_TERM;
 }

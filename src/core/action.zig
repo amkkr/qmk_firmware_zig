@@ -92,7 +92,11 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         .layer => processLayerAction(ev, act),
         .layer_mods => processLayerModsAction(ev, act),
         .layer_tap, .layer_tap_ext => processLayerTapAction(keyp, act),
-        else => {},
+        else => {
+            if (@import("builtin").is_test) {
+                @import("std").log.warn("unhandled action kind: {}", .{@intFromEnum(kind)});
+            }
+        },
     }
 }
 
@@ -152,18 +156,21 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
     }
 }
 
-/// Process layer switch actions
+/// Process layer switch actions (ACT_LAYER)
+///
+/// C版ではACT_LAYERのparamはlayer_bitop構造体で解釈される:
+///   bits[3:0]=bits, bit[4]=xbit, bits[7:5]=part, bits[9:8]=on, bits[11:10]=op
+/// 現在の実装は簡易版。完全なbitwise操作は未実装。
+/// TODO: C版のbitwise layer操作（OP_BIT_AND/OR/XOR/SET）の完全な移植
 fn processLayerAction(ev: KeyEvent, act: Action) void {
-    // Layer action param: bits[7:4]=operation, bits[3:0]=layer
     const param = act.kind.param;
-    const l: u4 = @truncate(param);
-    const op: u4 = @truncate(param >> 4);
-    _ = op;
+    const action_layer: u4 = @truncate(param);
 
+    // OP_ON_OFF: プレスでレイヤーON、リリースでレイヤーOFF
     if (ev.pressed) {
-        layer.layerOn(l);
+        layer.layerOn(action_layer);
     } else {
-        layer.layerOff(l);
+        layer.layerOff(action_layer);
     }
 }
 
