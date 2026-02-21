@@ -18,6 +18,7 @@ const is_freestanding = builtin.os.tag == .freestanding;
 
 pub const startup = if (is_freestanding) struct {
     const vector_table_mod = @import("hal/vector_table.zig");
+    const boot2_mod = @import("hal/boot2.zig");
     const clock = @import("hal/clock.zig");
 
     extern var _stack_top: anyopaque;
@@ -28,6 +29,9 @@ pub const startup = if (is_freestanding) struct {
     extern const _sidata: u8;
     extern var _sbss: u8;
     extern var _ebss: u8;
+
+    /// Boot2 second stage bootloader (256 bytes at 0x10000000)
+    export const boot2_entry linksection(".boot2") = boot2_mod.boot2;
 
     /// Vector table placed in .vectors section
     export const vector_table linksection(".vectors") = vector_table_mod.vectorTable(&_start);
@@ -105,4 +109,6 @@ test {
     // Run all sub-module tests
     @import("std").testing.refAllDecls(core);
     @import("std").testing.refAllDecls(hal);
+    // Boot2モジュールのテストを実行
+    _ = @import("hal/boot2.zig");
 }
