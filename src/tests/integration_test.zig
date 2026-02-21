@@ -27,6 +27,9 @@ const report_mod = @import("../core/report.zig");
 const keycode = @import("../core/keycode.zig");
 const keymap_mod = @import("../core/keymap.zig");
 const extrakey = @import("../core/extrakey.zig");
+const tapping_mod = @import("../core/action_tapping.zig");
+
+const TAPPING_TERM = tapping_mod.TAPPING_TERM;
 
 // Keyboard definition
 const madbd34 = @import("../keyboards/madbd34.zig");
@@ -259,11 +262,11 @@ test "E2E: MO(1)でレイヤー1が有効化される" {
     press(3, 8, 100);
     // MO(1) は layer_tap + OP_ON_OFF のため、タッピングステートマシンを通る
     // OP_ON_OFF は hold動作 (tap_count=0 でレイヤーON)
-    tick(301); // TAPPING_TERM を超える
+    tick(100 + TAPPING_TERM + 1); // TAPPING_TERM を超える
 
     try testing.expect(layer.layerStateIs(1));
 
-    release(3, 8, 400);
+    release(3, 8, 100 + TAPPING_TERM + 100);
     try testing.expect(!layer.layerStateIs(1));
 }
 
@@ -273,12 +276,12 @@ test "E2E: MO(1)ホールド中にレイヤー1のキーが入力される" {
 
     // (3,8) = MO(1) をホールド
     press(3, 8, 100);
-    tick(301); // TAPPING_TERM を超えてホールド確定
+    tick(100 + TAPPING_TERM + 1); // TAPPING_TERM を超えてホールド確定
 
     try testing.expect(layer.layerStateIs(1));
 
     // Layer 1: (0,1) = KC.@"1" (HID 0x1E) ※ Layer 0 では KC.Q
-    press(0, 1, 320);
+    press(0, 1, 100 + TAPPING_TERM + 20);
 
     // Layer 1がアクティブなので KC.1 が出力されるはず
     var found_1 = false;
@@ -291,8 +294,8 @@ test "E2E: MO(1)ホールド中にレイヤー1のキーが入力される" {
     }
     try testing.expect(found_1);
 
-    release(0, 1, 400);
-    release(3, 8, 450);
+    release(0, 1, 100 + TAPPING_TERM + 100);
+    release(3, 8, 100 + TAPPING_TERM + 150);
 }
 
 test "E2E: LT(1,SPC) タップでスペースが入力される" {
@@ -325,11 +328,11 @@ test "E2E: LT(1,SPC) ホールドでレイヤー1が有効化される" {
 
     // madbd34 Layer 0: (3,5) = LT(1, KC.SPC)
     press(3, 5, 100);
-    tick(301); // TAPPING_TERM を超える
+    tick(100 + TAPPING_TERM + 1); // TAPPING_TERM を超える
 
     try testing.expect(layer.layerStateIs(1));
 
-    release(3, 5, 400);
+    release(3, 5, 100 + TAPPING_TERM + 100);
     try testing.expect(!layer.layerStateIs(1));
 }
 
@@ -359,11 +362,11 @@ test "E2E: LT(2,ESC) ホールドでレイヤー2が有効化される" {
 
     // madbd34 Layer 0: (3,6) = LT(2, KC.ESC)
     press(3, 6, 100);
-    tick(301);
+    tick(100 + TAPPING_TERM + 1);
 
     try testing.expect(layer.layerStateIs(2));
 
-    release(3, 6, 400);
+    release(3, 6, 100 + TAPPING_TERM + 100);
     try testing.expect(!layer.layerStateIs(2));
 }
 
@@ -377,11 +380,11 @@ test "E2E: レイヤー2で矢印キーが入力される" {
 
     // LT(2, ESC)ホールドでレイヤー2有効化
     press(3, 6, 100);
-    tick(301);
+    tick(100 + TAPPING_TERM + 1);
     try testing.expect(layer.layerStateIs(2));
 
     // Layer 2: (1,6)=LEFT(0x50), (1,7)=DOWN(0x51), (1,8)=UP(0x52), (1,9)=RIGHT(0x4F)
-    press(1, 6, 320); // LEFT
+    press(1, 6, 100 + TAPPING_TERM + 20); // LEFT
 
     var found_left = false;
     var i: usize = 0;
@@ -393,8 +396,8 @@ test "E2E: レイヤー2で矢印キーが入力される" {
     }
     try testing.expect(found_left);
 
-    release(1, 6, 400);
-    release(3, 6, 450);
+    release(1, 6, 100 + TAPPING_TERM + 100);
+    release(3, 6, 100 + TAPPING_TERM + 150);
 }
 
 // ============================================================
@@ -541,21 +544,21 @@ test "E2E: レイヤー切替後にベースレイヤーに正しく戻る" {
 
     // MO(1) ホールド
     press(3, 8, 100);
-    tick(301);
+    tick(100 + TAPPING_TERM + 1);
     try testing.expect(layer.layerStateIs(1));
 
     // MO(1) リリース
-    release(3, 8, 400);
+    release(3, 8, 100 + TAPPING_TERM + 100);
     try testing.expect(!layer.layerStateIs(1));
     try testing.expect(layer.layerStateIs(0));
 
     // LT(2, ESC) ホールド
     press(3, 6, 500);
-    tick(701);
+    tick(500 + TAPPING_TERM + 1);
     try testing.expect(layer.layerStateIs(2));
 
     // LT(2, ESC) リリース
-    release(3, 6, 800);
+    release(3, 6, 500 + TAPPING_TERM + 100);
     try testing.expect(!layer.layerStateIs(2));
     try testing.expect(layer.layerStateIs(0));
 }
@@ -590,16 +593,16 @@ test "E2E: レイヤー切替中のキーリリースが正しいレイヤーで
 
     // キーを押したままレイヤー1を有効化（MO(1)ホールド）
     press(3, 8, 150);
-    tick(351); // TAPPING_TERM超え
+    tick(150 + TAPPING_TERM + 1); // TAPPING_TERM超え
 
     // レイヤー1が有効でも、既にプレスされたQは Layer 0 の解決で維持される
     // （ソースレイヤーキャッシュにより）
 
     // Qリリース → Layer 0 の Q として unregister される
-    release(0, 1, 400);
+    release(0, 1, 150 + TAPPING_TERM + 50);
 
     // MO(1) リリース
-    release(3, 8, 450);
+    release(3, 8, 150 + TAPPING_TERM + 100);
 }
 
 // ============================================================
@@ -612,18 +615,18 @@ test "E2E: Layer 1 の LT(3,ESC) でレイヤー3にアクセスできる" {
 
     // まず MO(1) でレイヤー1を有効化
     press(3, 8, 100);
-    tick(301);
+    tick(100 + TAPPING_TERM + 1);
     try testing.expect(layer.layerStateIs(1));
 
     // Layer 1: (3,6) = LT(3, KC.ESC) をホールド
-    press(3, 6, 320);
-    tick(521); // TAPPING_TERM 超え
+    press(3, 6, 100 + TAPPING_TERM + 20);
+    tick(100 + TAPPING_TERM + 20 + TAPPING_TERM + 1); // TAPPING_TERM 超え
 
     try testing.expect(layer.layerStateIs(3));
 
     // リリース
-    release(3, 6, 600);
-    release(3, 8, 650);
+    release(3, 6, 100 + TAPPING_TERM + 20 + TAPPING_TERM + 100);
+    release(3, 8, 100 + TAPPING_TERM + 20 + TAPPING_TERM + 150);
 }
 
 // ============================================================
