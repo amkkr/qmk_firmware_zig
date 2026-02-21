@@ -55,6 +55,16 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+
+    // Flash tool tests
+    const flash_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/flash.zig"),
+            .target = native_target,
+        }),
+    });
+    const run_flash_tests = b.addRunArtifact(flash_tests);
+    test_step.dependOn(&run_flash_tests.step);
 }
 
 fn addFlashStep(
