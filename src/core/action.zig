@@ -13,6 +13,7 @@ const keycode_mod = @import("keycode.zig");
 const layer = @import("layer.zig");
 pub const host = @import("host.zig");
 const tapping = @import("action_tapping.zig");
+const extrakey = @import("extrakey.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -89,6 +90,7 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
         .mods_tap, .rmods_tap => processModsTapAction(keyp, act),
+        .usage => extrakey.processUsageAction(ev, act.code),
         .layer => processLayerAction(ev, act),
         .layer_mods => processLayerModsAction(ev, act),
         .layer_tap, .layer_tap_ext => processLayerTapAction(keyp, act),
