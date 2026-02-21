@@ -51,6 +51,7 @@ pub const XoscRegs = struct {
 
     // CTRL フィールド
     pub const CTRL_ENABLE_BITS: u32 = 0x00FAB000;
+    /// XOSCシャットダウン時に使用（将来のスリープモード実装用）
     pub const CTRL_DISABLE_BITS: u32 = 0x00D1E000;
     pub const CTRL_FREQ_RANGE_1_15MHZ: u32 = 0xAA0;
 
@@ -58,7 +59,7 @@ pub const XoscRegs = struct {
     pub const STATUS_STABLE_BIT: u32 = 1 << 31;
 
     /// 起動遅延値: (((12_000_000 / 1000) + 128) / 256) = 47
-    /// XOSC安定化に必要なサイクル数を256倍した値
+    /// 256XOSCサイクルを1単位とした待機カウント数
     pub const STARTUP_DELAY: u32 = 47;
 };
 
@@ -238,6 +239,7 @@ pub fn init() void {
 /// 12MHz外部クリスタルを起動し、安定するまで待機する。
 /// RP2040データシート Section 2.16.3 参照。
 fn initXosc() void {
+    if (is_test) return;
     // 起動遅延を設定
     regWrite(XoscRegs.STARTUP, XoscRegs.STARTUP_DELAY);
 
@@ -258,6 +260,7 @@ fn initXosc() void {
 ///
 /// RP2040データシート Section 2.18.2 参照。
 fn initPll(pll_base: u32, fbdiv: u32, postdiv1: u32, postdiv2: u32) void {
+    if (is_test) return;
     const cs = pll_base + PllRegs.CS_OFFSET;
     const pwr = pll_base + PllRegs.PWR_OFFSET;
     const fbdiv_reg = pll_base + PllRegs.FBDIV_INT_OFFSET;
@@ -285,6 +288,7 @@ fn initPll(pll_base: u32, fbdiv: u32, postdiv1: u32, postdiv2: u32) void {
 
 /// clk_refをXOSCに切り替える
 fn configClkRef() void {
+    if (is_test) return;
     // 分周器を1:1に設定
     regWrite(ClockRegs.CLK_REF_DIV, ClockRegs.DIV_1);
 
@@ -297,6 +301,7 @@ fn configClkRef() void {
 
 /// clk_sysをPLL_SYSに切り替える
 fn configClkSys() void {
+    if (is_test) return;
     // 分周器を1:1に設定
     regWrite(ClockRegs.CLK_SYS_DIV, ClockRegs.DIV_1);
 
@@ -312,6 +317,7 @@ fn configClkSys() void {
 
 /// clk_usbをPLL_USBに切り替える
 fn configClkUsb() void {
+    if (is_test) return;
     // 分周器を1:1に設定
     regWrite(ClockRegs.CLK_USB_DIV, ClockRegs.DIV_1);
 
@@ -321,6 +327,7 @@ fn configClkUsb() void {
 
 /// clk_periをclk_sysから設定する
 fn configClkPeri() void {
+    if (is_test) return;
     // AUXSRCをclk_sysに設定し、有効化
     regWrite(ClockRegs.CLK_PERI_CTRL, ClockRegs.CLK_PERI_AUXSRC_CLK_SYS | ClockRegs.CLK_PERI_ENABLE_BIT);
 }
@@ -330,6 +337,7 @@ fn configClkPeri() void {
 /// clk_ref（12MHz）をベースに1μsのtickを生成する。
 /// タイマー等のペリフェラルで使用される。
 fn configWatchdogTick() void {
+    if (is_test) return;
     regWrite(WatchdogRegs.TICK, WatchdogRegs.TICK_CYCLES_12MHZ | WatchdogRegs.TICK_ENABLE_BIT);
 }
 
@@ -338,6 +346,7 @@ fn configWatchdogTick() void {
 /// RESETレジスタの対象ビットをクリアしてリセット解除し、
 /// RESET_DONEで完了を確認する。
 fn resetSubsystem(bit: u32) void {
+    if (is_test) return;
     // リセットアサート
     regSet(ResetsRegs.RESET, bit);
     // リセット解除
