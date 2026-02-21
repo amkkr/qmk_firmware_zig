@@ -8,7 +8,7 @@ QMK Firmware のカスタムキーボードファームウェアを C から Zig
 upstream: https://github.com/qmk/qmk_firmware
 
 - **一方向同期のみ**: upstream から取り込むことはあるが、upstream へ push しない
-- 対象キーボード: madbd34（RP2040, 4x12スプリット, 41キー）
+- 対象キーボード: madbd34（RP2040, 4x12スプリット, 38キー）
 
 ## Communication Rules
 
@@ -61,15 +61,48 @@ qmk new-keymap -kb <keyboard> -km <keymap>
 - `platforms/chibios/` - RP2040向けプラットフォーム実装（ChibiOS RTOS）
 - `tests/` - googletest ベースのユニットテスト（ホストネイティブ実行）
 
-### Zig版（移行先、構築中）
+### Zig版（移行先）
+
+処理フロー（C版と同等）: マトリックススキャン → デバウンス → キーイベント生成 → アクション解決 → タッピング判定 → アクション実行 → HIDレポート送信
 
 ```
 src/
-├── core/         # コアロジック
-├── hal/          # ハードウェア抽象化層（RP2040）
-├── drivers/      # ドライバ
-└── keyboards/    # キーボード定義
+├── main.zig                       # エントリポイント（RP2040スタートアップ含む）
+├── core/                          # コアロジック
+│   ├── core.zig                   # モジュール再エクスポート
+│   ├── keycode.zig                # キーコード定義（HID Usage Table 準拠、u16）
+│   ├── action_code.zig            # アクションコード（16bit packed union、C版 action_t 互換）
+│   ├── event.zig                  # キーイベント・キーポジション構造体
+│   ├── report.zig                 # USB HID レポート構造体（キーボード、マウス、Consumer）
+│   ├── matrix.zig                 # COL2ROW マトリックススキャン
+│   ├── debounce.zig               # 対称遅延キー単位デバウンス（sym_defer_pk）
+│   ├── keymap.zig                 # キーマップデータ構造と comptime LAYOUT 関数
+│   ├── layer.zig                  # レイヤー状態管理（ビットマスク、MO/TO/TG/DF 操作）
+│   ├── action.zig                 # アクション解決・実行（基本キー、Mod-Tap、Layer-Tap）
+│   ├── action_tapping.zig         # タップ/ホールド判定ステートマシン
+│   ├── action_tapping_test.zig    # タッピングのユニットテスト
+│   ├── host.zig                   # HostDriver インターフェース、レポート状態管理
+│   ├── bootmagic.zig              # Bootmagic Lite（起動時キー検出→BOOTSEL）
+│   ├── test_driver.zig            # モック HID ドライバ（テスト用）
+│   └── test_fixture.zig           # キーボードシミュレーション環境（テスト用）
+├── hal/                           # ハードウェア抽象化層（RP2040）
+│   ├── hal.zig                    # モジュール再エクスポート
+│   ├── gpio.zig                   # GPIO ドライバ（レジスタ直接アクセス / テスト時モック）
+│   ├── timer.zig                  # タイマー（ミリ秒精度 / テスト時モック）
+│   ├── eeprom.zig                 # フラッシュベース EEPROM エミュレーション
+│   ├── usb.zig                    # USB デバイスドライバ（RP2040 USB ペリフェラル直接制御）
+│   ├── usb_descriptors.zig        # USB/HID ディスクリプタ定義
+│   ├── boot2.zig                  # 第2段ブートローダー（W25Q080 互換、XIP 設定）
+│   ├── clock.zig                  # クロックツリー初期化（XOSC→PLL→125MHz/48MHz）
+│   ├── bootloader.zig             # BOOTSEL モードジャンプ（Watchdog リセット）
+│   └── vector_table.zig           # ARM Cortex-M0+ 割り込みベクタテーブル
+├── drivers/                       # ドライバ（未実装）
+└── keyboards/                     # キーボード定義（未実装）
 ```
+
+設計方針:
+- 各 HAL モジュールは `builtin.os.tag == .freestanding` で実機/テストを切り替え
+- テスト時はモック実装が自動的に使用され、ホストネイティブで `zig build test` 実行可能
 
 ### 移行上の重要ポイント
 
