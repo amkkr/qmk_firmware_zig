@@ -72,7 +72,7 @@ pub fn scan(m: *matrix.Matrix) void {
     // デバウンスのため2回スキャン
     _ = m.scan();
     if (!is_test) {
-        timer.delayMs(BOOTMAGIC_DEBOUNCE_MS);
+        timer.waitMs(BOOTMAGIC_DEBOUNCE_MS);
     }
     _ = m.scan();
 
