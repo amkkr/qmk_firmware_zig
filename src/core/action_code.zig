@@ -7,7 +7,6 @@
 //!   [11:0]  param - action parameters (12 bits)
 
 const keycode = @import("keycode.zig");
-const extrakey = @import("extrakey.zig");
 const Keycode = keycode.Keycode;
 
 /// Action kind IDs (4 bits, bits 12-15)
@@ -209,14 +208,16 @@ pub fn keycodeToAction(kc: Keycode) Action {
 
     // System keycodes (KC_SYSTEM_POWER - KC_SYSTEM_WAKE)
     if (keycode.isSystemKeycode(kc)) {
-        const usage = extrakey.keycodeToSystem(@truncate(kc));
-        return .{ .code = extrakey.actionUsageSystem(@truncate(usage)) };
+        const ek = @import("extrakey.zig");
+        const usage = ek.keycodeToSystem(@truncate(kc));
+        return .{ .code = ek.actionUsageSystem(@truncate(usage)) };
     }
 
     // Consumer keycodes (KC_AUDIO_MUTE - KC_LAUNCHPAD)
     if (keycode.isConsumerKeycode(kc)) {
-        const usage = extrakey.keycodeToConsumer(@truncate(kc));
-        return .{ .code = extrakey.actionUsageConsumer(@truncate(usage)) };
+        const ek = @import("extrakey.zig");
+        const usage = ek.keycodeToConsumer(@truncate(kc));
+        return .{ .code = ek.actionUsageConsumer(@truncate(usage)) };
     }
 
     // Mouse keycodes (within basic range but handled with ACT_MOUSEKEY)

@@ -7,13 +7,36 @@
 const report_mod = @import("report.zig");
 const host = @import("host.zig");
 const keycode_mod = @import("keycode.zig");
-const action_code = @import("action_code.zig");
 const event_mod = @import("event.zig");
 
 const ExtraReport = report_mod.ExtraReport;
-const Action = action_code.Action;
 const KC = keycode_mod.KC;
-const Keycode = keycode_mod.Keycode;
+
+// ============================================================
+// Usage Page 定数（action_code.zig の循環インポートを避けるためローカル定義）
+// ============================================================
+
+/// ACT_USAGE の kind ID (0b0100 = 4)
+const ACT_USAGE: u4 = 0b0100;
+
+/// Usage page IDs（action_code.UsagePage と同一値）
+const PAGE_SYSTEM: u2 = 1;
+const PAGE_CONSUMER: u2 = 2;
+
+/// Action の usage フィールドを解釈する packed struct
+/// action_code.Action.usage と同一レイアウト
+const UsageAction = packed struct {
+    code: u10,
+    page: u2,
+    kind: u4,
+};
+
+/// Action を u16 または usage フィールドとして解釈する packed union
+/// action_code.Action のサブセット（extrakey 処理に必要な部分のみ）
+const Action = packed union {
+    code: u16,
+    usage: UsageAction,
+};
 
 // ============================================================
 // HID Usage Codes
@@ -54,7 +77,6 @@ pub const ConsumerUsage = struct {
     pub const AL_LOCK: u16 = 0x19E;
     pub const AL_CONTROL_PANEL: u16 = 0x19F;
     pub const AL_ASSISTANT: u16 = 0x1CB;
-    pub const AL_KEYBOARD_LAYOUT: u16 = 0x1AE;
     // Generic GUI Application Controls
     pub const AC_SEARCH: u16 = 0x221;
     pub const AC_HOME: u16 = 0x223;
@@ -92,6 +114,8 @@ pub fn keycodeToConsumer(kc: u8) u16 {
         @as(u8, @truncate(KC.MEDIA_FAST_FORWARD)) => ConsumerUsage.TRANSPORT_FAST_FORWARD,
         @as(u8, @truncate(KC.MEDIA_REWIND)) => ConsumerUsage.TRANSPORT_REWIND,
         @as(u8, @truncate(KC.MEDIA_STOP)) => ConsumerUsage.TRANSPORT_STOP,
+        // QMK upstream互換: KC_EJCT は TRANSPORT_EJECT(0xB8) ではなく
+        // TRANSPORT_STOP_EJECT(0xCC) にマップされる
         @as(u8, @truncate(KC.MEDIA_EJECT)) => ConsumerUsage.TRANSPORT_STOP_EJECT,
         @as(u8, @truncate(KC.MEDIA_PLAY_PAUSE)) => ConsumerUsage.TRANSPORT_PLAY_PAUSE,
         @as(u8, @truncate(KC.MEDIA_SELECT)) => ConsumerUsage.AL_CC_CONFIG,
@@ -109,7 +133,11 @@ pub fn keycodeToConsumer(kc: u8) u16 {
         @as(u8, @truncate(KC.WWW_FAVORITES)) => ConsumerUsage.AC_BOOKMARKS,
         @as(u8, @truncate(KC.BRIGHTNESS_UP)) => ConsumerUsage.BRIGHTNESS_UP,
         @as(u8, @truncate(KC.BRIGHTNESS_DOWN)) => ConsumerUsage.BRIGHTNESS_DOWN,
+        // QMK upstream互換: macOS Mission Control に対応
+        // HID Usage Table 上は AC Desktop Show All Windows (0x29F)
         @as(u8, @truncate(KC.MISSION_CONTROL)) => ConsumerUsage.AC_DESKTOP_SHOW_ALL_WINDOWS,
+        // QMK upstream互換: macOS Launchpad に対応
+        // HID Usage Table 上は AC Soft Key Left (0x2A0)
         @as(u8, @truncate(KC.LAUNCHPAD)) => ConsumerUsage.AC_SOFT_KEY_LEFT,
         else => 0,
     };
@@ -119,16 +147,21 @@ pub fn keycodeToConsumer(kc: u8) u16 {
 // Action constructor functions
 // ============================================================
 
+/// ACTION(kind, param) = (kind << 12) | param
+inline fn ACTION(kind: u4, param: u12) u16 {
+    return (@as(u16, kind) << 12) | @as(u16, param);
+}
+
 /// System Control アクションコードを構築
 /// ACTION_USAGE_SYSTEM(id) = ACTION(ACT_USAGE, PAGE_SYSTEM << 10 | id)
 pub inline fn actionUsageSystem(usage: u10) u16 {
-    return action_code.ACTION(@intFromEnum(action_code.ActionKind.usage), @as(u12, @intFromEnum(action_code.UsagePage.system)) << 10 | @as(u12, usage));
+    return ACTION(ACT_USAGE, @as(u12, PAGE_SYSTEM) << 10 | @as(u12, usage));
 }
 
 /// Consumer Control アクションコードを構築
 /// ACTION_USAGE_CONSUMER(id) = ACTION(ACT_USAGE, PAGE_CONSUMER << 10 | id)
 pub inline fn actionUsageConsumer(usage: u10) u16 {
-    return action_code.ACTION(@intFromEnum(action_code.ActionKind.usage), @as(u12, @intFromEnum(action_code.UsagePage.consumer)) << 10 | @as(u12, usage));
+    return ACTION(ACT_USAGE, @as(u12, PAGE_CONSUMER) << 10 | @as(u12, usage));
 }
 
 // ============================================================
@@ -137,15 +170,17 @@ pub inline fn actionUsageConsumer(usage: u10) u16 {
 
 /// Usage アクション (ACT_USAGE) を処理する
 /// C版 quantum/action.c の case ACT_USAGE に相当
-pub fn processUsageAction(ev: event_mod.KeyEvent, act: Action) void {
+/// action_code からの u16 コードを受け取り、usage フィールドとして解釈する
+pub fn processUsageAction(ev: event_mod.KeyEvent, act_code: u16) void {
+    const act: Action = .{ .code = act_code };
     const page = act.usage.page;
     const usage_code = act.usage.code;
 
     switch (page) {
-        @intFromEnum(action_code.UsagePage.system) => {
+        PAGE_SYSTEM => {
             hostSystemSend(if (ev.pressed) usage_code else 0);
         },
-        @intFromEnum(action_code.UsagePage.consumer) => {
+        PAGE_CONSUMER => {
             hostConsumerSend(if (ev.pressed) usage_code else 0);
         },
         else => {},
@@ -168,9 +203,11 @@ pub fn hostConsumerSend(usage: u16) void {
 /// キーコードがExtrakey範囲の場合、対応するHIDレポートを送信する
 pub fn registerExtrakey(kc: u8) void {
     if (kc >= @as(u8, @truncate(KC.SYSTEM_POWER)) and kc <= @as(u8, @truncate(KC.SYSTEM_WAKE))) {
-        hostSystemSend(keycodeToSystem(kc));
+        const usage = keycodeToSystem(kc);
+        if (usage != 0) hostSystemSend(usage);
     } else if (kc >= @as(u8, @truncate(KC.AUDIO_MUTE)) and kc <= @as(u8, @truncate(KC.LAUNCHPAD))) {
-        hostConsumerSend(keycodeToConsumer(kc));
+        const usage = keycodeToConsumer(kc);
+        if (usage != 0) hostConsumerSend(usage);
     }
 }
 
@@ -189,6 +226,22 @@ pub fn unregisterExtrakey(kc: u8) void {
 // ============================================================
 
 const testing = @import("std").testing;
+
+/// テスト用モックドライバ（Extra レポートの送信を記録）
+const MockExtraDriver = struct {
+    extra_count: usize = 0,
+    last_extra: ExtraReport = .{},
+
+    pub fn keyboardLeds(_: *@This()) u8 {
+        return 0;
+    }
+    pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
+    pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
+    pub fn sendExtra(self: *@This(), r: ExtraReport) void {
+        self.extra_count += 1;
+        self.last_extra = r;
+    }
+};
 
 test "keycodeToSystem" {
     try testing.expectEqual(SystemUsage.POWER_DOWN, keycodeToSystem(@truncate(KC.SYSTEM_POWER)));
@@ -226,53 +279,40 @@ test "keycodeToConsumer" {
 }
 
 test "actionUsageSystem" {
+    const action_code = @import("action_code.zig");
     // ACTION_USAGE_SYSTEM(0x81) = ACTION(ACT_USAGE, PAGE_SYSTEM<<10 | 0x81)
     // = (4 << 12) | (1 << 10) | 0x81 = 0x4000 | 0x400 | 0x81 = 0x4481
     const act = actionUsageSystem(SystemUsage.POWER_DOWN);
     try testing.expectEqual(@as(u16, 0x4481), act);
 
-    const action = Action{ .code = act };
+    const action = action_code.Action{ .code = act };
     try testing.expectEqual(action_code.ActionKind.usage, action.kind.id);
     try testing.expectEqual(@as(u2, @intFromEnum(action_code.UsagePage.system)), action.usage.page);
     try testing.expectEqual(@as(u10, SystemUsage.POWER_DOWN), action.usage.code);
 }
 
 test "actionUsageConsumer" {
+    const action_code = @import("action_code.zig");
     // ACTION_USAGE_CONSUMER(0xE2) = ACTION(ACT_USAGE, PAGE_CONSUMER<<10 | 0xE2)
     // = (4 << 12) | (2 << 10) | 0xE2 = 0x4000 | 0x800 | 0xE2 = 0x48E2
     const act = actionUsageConsumer(@truncate(ConsumerUsage.AUDIO_MUTE));
     try testing.expectEqual(@as(u16, 0x48E2), act);
 
-    const action = Action{ .code = act };
+    const action = action_code.Action{ .code = act };
     try testing.expectEqual(action_code.ActionKind.usage, action.kind.id);
     try testing.expectEqual(@as(u2, @intFromEnum(action_code.UsagePage.consumer)), action.usage.page);
     try testing.expectEqual(@as(u10, @truncate(ConsumerUsage.AUDIO_MUTE)), action.usage.code);
 }
 
 test "processUsageAction system press and release" {
-    const MockExtraDriver = struct {
-        extra_count: usize = 0,
-        last_extra: ExtraReport = .{},
-
-        pub fn keyboardLeds(_: *@This()) u8 {
-            return 0;
-        }
-        pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
-        pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
-        pub fn sendExtra(self: *@This(), r: ExtraReport) void {
-            self.extra_count += 1;
-            self.last_extra = r;
-        }
-    };
-
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
     // System Power press
-    const act = Action{ .code = actionUsageSystem(SystemUsage.POWER_DOWN) };
+    const act_code = actionUsageSystem(SystemUsage.POWER_DOWN);
     const press = event_mod.KeyEvent.keyPress(0, 0, 100);
-    processUsageAction(press, act);
+    processUsageAction(press, act_code);
 
     try testing.expectEqual(@as(usize, 1), mock.extra_count);
     try testing.expectEqual(@as(u8, @intFromEnum(report_mod.ReportId.system)), mock.last_extra.report_id);
@@ -280,36 +320,21 @@ test "processUsageAction system press and release" {
 
     // System Power release
     const release = event_mod.KeyEvent.keyRelease(0, 0, 200);
-    processUsageAction(release, act);
+    processUsageAction(release, act_code);
 
     try testing.expectEqual(@as(usize, 2), mock.extra_count);
     try testing.expectEqual(@as(u16, 0), mock.last_extra.usage);
 }
 
 test "processUsageAction consumer press and release" {
-    const MockExtraDriver = struct {
-        extra_count: usize = 0,
-        last_extra: ExtraReport = .{},
-
-        pub fn keyboardLeds(_: *@This()) u8 {
-            return 0;
-        }
-        pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
-        pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
-        pub fn sendExtra(self: *@This(), r: ExtraReport) void {
-            self.extra_count += 1;
-            self.last_extra = r;
-        }
-    };
-
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
     // Audio Mute press
-    const act = Action{ .code = actionUsageConsumer(@truncate(ConsumerUsage.AUDIO_MUTE)) };
+    const act_code = actionUsageConsumer(@truncate(ConsumerUsage.AUDIO_MUTE));
     const press = event_mod.KeyEvent.keyPress(0, 0, 100);
-    processUsageAction(press, act);
+    processUsageAction(press, act_code);
 
     try testing.expectEqual(@as(usize, 1), mock.extra_count);
     try testing.expectEqual(@as(u8, @intFromEnum(report_mod.ReportId.consumer)), mock.last_extra.report_id);
@@ -317,28 +342,13 @@ test "processUsageAction consumer press and release" {
 
     // Audio Mute release
     const release = event_mod.KeyEvent.keyRelease(0, 0, 200);
-    processUsageAction(release, act);
+    processUsageAction(release, act_code);
 
     try testing.expectEqual(@as(usize, 2), mock.extra_count);
     try testing.expectEqual(@as(u16, 0), mock.last_extra.usage);
 }
 
 test "registerExtrakey and unregisterExtrakey system" {
-    const MockExtraDriver = struct {
-        extra_count: usize = 0,
-        last_extra: ExtraReport = .{},
-
-        pub fn keyboardLeds(_: *@This()) u8 {
-            return 0;
-        }
-        pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
-        pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
-        pub fn sendExtra(self: *@This(), r: ExtraReport) void {
-            self.extra_count += 1;
-            self.last_extra = r;
-        }
-    };
-
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -356,21 +366,6 @@ test "registerExtrakey and unregisterExtrakey system" {
 }
 
 test "registerExtrakey and unregisterExtrakey consumer" {
-    const MockExtraDriver = struct {
-        extra_count: usize = 0,
-        last_extra: ExtraReport = .{},
-
-        pub fn keyboardLeds(_: *@This()) u8 {
-            return 0;
-        }
-        pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
-        pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
-        pub fn sendExtra(self: *@This(), r: ExtraReport) void {
-            self.extra_count += 1;
-            self.last_extra = r;
-        }
-    };
-
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();

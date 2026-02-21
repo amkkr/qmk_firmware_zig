@@ -90,7 +90,7 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
         .mods_tap, .rmods_tap => processModsTapAction(keyp, act),
-        .usage => extrakey.processUsageAction(ev, act),
+        .usage => extrakey.processUsageAction(ev, act.code),
         .layer => processLayerAction(ev, act),
         .layer_mods => processLayerModsAction(ev, act),
         .layer_tap, .layer_tap_ext => processLayerTapAction(keyp, act),
