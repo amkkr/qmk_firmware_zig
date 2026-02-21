@@ -28,8 +28,8 @@
 | Foundation | ビルドシステム、コアデータ型、テストインフラ | 完了 |
 | HAL | GPIO, Timer, EEPROM, Boot2, クロック初期化, USB HID | 完了 |
 | Core | マトリックススキャン, デバウンス, キーマップ, レイヤー管理, アクション処理 | 完了 |
-| Feature | Bootmagic, Mousekey, Extrakey | 進行中 |
-| Keyboard | madbd34 キーボード定義、統合テスト | 未着手 |
+| Feature | Bootmagic, Mousekey, Extrakey | 進行中（Extrakey 未実装） |
+| Keyboard | madbd34 キーボード定義、統合テスト | 進行中（統合テスト未実装） |
 
 ### 実装済みモジュール
 
@@ -48,6 +48,7 @@
 | アクション処理 | `action.zig` | アクション解決・実行の中核 |
 | タッピング | `action_tapping.zig` | タップ/ホールド判定ステートマシン |
 | ホストドライバ | `host.zig` | HID レポート送信インターフェース |
+| Bootmagic | `bootmagic.zig` | Bootmagic Lite（起動時キー検出） |
 | テストドライバ | `test_driver.zig` | モック HID ドライバ（テスト用） |
 | テストフィクスチャ | `test_fixture.zig` | キーボードシミュレーション環境（テスト用） |
 
@@ -64,6 +65,12 @@
 | クロック | `clock.zig` | RP2040 クロックツリー初期化（XOSC, PLL, clk_sys） |
 | ブートローダー | `bootloader.zig` | BOOTSEL モードへのジャンプ |
 | ベクタテーブル | `vector_table.zig` | ARM Cortex-M0+ 割り込みベクタテーブル |
+
+**Keyboards** (`src/keyboards/`)
+
+| モジュール | ファイル | 説明 |
+|-----------|---------|------|
+| madbd34 | `madbd34.zig` | madbd34 キーボード定義（ピン配置、LAYOUT、キーマップ） |
 
 ## ビルド
 
