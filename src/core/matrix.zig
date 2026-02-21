@@ -37,6 +37,7 @@ pub const Matrix = struct {
         std.debug.assert(config.rows <= 32);
         std.debug.assert(config.cols <= 32);
 
+
         var m = Matrix{
             .config = config,
             .current = .{0} ** 32,

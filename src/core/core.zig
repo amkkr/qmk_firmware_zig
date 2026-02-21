@@ -9,6 +9,7 @@ pub const event = @import("event.zig");
 pub const report = @import("report.zig");
 pub const matrix = @import("matrix.zig");
 pub const debounce_mod = @import("debounce.zig");
+pub const host_mod = @import("host.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
@@ -25,6 +26,7 @@ pub const KeyboardReport = report.KeyboardReport;
 pub const MouseReport = report.MouseReport;
 pub const ExtraReport = report.ExtraReport;
 pub const Matrix = matrix.Matrix;
+pub const HostDriver = host_mod.HostDriver;
 
 // Test types (only available in test builds)
 pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;
