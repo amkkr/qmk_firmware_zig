@@ -70,16 +70,23 @@ pub fn writeDword(address: u16, data: u32) void {
 }
 
 /// Read a block of bytes from EEPROM
+/// Uses u32 arithmetic to prevent u16 wraparound for large addresses.
+/// Out-of-bounds bytes are filled with 0xFF (erased state).
 pub fn readBlock(address: u16, buf: []u8) void {
     for (buf, 0..) |*b, i| {
-        b.* = readByte(address + @as(u16, @intCast(i)));
+        const addr = @as(u32, address) + @as(u32, i);
+        b.* = if (addr < EEPROM_SIZE) storage[@intCast(addr)] else 0xFF;
     }
 }
 
 /// Write a block of bytes to EEPROM
+/// Uses u32 arithmetic to prevent u16 wraparound for large addresses.
+/// Stops writing when address exceeds EEPROM_SIZE.
 pub fn writeBlock(address: u16, data: []const u8) void {
     for (data, 0..) |b, i| {
-        writeByte(address + @as(u16, @intCast(i)), b);
+        const addr = @as(u32, address) + @as(u32, i);
+        if (addr >= EEPROM_SIZE) break;
+        storage[@intCast(addr)] = b;
     }
 }
 
