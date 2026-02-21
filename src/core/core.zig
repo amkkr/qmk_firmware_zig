@@ -14,6 +14,7 @@ pub const layer = @import("layer.zig");
 pub const action_mod = @import("action.zig");
 pub const action_tapping = @import("action_tapping.zig");
 pub const keymap = @import("keymap.zig");
+pub const bootmagic = @import("bootmagic.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
