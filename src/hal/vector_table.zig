@@ -1,7 +1,5 @@
 //! ARM Cortex-M0+ Vector Table for RP2040
 
-const startup = @import("../main.zig").startup;
-
 extern var _stack_top: anyopaque;
 
 /// Default handler: infinite loop with breakpoint
@@ -26,9 +24,9 @@ pub const VectorTable = extern struct {
 };
 
 /// Create the vector table instance
-pub fn vectorTable() VectorTable {
+pub fn vectorTable(reset_handler: *const fn () callconv(.naked) noreturn) VectorTable {
     return .{
         .initial_sp = @ptrCast(&_stack_top),
-        .reset = &startup._start,
+        .reset = reset_handler,
     };
 }

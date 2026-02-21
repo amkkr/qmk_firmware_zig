@@ -22,7 +22,7 @@ pub const startup = if (is_freestanding) struct {
     extern var _stack_top: anyopaque;
 
     /// Vector table placed in .vectors section
-    export const vector_table linksection(".vectors") = vector_table_zig.vectorTable();
+    export const vector_table linksection(".vectors") = vector_table_zig.vectorTable(&_start);
 
     /// Entry point for RP2040 firmware
     pub export fn _start() callconv(.naked) noreturn {
@@ -37,6 +37,25 @@ pub const startup = if (is_freestanding) struct {
     }
 
     fn zigMain() callconv(.c) noreturn {
+        @setRuntimeSafety(false);
+        // Initialize .data section: copy initial values from FLASH to RAM
+        {
+            extern var _sdata: u8;
+            extern var _edata: u8;
+            extern const _sidata: u8;
+            const data_len = @intFromPtr(&_edata) - @intFromPtr(&_sdata);
+            @memcpy(
+                @as([*]u8, @ptrCast(&_sdata))[0..data_len],
+                @as([*]const u8, @ptrCast(&_sidata))[0..data_len],
+            );
+        }
+        // Zero-initialize .bss section
+        {
+            extern var _sbss: u8;
+            extern var _ebss: u8;
+            const bss_len = @intFromPtr(&_ebss) - @intFromPtr(&_sbss);
+            @memset(@as([*]u8, @ptrCast(&_sbss))[0..bss_len], 0);
+        }
         main() catch {};
         while (true) {
             asm volatile ("wfi");
