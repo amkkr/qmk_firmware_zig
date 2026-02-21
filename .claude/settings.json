@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(qmk compile:*)",
+      "Bash(qmk ci-validate-aliases:*)",
+      "Bash(qmk --help:*)",
+      "Bash(qmk kle2json --help:*)",
+      "Bash(qmk kle2json:*)",
+      "Bash(cat:*)",
+      "Bash(xargs:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git worktree:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git checkout:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(gh:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zig fmt"
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
