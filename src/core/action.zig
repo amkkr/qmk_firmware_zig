@@ -84,6 +84,8 @@ pub fn isTapAction(act: Action) bool {
 
 /// Execute an action based on its kind
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
+    if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
+
     const ev = keyp.event;
     const kind = act.kind.id;
 
