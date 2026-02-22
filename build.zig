@@ -4,6 +4,13 @@ pub fn build(b: *std.Build) void {
     // Build options
     const keyboard = b.option([]const u8, "keyboard", "Target keyboard (e.g. madbd34)") orelse "madbd34";
     const keymap = b.option([]const u8, "keymap", "Target keymap (e.g. default)") orelse "default";
+    const bootmagic_row = b.option(u8, "BOOTMAGIC_ROW", "Row index for bootmagic key (default: 0)") orelse 0;
+    const bootmagic_col = b.option(u8, "BOOTMAGIC_COLUMN", "Column index for bootmagic key (default: 0)") orelse 0;
+
+    // Build options module (passed to firmware and tests as "build_options")
+    const build_opts = b.addOptions();
+    build_opts.addOption(u8, "BOOTMAGIC_ROW", bootmagic_row);
+    build_opts.addOption(u8, "BOOTMAGIC_COLUMN", bootmagic_col);
 
     const optimize = b.standardOptimizeOption(.{});
 
@@ -18,14 +25,18 @@ pub fn build(b: *std.Build) void {
     // Native host target (for tools and tests)
     const native_target = b.resolveTargetQuery(.{});
 
+    // Firmware module
+    const firmware_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    firmware_mod.addImport("build_options", build_opts.createModule());
+
     // Firmware executable
     const firmware = b.addExecutable(.{
         .name = b.fmt("{s}_{s}", .{ keyboard, keymap }),
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = rp2040_target,
-            .optimize = optimize,
-        }),
+        .root_module = firmware_mod,
     });
 
     firmware.setLinkerScript(b.path("src/hal/rp2040_linker.ld"));
@@ -45,13 +56,17 @@ pub fn build(b: *std.Build) void {
     const flash_run = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
     flash_step.dependOn(&flash_run.step);
 
+    // Test module
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = native_target,
+    });
+    test_mod.addImport("build_options", build_opts.createModule());
+
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");
     const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = native_target,
-        }),
+        .root_module = test_mod,
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
