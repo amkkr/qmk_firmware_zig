@@ -304,6 +304,7 @@ test "TestFixture basic key press" {
     fixture.runOneScanLoop();
 
     try std.testing.expectEqual(@as(usize, 1), fixture.driver.keyboard_count);
+    try std.testing.expectEqual(@as(u8, 0), fixture.driver.keyboard_reports[0].mods);
     try std.testing.expect(fixture.driver.keyboard_reports[0].hasKey(0x04));
 
     // Release KC_A
@@ -341,11 +342,13 @@ test "TestFixture two keys" {
     // Press A
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
+    try std.testing.expectEqual(@as(u8, 0), fixture.driver.keyboard_reports[0].mods);
     try std.testing.expect(fixture.driver.keyboard_reports[0].hasKey(0x04));
 
     // Press B (A still held)
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
+    try std.testing.expectEqual(@as(u8, 0), fixture.driver.keyboard_reports[1].mods);
     try std.testing.expect(fixture.driver.keyboard_reports[1].hasKey(0x04));
     try std.testing.expect(fixture.driver.keyboard_reports[1].hasKey(0x05));
 }

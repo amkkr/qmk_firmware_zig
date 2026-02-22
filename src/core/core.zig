@@ -37,7 +37,6 @@ pub const Matrix = matrix.Matrix;
 pub const HostDriver = host_mod.HostDriver;
 
 // Test types (only available in test builds)
-pub const TestDriver = if (builtin.is_test) test_driver.TestDriver else void;
 pub const TestFixture = if (builtin.is_test) test_fixture.TestFixture else void;
 pub const KeymapKey = if (builtin.is_test) test_fixture.KeymapKey else void;
 
