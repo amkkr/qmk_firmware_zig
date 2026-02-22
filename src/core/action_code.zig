@@ -131,8 +131,24 @@ pub inline fn ACTION_MODS_TAP_KEY(mods: u5, key: u8) u16 {
 }
 
 /// ACTION_LAYER_MOMENTARY(layer) - momentary layer switch (ON_OFF)
+/// C版互換: ACTION_LAYER_MOMENTARY(layer)
+///   → ACTION_LAYER_ON_OFF(layer)
+///   → ACTION_LAYER_TAP(layer, OP_ON_OFF)
+///   → ACTION(ACT_LAYER_TAP, layer<<8 | OP_ON_OFF)
+///   = ACT_LAYER_TAP(0b1010)<<12 | layer<<8 | 0xF1
 pub inline fn ACTION_LAYER_MOMENTARY(layer: u5) u16 {
     return actionLayerTap(layer, OP_ON_OFF);
+}
+
+// C版とのバイナリ互換性を comptime で検証 (Issue #55)
+comptime {
+    // C版: ACT_LAYER_TAP=0b1010, OP_ON_OFF=0xF1
+    // ACTION_LAYER_MOMENTARY(0) = 0b1010<<12 | 0<<8 | 0xF1 = 0xA0F1
+    // ACTION_LAYER_MOMENTARY(1) = 0b1010<<12 | 1<<8 | 0xF1 = 0xA1F1
+    // ACTION_LAYER_MOMENTARY(15) = 0b1010<<12 | 15<<8 | 0xF1 = 0xAFF1
+    if (ACTION_LAYER_MOMENTARY(0) != 0xA0F1) @compileError("ACTION_LAYER_MOMENTARY(0) must be 0xA0F1 for C compat");
+    if (ACTION_LAYER_MOMENTARY(1) != 0xA1F1) @compileError("ACTION_LAYER_MOMENTARY(1) must be 0xA1F1 for C compat");
+    if (ACTION_LAYER_MOMENTARY(15) != 0xAFF1) @compileError("ACTION_LAYER_MOMENTARY(15) must be 0xAFF1 for C compat");
 }
 
 /// ACTION_LAYER_TAP_KEY(layer, key) - layer tap
@@ -373,10 +389,15 @@ test "ACTION_MOUSEKEY matches upstream" {
 }
 
 test "ACTION_LAYER_MOMENTARY uses OP_ON_OFF" {
-    // Layer 1: actionLayerTap(1, OP_ON_OFF=0xF1) = 0xA1F1
-    try testing.expectEqual(@as(u16, 0xA1F1), ACTION_LAYER_MOMENTARY(1));
-    // Layer 0: 0xA0F1
+    // C版展開: ACTION_LAYER_MOMENTARY(layer)
+    //   → ACTION_LAYER_ON_OFF(layer)
+    //   → ACTION_LAYER_TAP(layer, OP_ON_OFF)
+    //   → ACTION(ACT_LAYER_TAP, layer<<8 | OP_ON_OFF)
+    //   = 0b1010<<12 | layer<<8 | 0xF1
     try testing.expectEqual(@as(u16, 0xA0F1), ACTION_LAYER_MOMENTARY(0));
+    try testing.expectEqual(@as(u16, 0xA1F1), ACTION_LAYER_MOMENTARY(1));
+    try testing.expectEqual(@as(u16, 0xA2F1), ACTION_LAYER_MOMENTARY(2));
+    try testing.expectEqual(@as(u16, 0xAFF1), ACTION_LAYER_MOMENTARY(15));
 }
 
 test "keycodeToAction basic keys" {
