@@ -116,4 +116,7 @@ test {
     _ = @import("hal/boot2.zig");
     // 統合テストを実行
     _ = @import("tests/integration_test.zig");
+    // C版テスト移植
+    _ = @import("tests/test_keypress.zig");
+    _ = @import("tests/test_action_layer.zig");
 }
