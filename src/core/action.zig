@@ -179,17 +179,19 @@ fn processLayerAction(ev: KeyEvent, act: Action) void {
 }
 
 /// Process layer + modifier actions
+/// layer_mods の mods フィールドは8ビットHIDフォーマットで格納されているため、
+/// 5ビット変換不要の addMods/delMods を使用する（C版 register_mods/unregister_mods 相当）。
 fn processLayerModsAction(ev: KeyEvent, act: Action) void {
     const l: u5 = act.layer_mods.layer;
     const mods = act.layer_mods.mods;
 
     if (ev.pressed) {
         layer.layerOn(l);
-        host.registerMods(mods);
+        host.addMods(mods);
         host.sendKeyboardReport();
     } else {
+        host.delMods(mods);
         layer.layerOff(l);
-        host.unregisterMods(mods);
         host.sendKeyboardReport();
     }
 }

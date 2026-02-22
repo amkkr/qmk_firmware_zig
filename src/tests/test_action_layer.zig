@@ -180,30 +180,202 @@ test "MomentaryLayerWithKeypress" {
 }
 
 // ============================================================
-// 未移植テスト（C版 test_action_layer.cpp）
+// action.actionExec を直接呼ぶスタイルのテスト
+// (action_tapping_test.zig のアプローチを使用)
 // ============================================================
 
-// LayerTapReleasedBeforeKeypressReleaseWithModifiers
-// (C版 line 363-403, LT(1, KC_T) + RALT(KC_9) の組み合わせ)
-//
-// 未移植の理由:
-//   LT (Layer-Tap) キーは action_tapping パイプライン経由でのタップ/ホールド判定が必要だが、
-//   TestFixture.processMatrixScan() はまだ action_tapping パイプラインを経由していない
-//   （TODO: Route through action_tapping pipeline コメント参照）。
-//   TestFixture を使わず直接 action.zig API を呼び出す形での移植は
-//   test_tapping.zig のアプローチを参考に将来の対応とする。
-//
-// test "LayerTapReleasedBeforeKeypressReleaseWithModifiers" { ... }
+const action = @import("../core/action.zig");
+const action_code = @import("../core/action_code.zig");
+const event_mod = @import("../core/event.zig");
+const host_mod = @import("../core/host.zig");
+const tapping_mod = @import("../core/action_tapping.zig");
 
+const Action = action_code.Action;
+const KeyRecord = event_mod.KeyRecord;
+const KeyEvent = event_mod.KeyEvent;
+const ModBit = report_mod.ModBit;
+
+const TAPPING_TERM = tapping_mod.TAPPING_TERM;
+
+const DirectMockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
+
+// --- LayerTapReleasedBeforeKeypressReleaseWithModifiers 用リゾルバ ---
+// キーマップ:
+//   Layer 0: (0,0) = LT(1, KC_T), (0,1) = KC_X
+//   Layer 1: (0,1) = RALT(KC_9)
+//
+// ソースレイヤーキャッシュ: プレス時のアクションをキャッシュし、
+// リリース時にはキャッシュからアクションを返す（stuck key 防止）。
+var lt_action_cache: [4][4]u16 = [_][4]u16{[_]u16{0} ** 4} ** 4;
+
+fn ltModResolveForLayer(row: u8, col: u8) Action {
+    if (row == 0 and col == 0) {
+        return .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, 0x17) };
+    }
+    if (row == 0 and col == 1) {
+        if (layer_mod.layerStateIs(1)) {
+            return .{ .code = 0x1426 }; // RALT(KC_9)
+        }
+        return .{ .code = action_code.ACTION_KEY(0x1B) }; // KC_X
+    }
+    return .{ .code = action_code.ACTION_NO };
+}
+
+fn ltModResolver(ev: KeyEvent) Action {
+    const row = ev.key.row;
+    const col = ev.key.col;
+    if (ev.pressed) {
+        const act = ltModResolveForLayer(row, col);
+        lt_action_cache[row][col] = act.code;
+        return act;
+    } else {
+        // リリース時はプレス時にキャッシュしたアクションを返す
+        return .{ .code = lt_action_cache[row][col] };
+    }
+}
+
+// --- LayerModWithKeypress 用リゾルバ ---
+// キーマップ:
+//   Layer 0: (0,0) = LM(1, MOD_RALT), (0,1) = KC_A
+//   Layer 1: (0,1) = KC_B
+fn lmResolver(ev: KeyEvent) Action {
+    if (ev.key.row == 0 and ev.key.col == 0) {
+        // LM(1, MOD_RALT): ACTION_LAYER_MODS(1, 0x40)
+        // keycode.Mod.RALT = 0x14 → 8bit HID: 0x40 (RALT)
+        return .{ .code = action_code.ACTION_LAYER_MODS(1, ModBit.RALT) };
+    }
+    if (ev.key.row == 0 and ev.key.col == 1) {
+        // レイヤー1がアクティブなら KC_B、そうでなければ KC_A
+        if (layer_mod.layerStateIs(1)) {
+            return .{ .code = action_code.ACTION_KEY(0x05) }; // KC_B
+        }
+        return .{ .code = action_code.ACTION_KEY(0x04) }; // KC_A
+    }
+    return .{ .code = action_code.ACTION_NO };
+}
+
+var direct_mock: DirectMockDriver = .{};
+
+fn directSetup(resolver: action.ActionResolver) *DirectMockDriver {
+    action.reset();
+    direct_mock = .{};
+    lt_action_cache = [_][4]u16{[_]u16{0} ** 4} ** 4;
+    host_mod.setDriver(host_mod.HostDriver.from(&direct_mock));
+    action.setActionResolver(resolver);
+    return &direct_mock;
+}
+
+fn directTeardown() void {
+    host_mod.clearDriver();
+}
+
+fn directPress(row: u8, col: u8, time: u16) void {
+    var record = KeyRecord{ .event = KeyEvent.keyPress(row, col, time) };
+    action.actionExec(&record);
+}
+
+fn directRelease(row: u8, col: u8, time: u16) void {
+    var record = KeyRecord{ .event = KeyEvent.keyRelease(row, col, time) };
+    action.actionExec(&record);
+}
+
+fn directTick(time: u16) void {
+    var record = KeyRecord{ .event = KeyEvent.tick(time) };
+    action.actionExec(&record);
+}
+
+// ============================================================
+// LayerTapReleasedBeforeKeypressReleaseWithModifiers
+// (C版 test_action_layer.cpp:363-403)
+//
+// LT(1, KC_T) をホールドしてレイヤー1を有効化し、
+// レイヤー1のキー RALT(KC_9) を押した後、LT キーを先にリリースするシナリオ。
+// ============================================================
+
+test "LayerTapReleasedBeforeKeypressReleaseWithModifiers" {
+    const mock = directSetup(ltModResolver);
+    defer directTeardown();
+
+    // 1. LT(1, KC_T) をプレスし、TAPPING_TERM を待ってホールド確定
+    directPress(0, 0, 100);
+    directTick(100 + TAPPING_TERM + 1);
+
+    // レイヤー1が有効化されている
+    try testing.expect(layer_mod.layerStateIs(1));
+
+    // 2. レイヤー1のキー RALT(KC_9) をプレス
+    //    → RALT修飾 + KC_9 がレポートに含まれる
+    directPress(0, 1, 100 + TAPPING_TERM + 10);
+
+    // RALT(KC_9) がレポートされる
+    var found_ralt_9 = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & ModBit.RALT != 0 and
+            mock.keyboard_reports[i].hasKey(0x26))
+        {
+            found_ralt_9 = true;
+            break;
+        }
+    }
+    try testing.expect(found_ralt_9);
+
+    // 3. LT(1, KC_T) をリリース → レイヤー0に戻る
+    directRelease(0, 0, 100 + TAPPING_TERM + 50);
+    try testing.expect(!layer_mod.layerStateIs(1));
+
+    // 4. RALT(KC_9) をリリース → 修飾キーとキーが解除される
+    directRelease(0, 1, 100 + TAPPING_TERM + 80);
+
+    // 最終レポートは空
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
 // LayerModWithKeypress
-// (C版 line 405-433, LM(1, MOD_RALT) + 通常キーの組み合わせ)
+// (C版 test_action_layer.cpp:405-433)
 //
-// 未移植の理由:
-//   LM (Layer + Modifier) キーのアクションコードは action.zig に processLayerModsAction
-//   として実装済みだが、TestFixture.processMatrixScan() が LM キーコードを処理していない。
-//   直接 action.zig API を使う形での移植は将来の対応とする。
-//
-// test "LayerModWithKeypress" { ... }
+// LM(1, MOD_RALT) をプレスしてレイヤー1 + RALT を有効化し、
+// レイヤー1のキー KC_B をタップするシナリオ。
+// ============================================================
+
+test "LayerModWithKeypress" {
+    const mock = directSetup(lmResolver);
+    defer directTeardown();
+
+    // 1. LM(1, MOD_RALT) をプレス → レイヤー1有効 + RALT登録
+    directPress(0, 0, 100);
+
+    // レイヤー1が有効化されている
+    try testing.expect(layer_mod.layerStateIs(1));
+
+    // RALT がレポートに含まれている
+    try testing.expect(mock.keyboard_count >= 1);
+    try testing.expect(mock.lastKeyboardReport().mods & ModBit.RALT != 0);
+
+    // 2. レイヤー1のキー KC_B をプレス → RALT + KC_B
+    directPress(0, 1, 120);
+    var found_ralt_b = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & ModBit.RALT != 0 and
+            mock.keyboard_reports[i].hasKey(0x05))
+        {
+            found_ralt_b = true;
+            break;
+        }
+    }
+    try testing.expect(found_ralt_b);
+
+    // 3. KC_B をリリース
+    directRelease(0, 1, 150);
+
+    // 4. LM(1, MOD_RALT) をリリース → レイヤー0に戻る + RALT解除
+    directRelease(0, 0, 200);
+
+    try testing.expect(!layer_mod.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
+}
 
 // LayerModHonorsModConfig
 // (C版 line 435-467, keymap_config.swap_ralt_rgui 機能への依存)
