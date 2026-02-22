@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Overview
 
 QMK Firmware のカスタムキーボードファームウェアを C から Zig へ移行するプロジェクト。
-upstream: https://github.com/qmk/qmk_firmware
+upstream: <https://github.com/qmk/qmk_firmware>
 
 - **一方向同期のみ**: upstream から取り込むことはあるが、upstream へ push しない
 - 対象キーボード: madbd34（RP2040, 4x12スプリット, 38キー）
@@ -41,7 +41,7 @@ qmk new-keyboard -kb <name> -u <username>
 qmk new-keymap -kb <keyboard> -km <keymap>
 ```
 
-参照: https://docs.qmk.fm/
+参照: <https://docs.qmk.fm/>
 
 ## Architecture
 
@@ -100,6 +100,7 @@ src/
 ```
 
 設計方針:
+
 - 各 HAL モジュールは `builtin.os.tag == .freestanding` で実機/テストを切り替え
 - テスト時はモック実装が自動的に使用され、ホストネイティブで `zig build test` 実行可能
 
@@ -125,6 +126,7 @@ zig build test
 ```
 
 主要テストファイル（upstream参照）:
+
 - `tests/basic/test_keypress.cpp` - キープレス処理
 - `tests/basic/test_action_layer.cpp` - レイヤー切替
 - `tests/basic/test_tapping.cpp` - タップ/ホールド
@@ -149,24 +151,10 @@ zig build test
 4. **rebase禁止**: コンフリクト解決は `git merge` を使用
 5. **PRテンプレート**: `.github/pull_request_template.md` に従う
 6. **PRタイトル**: ブランチ名と同様のプレフィックスをつける（例: `feat: USB HIDドライバの実装`）
-
-### レビュー依頼前の必須チェック
-
-PR を push した後、レビューを依頼する（`@claude` メンション等）前に以下を必ず確認する:
-
-1. **コンフリクトの確認**: `gh pr view <number> --json mergeable` でマージ可能か確認。コンフリクトがある場合はコンフリクト解決手順に従って解消してから依頼する
-2. **CIの確認**: `gh pr checks <number>` で全CIチェックが通っていることを確認。失敗している場合は原因を修正してから依頼する
-
-### レビューコメント対応
-
-レビュー（`@claude` 自動レビュー、チームメンバーレビュー等）のコメントを受け取ったら:
-
-1. **コメント確認**: 以下の API でレビューコメントを確認する
-   - `gh api repos/{owner}/{repo}/pulls/<number>/reviews` — レビュー本体（承認/変更要求等）
-   - `gh api repos/{owner}/{repo}/pulls/<number>/comments` — インラインレビューコメント
-   - `gh api repos/{owner}/{repo}/issues/<number>/comments` — 一般コメント
-2. **指摘対応**: critical/suggestion レベルの指摘は修正する。nit レベルは任意だが対応が望ましい
-3. **修正後の再確認**: 修正をコミット・プッシュした後、コンフリクトとCIを再確認してからレビュー再依頼する
+7. **レビュー依頼**: PR作成後またはPRにコミットをpushした後は、PRに `@claude` メンションのみのコメントでレビューを依頼すること
+8. **レビュー依頼前の確認**: レビュー依頼の前に以下を確認すること
+  a. masterブランチとコンフリクトが発生していないこと
+  b. CIが通っていること（GitHub Actionsのステータスを確認）
 
 ### コンフリクト解決手順
 
