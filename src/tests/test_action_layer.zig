@@ -176,3 +176,37 @@ test "MomentaryLayerWithKeypress" {
     fixture.runOneScanLoop();
     try testing.expect(!fixture.isLayerOn(1));
 }
+
+// ============================================================
+// 未移植テスト（C版 test_action_layer.cpp）
+// ============================================================
+
+// LayerTapReleasedBeforeKeypressReleaseWithModifiers
+// (C版 line 363-403, LT(1, KC_T) + RALT(KC_9) の組み合わせ)
+//
+// 未移植の理由:
+//   LT (Layer-Tap) キーは action_tapping パイプライン経由でのタップ/ホールド判定が必要だが、
+//   TestFixture.processMatrixScan() はまだ action_tapping パイプラインを経由していない
+//   （TODO: Route through action_tapping pipeline コメント参照）。
+//   TestFixture を使わず直接 action.zig API を呼び出す形での移植は
+//   test_tapping.zig のアプローチを参考に将来の対応とする。
+//
+// test "LayerTapReleasedBeforeKeypressReleaseWithModifiers" { ... }
+
+// LayerModWithKeypress
+// (C版 line 405-433, LM(1, MOD_RALT) + 通常キーの組み合わせ)
+//
+// 未移植の理由:
+//   LM (Layer + Modifier) キーのアクションコードは action.zig に processLayerModsAction
+//   として実装済みだが、TestFixture.processMatrixScan() が LM キーコードを処理していない。
+//   直接 action.zig API を使う形での移植は将来の対応とする。
+//
+// test "LayerModWithKeypress" { ... }
+
+// LayerModHonorsModConfig
+// (C版 line 435-467, keymap_config.swap_ralt_rgui 機能への依存)
+//
+// 未移植の理由:
+//   keymap_config.swap_ralt_rgui 機能（RALT/RGUI スワップ）が未実装のためスキップ。
+//
+// test "LayerModHonorsModConfig" { ... }
