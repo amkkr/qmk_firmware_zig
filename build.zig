@@ -82,7 +82,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_flash_tests.step);
 
     // C ABI compatibility tests (included in main test module via compat/*.zig)
-    const test_compat_step = b.step("test-compat", "Run C ABI compatibility tests");
+    const test_compat_step = b.step("test-compat", "Run all tests (includes C ABI compatibility tests)");
     test_compat_step.dependOn(&run_tests.step);
 
     // Verify step: run tests + check firmware ELF compilation succeeds

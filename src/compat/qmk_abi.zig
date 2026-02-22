@@ -86,6 +86,11 @@ export fn timer_read32() u32 {
 }
 
 /// Clear (reset) the timer
+/// Note: テスト環境では `timer.init()` が `mock_timer_ms = 0` にリセットするため
+/// 期待通り動作する。freestanding（実機）では `timer.init()` は no-op のため、
+/// RP2040 のハードウェアタイマーはリセットされず、QMK C の `timer_clear()` の
+/// セマンティクス（タイマーカウンタのリセット）と一致しない。
+/// Phase 1 ではテスト専用なので動作上の問題はない。
 export fn timer_clear() void {
     timer.init();
 }
