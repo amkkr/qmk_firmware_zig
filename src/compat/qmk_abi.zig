@@ -12,6 +12,7 @@ const action_mod = @import("../core/action.zig");
 const keyboard_mod = @import("../core/keyboard.zig");
 const event_mod = @import("../core/event.zig");
 const keymap_mod = @import("../core/keymap.zig");
+const report_mod = @import("../core/report.zig");
 const timer = @import("../hal/timer.zig");
 
 // ============================================================
@@ -143,11 +144,11 @@ export fn send_keyboard_report() void {
 /// Zig版は NKRO 非対応のため常に null を設定する。
 pub const CHostDriver = extern struct {
     keyboard_leds: ?*const fn () callconv(.c) u8,
-    send_keyboard: ?*const fn (*const @import("../core/report.zig").KeyboardReport) callconv(.c) void,
+    send_keyboard: ?*const fn (*const report_mod.KeyboardReport) callconv(.c) void,
     /// NKRO 非対応につき常に null。C版 host_driver_t とのバイナリ互換性のため維持。
     send_nkro: ?*const fn (*const anyopaque) callconv(.c) void,
-    send_mouse: ?*const fn (*const @import("../core/report.zig").MouseReport) callconv(.c) void,
-    send_extra: ?*const fn (*const @import("../core/report.zig").ExtraReport) callconv(.c) void,
+    send_mouse: ?*const fn (*const report_mod.MouseReport) callconv(.c) void,
+    send_extra: ?*const fn (*const report_mod.ExtraReport) callconv(.c) void,
 };
 
 /// C ABI ドライバアダプタ
@@ -160,15 +161,15 @@ const CDriverAdapter = struct {
         return 0;
     }
 
-    pub fn sendKeyboard(self: *CDriverAdapter, r: @import("../core/report.zig").KeyboardReport) void {
+    pub fn sendKeyboard(self: *CDriverAdapter, r: report_mod.KeyboardReport) void {
         if (self.c_driver.send_keyboard) |f| f(&r);
     }
 
-    pub fn sendMouse(self: *CDriverAdapter, r: @import("../core/report.zig").MouseReport) void {
+    pub fn sendMouse(self: *CDriverAdapter, r: report_mod.MouseReport) void {
         if (self.c_driver.send_mouse) |f| f(&r);
     }
 
-    pub fn sendExtra(self: *CDriverAdapter, r: @import("../core/report.zig").ExtraReport) void {
+    pub fn sendExtra(self: *CDriverAdapter, r: report_mod.ExtraReport) void {
         if (self.c_driver.send_extra) |f| f(&r);
     }
 };
@@ -352,6 +353,7 @@ test "qmk_abi: register_code modifier key" {
     const MockDriver = FixedTestDriver(32, 4);
 
     keyboard_init();
+    host_mod.hostReset(); // real_mods を確実にクリアして前テストの影響を排除
     var mock = MockDriver{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock));
     defer host_mod.clearDriver();
