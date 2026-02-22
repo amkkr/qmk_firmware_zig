@@ -286,23 +286,7 @@ pub fn reset() void {
 const testing = @import("std").testing;
 const report_mod = @import("report.zig");
 
-const TestMockDriver = struct {
-    keyboard_count: usize = 0,
-    last_keyboard: report_mod.KeyboardReport = .{},
-    leds: u8 = 0,
-
-    pub fn keyboardLeds(self: *TestMockDriver) u8 {
-        return self.leds;
-    }
-
-    pub fn sendKeyboard(self: *TestMockDriver, r: report_mod.KeyboardReport) void {
-        self.keyboard_count += 1;
-        self.last_keyboard = r;
-    }
-
-    pub fn sendMouse(_: *TestMockDriver, _: report_mod.MouseReport) void {}
-    pub fn sendExtra(_: *TestMockDriver, _: report_mod.ExtraReport) void {}
-};
+const TestMockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 fn testResolver(ev: KeyEvent) Action {
     _ = ev;
@@ -319,12 +303,12 @@ test "basic key action" {
     // Press key -> should register KC_A
     var record = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
     processAction(&record, .{ .code = action_code.ACTION_KEY(0x04) });
-    try testing.expect(mock.last_keyboard.hasKey(0x04));
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
 
     // Release key -> should unregister KC_A
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
     processAction(&release, .{ .code = action_code.ACTION_KEY(0x04) });
-    try testing.expect(!mock.last_keyboard.hasKey(0x04));
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x04));
 }
 
 test "mod-tap hold" {
@@ -339,12 +323,12 @@ test "mod-tap hold" {
     // Hold (tap.count == 0) -> register modifier
     var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
     processAction(&press, act);
-    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods); // LSHIFT
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods); // LSHIFT
 
     // Release hold
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processAction(&release, act);
-    try testing.expectEqual(@as(u8, 0x00), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
 test "mod-tap tap" {
@@ -361,8 +345,8 @@ test "mod-tap tap" {
         .tap = .{ .count = 1 },
     };
     processAction(&press, act);
-    try testing.expect(mock.last_keyboard.hasKey(0x04));
-    try testing.expectEqual(@as(u8, 0x00), mock.last_keyboard.mods);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 
     // Release tap
     var release = KeyRecord{
@@ -370,7 +354,7 @@ test "mod-tap tap" {
         .tap = .{ .count = 1 },
     };
     processAction(&release, act);
-    try testing.expect(!mock.last_keyboard.hasKey(0x04));
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x04));
 }
 
 test "layer-tap hold" {
@@ -407,7 +391,7 @@ test "layer-tap tap" {
         .tap = .{ .count = 1 },
     };
     processAction(&press, act);
-    try testing.expect(mock.last_keyboard.hasKey(0x04));
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
     try testing.expect(!layer.layerStateIs(1));
 
     // Release tap
@@ -416,7 +400,7 @@ test "layer-tap tap" {
         .tap = .{ .count = 1 },
     };
     processAction(&release, act);
-    try testing.expect(!mock.last_keyboard.hasKey(0x04));
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x04));
 }
 
 test "MO layer action" {

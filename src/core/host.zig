@@ -248,31 +248,7 @@ fn modFiveBitToEightBit(mods5: u8) u8 {
 
 const testing = std.testing;
 
-/// Simple mock driver for testing the HostDriver interface
-const MockDriver = struct {
-    keyboard_count: usize = 0,
-    mouse_count: usize = 0,
-    extra_count: usize = 0,
-    last_keyboard: KeyboardReport = .{},
-    leds: u8 = 0,
-
-    pub fn keyboardLeds(self: *MockDriver) u8 {
-        return self.leds;
-    }
-
-    pub fn sendKeyboard(self: *MockDriver, r: KeyboardReport) void {
-        self.keyboard_count += 1;
-        self.last_keyboard = r;
-    }
-
-    pub fn sendMouse(self: *MockDriver, _: MouseReport) void {
-        self.mouse_count += 1;
-    }
-
-    pub fn sendExtra(self: *MockDriver, _: ExtraReport) void {
-        self.extra_count += 1;
-    }
-};
+const MockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 test "HostDriver interface dispatch" {
     var mock = MockDriver{};
@@ -284,8 +260,8 @@ test "HostDriver interface dispatch" {
     driver.sendKeyboard(&r);
 
     try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
-    try testing.expect(mock.last_keyboard.hasKey(0x04));
-    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
 }
 
 test "HostDriver mouse and extra" {
@@ -334,11 +310,11 @@ test "registerCode / unregisterCode" {
 
     registerCode(0x04); // KC_A
     sendKeyboardReport();
-    try testing.expect(mock.last_keyboard.hasKey(0x04));
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
 
     unregisterCode(0x04);
     sendKeyboardReport();
-    try testing.expect(!mock.last_keyboard.hasKey(0x04));
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x04));
 }
 
 test "registerCode modifier" {
@@ -349,11 +325,11 @@ test "registerCode modifier" {
 
     registerCode(0xE1); // LSHIFT
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
 
     unregisterCode(0xE1);
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x00), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
 test "registerMods 5-bit" {
@@ -364,11 +340,11 @@ test "registerMods 5-bit" {
 
     registerMods(0x02); // LSFT (5-bit)
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods); // LSHIFT HID bit
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods); // LSHIFT HID bit
 
     unregisterMods(0x02);
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x00), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
 test "weak mods" {
@@ -379,11 +355,11 @@ test "weak mods" {
 
     addWeakMods(0x02); // LSHIFT
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x02), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
 
     clearWeakMods();
     sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x00), mock.last_keyboard.mods);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
 test "clearKeyboard" {
@@ -395,6 +371,6 @@ test "clearKeyboard" {
     registerCode(0x04);
     registerCode(0xE1);
     clearKeyboard();
-    try testing.expect(mock.last_keyboard.isEmpty());
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
     try testing.expectEqual(@as(u8, 0), getMods());
 }

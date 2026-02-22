@@ -2,12 +2,14 @@
 //! Zig equivalent of tests/test_common/test_fixture.cpp
 //!
 //! Provides a simulated keyboard environment for testing key processing logic.
+//! Uses layer.zig global state and FixedTestDriver (no allocator needed).
 
 const std = @import("std");
 const keycode = @import("keycode.zig");
 const event = @import("event.zig");
 const report_mod = @import("report.zig");
-const TestDriver = @import("test_driver.zig").TestDriver;
+const layer_mod = @import("layer.zig");
+const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 const KeyPos = event.KeyPos;
@@ -42,25 +44,21 @@ pub const TestFixture = struct {
     keymap: [MAX_LAYERS][MATRIX_ROWS][MATRIX_COLS]Keycode,
     /// Simulated matrix state (which keys are currently pressed)
     matrix: [MATRIX_ROWS]u32,
-    /// Current layer state (bitmask)
-    layer_state: u32,
-    /// Default layer
-    default_layer: u4,
     /// Current simulated time (ms)
     timer: u16,
-    /// Mock driver for capturing reports
-    driver: TestDriver,
+    /// Mock driver for capturing reports (fixed-size, no allocator)
+    driver: FixedTestDriver(64, 16),
     /// Keyboard report state
     keyboard_report: KeyboardReport,
 
-    pub fn init(allocator: std.mem.Allocator) TestFixture {
+    pub fn init() TestFixture {
+        layer_mod.resetState();
+
         var fixture = TestFixture{
             .keymap = undefined,
             .matrix = .{0} ** MATRIX_ROWS,
-            .layer_state = 1, // Layer 0 active
-            .default_layer = 0,
             .timer = 0,
-            .driver = TestDriver.init(allocator),
+            .driver = .{},
             .keyboard_report = .{},
         };
 
@@ -76,8 +74,8 @@ pub const TestFixture = struct {
         return fixture;
     }
 
-    pub fn deinit(self: *TestFixture) void {
-        self.driver.deinit();
+    pub fn deinit(_: *TestFixture) void {
+        layer_mod.resetState();
     }
 
     // ============================================================
@@ -113,10 +111,10 @@ pub const TestFixture = struct {
 
     /// Resolve keycode considering layer state and transparency
     pub fn resolveKeycode(self: *const TestFixture, row: u8, col: u8) Keycode {
-        // Check layers from highest to lowest
-        var layer: i5 = MAX_LAYERS - 1;
+        const state = layer_mod.getLayerState() | layer_mod.getDefaultLayerState();
+        var layer: i6 = MAX_LAYERS - 1;
         while (layer >= 0) : (layer -= 1) {
-            if (self.layer_state & (@as(u32, 1) << @intCast(layer)) != 0) {
+            if (state & (@as(u32, 1) << @as(u5, @intCast(layer))) != 0) {
                 const kc = self.getKeycode(@intCast(layer), row, col);
                 if (kc != KC.TRNS) return kc;
             }
@@ -149,23 +147,23 @@ pub const TestFixture = struct {
     }
 
     // ============================================================
-    // Layer management
+    // Layer management (delegates to layer.zig global state)
     // ============================================================
 
-    pub fn layerOn(self: *TestFixture, layer: u4) void {
-        self.layer_state |= @as(u32, 1) << layer;
+    pub fn layerOn(_: *TestFixture, layer: u4) void {
+        layer_mod.layerOn(layer);
     }
 
-    pub fn layerOff(self: *TestFixture, layer: u4) void {
-        self.layer_state &= ~(@as(u32, 1) << @intCast(layer));
+    pub fn layerOff(_: *TestFixture, layer: u4) void {
+        layer_mod.layerOff(layer);
     }
 
-    pub fn layerClear(self: *TestFixture) void {
-        self.layer_state = @as(u32, 1) << self.default_layer;
+    pub fn layerClear(_: *TestFixture) void {
+        layer_mod.resetState();
     }
 
-    pub fn isLayerOn(self: *const TestFixture, layer: u4) bool {
-        return (self.layer_state & (@as(u32, 1) << layer)) != 0;
+    pub fn isLayerOn(_: *const TestFixture, layer: u4) bool {
+        return layer_mod.layerStateIs(layer);
     }
 
     // ============================================================
@@ -192,7 +190,7 @@ pub const TestFixture = struct {
     }
 
     /// Process the current matrix state (simplified keyboard_task)
-    /// This is a simplified version - full implementation in Issue #8
+    /// TODO: Route through action_tapping pipeline for full tap/hold support
     fn processMatrixScan(self: *TestFixture) void {
         var new_report = KeyboardReport{};
 
@@ -216,17 +214,13 @@ pub const TestFixture = struct {
                     else if (keycode.isMods(kc)) {
                         const basic_kc: u8 = @truncate(kc);
                         const mod_bits: u8 = @truncate(kc >> 8);
-                        // Convert 5-bit mod to 8-bit mod bits
-                        // bit4 is the right modifier flag; left and right are mutually exclusive
                         var mods: u8 = 0;
                         if (mod_bits & 0x10 != 0) {
-                            // Right modifiers
                             if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.RCTRL;
                             if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.RSHIFT;
                             if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.RALT;
                             if (mod_bits & 0x08 != 0) mods |= report_mod.ModBit.RGUI;
                         } else {
-                            // Left modifiers
                             if (mod_bits & 0x01 != 0) mods |= report_mod.ModBit.LCTRL;
                             if (mod_bits & 0x02 != 0) mods |= report_mod.ModBit.LSHIFT;
                             if (mod_bits & 0x04 != 0) mods |= report_mod.ModBit.LALT;
@@ -239,8 +233,8 @@ pub const TestFixture = struct {
                     }
                     // MO() - momentary layer
                     else if (keycode.isMomentary(kc)) {
-                        const layer: u4 = @truncate(kc & 0x1F);
-                        self.layerOn(layer);
+                        const l: u4 = @truncate(kc & 0x1F);
+                        layer_mod.layerOn(l);
                     }
                 }
             }
@@ -250,12 +244,10 @@ pub const TestFixture = struct {
         for (0..MATRIX_ROWS) |row| {
             for (0..MATRIX_COLS) |col| {
                 if (!self.isKeyPressed(@intCast(row), @intCast(col))) {
-                    // Check all layers for MO() keys that were active
-                    for (0..MAX_LAYERS) |layer| {
-                        const kc = self.getKeycode(@intCast(layer), @intCast(row), @intCast(col));
+                    for (0..MAX_LAYERS) |l| {
+                        const kc = self.getKeycode(@intCast(l), @intCast(row), @intCast(col));
                         if (keycode.isMomentary(kc)) {
                             const target_layer: u4 = @truncate(kc & 0x1F);
-                            // Only turn off if no other key is holding this layer
                             var held = false;
                             for (0..MATRIX_ROWS) |r2| {
                                 for (0..MATRIX_COLS) |c2| {
@@ -267,7 +259,7 @@ pub const TestFixture = struct {
                                     }
                                 }
                             }
-                            if (!held) self.layerOff(target_layer);
+                            if (!held) layer_mod.layerOff(target_layer);
                         }
                     }
                 }
@@ -284,9 +276,9 @@ pub const TestFixture = struct {
     /// Reset fixture state for next test
     pub fn reset(self: *TestFixture) void {
         self.clearAllKeys();
-        self.layerClear();
+        layer_mod.resetState();
         self.keyboard_report = .{};
-        self.driver.clearReports();
+        self.driver.reset();
         self.timer = 0;
     }
 
@@ -300,7 +292,7 @@ pub const TestFixture = struct {
 // ============================================================
 
 test "TestFixture basic key press" {
-    var fixture = TestFixture.init(std.testing.allocator);
+    var fixture = TestFixture.init();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -311,19 +303,19 @@ test "TestFixture basic key press" {
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
 
-    try std.testing.expectEqual(@as(usize, 1), fixture.driver.reportCount());
-    try fixture.driver.expectReport(0, 0, &.{0x04});
+    try std.testing.expectEqual(@as(usize, 1), fixture.driver.keyboard_count);
+    try std.testing.expect(fixture.driver.keyboard_reports[0].hasKey(0x04));
 
     // Release KC_A
     fixture.releaseKey(0, 0);
     fixture.runOneScanLoop();
 
-    try std.testing.expectEqual(@as(usize, 2), fixture.driver.reportCount());
-    try fixture.driver.expectEmptyReport(1);
+    try std.testing.expectEqual(@as(usize, 2), fixture.driver.keyboard_count);
+    try std.testing.expect(fixture.driver.keyboard_reports[1].isEmpty());
 }
 
 test "TestFixture modifier key" {
-    var fixture = TestFixture.init(std.testing.allocator);
+    var fixture = TestFixture.init();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -333,12 +325,12 @@ test "TestFixture modifier key" {
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
 
-    try std.testing.expectEqual(@as(usize, 1), fixture.driver.reportCount());
-    try fixture.driver.expectReport(0, report_mod.ModBit.LSHIFT, &.{});
+    try std.testing.expectEqual(@as(usize, 1), fixture.driver.keyboard_count);
+    try std.testing.expectEqual(report_mod.ModBit.LSHIFT, fixture.driver.keyboard_reports[0].mods);
 }
 
 test "TestFixture two keys" {
-    var fixture = TestFixture.init(std.testing.allocator);
+    var fixture = TestFixture.init();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -349,16 +341,17 @@ test "TestFixture two keys" {
     // Press A
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
-    try fixture.driver.expectReport(0, 0, &.{0x04});
+    try std.testing.expect(fixture.driver.keyboard_reports[0].hasKey(0x04));
 
     // Press B (A still held)
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
-    try fixture.driver.expectReport(1, 0, &.{ 0x04, 0x05 });
+    try std.testing.expect(fixture.driver.keyboard_reports[1].hasKey(0x04));
+    try std.testing.expect(fixture.driver.keyboard_reports[1].hasKey(0x05));
 }
 
 test "TestFixture MO() layer switch" {
-    var fixture = TestFixture.init(std.testing.allocator);
+    var fixture = TestFixture.init();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -376,7 +369,7 @@ test "TestFixture MO() layer switch" {
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
 
-    const last = fixture.driver.lastKeyboardReport().?;
+    const last = fixture.driver.lastKeyboardReport();
     try std.testing.expect(last.hasKey(0x05)); // KC_B
 
     // Release MO(1)
@@ -386,7 +379,7 @@ test "TestFixture MO() layer switch" {
 }
 
 test "TestFixture resolveKeycode transparency" {
-    var fixture = TestFixture.init(std.testing.allocator);
+    var fixture = TestFixture.init();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
