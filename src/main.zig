@@ -119,4 +119,5 @@ test {
     // C版テスト移植
     _ = @import("tests/test_keypress.zig");
     _ = @import("tests/test_action_layer.zig");
+    _ = @import("tests/test_tapping.zig");
 }
