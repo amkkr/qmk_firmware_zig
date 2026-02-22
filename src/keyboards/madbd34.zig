@@ -53,8 +53,6 @@ pub const features = struct {
 /// マトリックス設定を返す
 pub fn matrixConfig() matrix.Config {
     return .{
-        .rows = rows,
-        .cols = cols,
         .col_pins = &col_pins,
         .row_pins = &row_pins,
     };
@@ -283,8 +281,6 @@ test "デフォルトキーマップ: 未使用レイヤーが空である" {
 
 test "matrixConfig: 設定値が正しい" {
     const cfg = matrixConfig();
-    try testing.expectEqual(@as(u8, 4), cfg.rows);
-    try testing.expectEqual(@as(u8, 12), cfg.cols);
     try testing.expectEqual(@as(usize, 12), cfg.col_pins.len);
     try testing.expectEqual(@as(usize, 4), cfg.row_pins.len);
 }

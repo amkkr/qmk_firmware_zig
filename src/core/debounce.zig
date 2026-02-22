@@ -7,71 +7,74 @@
 const std = @import("std");
 const MatrixRow = @import("matrix.zig").MatrixRow;
 
-pub const MAX_ROWS = 32;
-pub const MAX_COLS = 32;
+/// Per-key debounce state, parameterized by actual matrix dimensions.
+///
+/// Using comptime `rows` and `cols` instead of fixed 32x32 reduces memory
+/// usage to exactly what the keyboard needs (e.g. 4x12 = 48 bytes vs 2048 bytes).
+pub fn DebounceState(comptime rows: u8, comptime cols: u8) type {
+    return struct {
+        /// Last time each key changed (used for debounce timing)
+        timers: [rows][cols]u16,
+        /// Whether each key is currently in debounce period
+        active: [rows]MatrixRow,
+        /// Debounce time in milliseconds
+        debounce_ms: u16,
 
-/// Per-key debounce state
-pub const DebounceState = struct {
-    /// Last time each key changed (used for debounce timing)
-    timers: [MAX_ROWS][MAX_COLS]u16,
-    /// Whether each key is currently in debounce period
-    active: [MAX_ROWS]MatrixRow,
-    /// Debounce time in milliseconds
-    debounce_ms: u16,
+        pub fn init(debounce_ms: u16) @This() {
+            return .{
+                .timers = .{.{0} ** cols} ** rows,
+                .active = .{0} ** rows,
+                .debounce_ms = debounce_ms,
+            };
+        }
 
-    pub fn init(debounce_ms: u16) DebounceState {
-        return .{
-            .timers = .{.{0} ** MAX_COLS} ** MAX_ROWS,
-            .active = .{0} ** MAX_ROWS,
-            .debounce_ms = debounce_ms,
-        };
-    }
+        /// Apply debounce filtering.
+        /// `raw` is the raw scan result, `cooked` is the debounced output.
+        pub fn debounce(self: *@This(), raw: []const MatrixRow, cooked: []MatrixRow, time: u16) void {
+            for (raw, 0..) |raw_row, row_idx| {
+                const changed = raw_row ^ cooked[row_idx];
+                if (changed == 0 and self.active[row_idx] == 0) continue;
 
-    /// Apply debounce filtering.
-    /// `raw` is the raw scan result, `cooked` is the debounced output.
-    pub fn debounce(self: *DebounceState, raw: []const MatrixRow, cooked: []MatrixRow, time: u16) void {
-        for (raw, 0..) |raw_row, row_idx| {
-            const changed = raw_row ^ cooked[row_idx];
-            if (changed == 0 and self.active[row_idx] == 0) continue;
+                for (0..cols) |col| {
+                    const mask = @as(MatrixRow, 1) << @as(u5, @intCast(col));
 
-            for (0..MAX_COLS) |col| {
-                const mask = @as(MatrixRow, 1) << @as(u5, @intCast(col));
-
-                if (self.active[row_idx] & mask != 0) {
-                    // Key is in debounce period
-                    if (changed & mask != 0) {
-                        // Raw still differs from cooked - check if debounce complete
-                        if (time -% self.timers[row_idx][col] >= self.debounce_ms) {
-                            // Debounce period complete - accept the raw state
-                            if (raw_row & mask != 0) {
-                                cooked[row_idx] |= mask;
-                            } else {
-                                cooked[row_idx] &= ~mask;
+                    if (self.active[row_idx] & mask != 0) {
+                        // Key is in debounce period
+                        if (changed & mask != 0) {
+                            // Raw still differs from cooked - check if debounce complete
+                            if (time -% self.timers[row_idx][col] >= self.debounce_ms) {
+                                // Debounce period complete - accept the raw state
+                                if (raw_row & mask != 0) {
+                                    cooked[row_idx] |= mask;
+                                } else {
+                                    cooked[row_idx] &= ~mask;
+                                }
+                                self.active[row_idx] &= ~mask;
                             }
+                        } else {
+                            // Raw matches cooked again - cancel debounce (bounced back)
                             self.active[row_idx] &= ~mask;
                         }
-                    } else {
-                        // Raw matches cooked again - cancel debounce (bounced back)
-                        self.active[row_idx] &= ~mask;
+                    } else if (changed & mask != 0) {
+                        // New change detected - start debounce timer
+                        self.timers[row_idx][col] = time;
+                        self.active[row_idx] |= mask;
                     }
-                } else if (changed & mask != 0) {
-                    // New change detected - start debounce timer
-                    self.timers[row_idx][col] = time;
-                    self.active[row_idx] |= mask;
                 }
             }
         }
-    }
-};
+    };
+}
 
 // ============================================================
 // Tests
 // ============================================================
 
 test "debounce ignores changes within debounce period" {
-    var state = DebounceState.init(5);
-    var raw = [_]MatrixRow{0} ** MAX_ROWS;
-    var cooked = [_]MatrixRow{0} ** MAX_ROWS;
+    const State = DebounceState(4, 12);
+    var state = State.init(5);
+    var raw = [_]MatrixRow{0} ** 4;
+    var cooked = [_]MatrixRow{0} ** 4;
 
     // Key pressed at time 0
     raw[0] = 1;
@@ -88,9 +91,10 @@ test "debounce ignores changes within debounce period" {
 }
 
 test "debounce rejects bouncing" {
-    var state = DebounceState.init(5);
-    var raw = [_]MatrixRow{0} ** MAX_ROWS;
-    var cooked = [_]MatrixRow{0} ** MAX_ROWS;
+    const State = DebounceState(4, 12);
+    var state = State.init(5);
+    var raw = [_]MatrixRow{0} ** 4;
+    var cooked = [_]MatrixRow{0} ** 4;
 
     // Key pressed
     raw[0] = 1;
@@ -106,9 +110,10 @@ test "debounce rejects bouncing" {
 }
 
 test "debounce multiple keys" {
-    var state = DebounceState.init(5);
-    var raw = [_]MatrixRow{0} ** MAX_ROWS;
-    var cooked = [_]MatrixRow{0} ** MAX_ROWS;
+    const State = DebounceState(4, 12);
+    var state = State.init(5);
+    var raw = [_]MatrixRow{0} ** 4;
+    var cooked = [_]MatrixRow{0} ** 4;
 
     // Press key at (0, 0) and (0, 1) at different times
     raw[0] = 0b01; // col 0
