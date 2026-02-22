@@ -193,6 +193,7 @@ export fn host_set_driver(driver: ?*const CHostDriver) void {
         c_driver_adapter = .{ .c_driver = d };
         host_mod.setDriver(host_mod.HostDriver.from(&c_driver_adapter));
     } else {
+        c_driver_adapter = .{ .c_driver = &empty_c_driver };
         host_mod.clearDriver();
     }
 }
