@@ -81,6 +81,10 @@ pub fn build(b: *std.Build) void {
     const run_flash_tests = b.addRunArtifact(flash_tests);
     test_step.dependOn(&run_flash_tests.step);
 
+    // C ABI compatibility tests (included in main test module via compat/*.zig)
+    const test_compat_step = b.step("test-compat", "Run all tests (includes C ABI compatibility tests)");
+    test_compat_step.dependOn(&run_tests.step);
+
     // Verify step: run tests + check firmware ELF compilation succeeds
     // CI向け: `zig build verify` でテストとファームウェアコンパイルの両方を検証
     const verify_step = b.step("verify", "Run tests and verify firmware ELF compilation");
