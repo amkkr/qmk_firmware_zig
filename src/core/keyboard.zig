@@ -10,7 +10,7 @@ const builtin = @import("builtin");
 const action = @import("action.zig");
 const action_code = @import("action_code.zig");
 const event_mod = @import("event.zig");
-const host = @import("host.zig");
+pub const host = @import("host.zig");
 const layer = @import("layer.zig");
 const keymap_mod = @import("keymap.zig");
 const keycode = @import("keycode.zig");
@@ -27,6 +27,9 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// マトリックス状態: 各行のビットマスク（テスト時は外部から設定可能）
 var matrix_state: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
 var matrix_prev: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
+
+/// テスト用キーマップ
+var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
 
 /// テスト用: マトリックス状態を外部から設定
 pub fn setMatrixRow(row: u8, value: u32) void {
@@ -49,11 +52,38 @@ pub fn releaseKey(row: u8, col: u8) void {
     }
 }
 
+/// テスト用: 全キーをクリア
+pub fn clearAllKeys() void {
+    matrix_state = .{0} ** MATRIX_ROWS;
+}
+
+/// テスト用キーマップへのアクセス
+pub fn getTestKeymap() *keymap_mod.Keymap {
+    return &test_keymap;
+}
+
+/// テスト用: キーマップに1キー設定
+pub fn setTestKey(l: u5, row: u8, col: u8, kc: Keycode) void {
+    if (row < MATRIX_ROWS and col < MATRIX_COLS and l < keymap_mod.MAX_LAYERS) {
+        test_keymap[l][row][col] = kc;
+    }
+}
+
 /// 初期化
 pub fn init() void {
+    action.reset();
     layer.resetState();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
+    test_keymap = keymap_mod.emptyKeymap();
+    timer.mockReset();
+}
+
+/// テスト用: フル初期化（ドライバ設定 + アクションリゾルバ設定含む）
+pub fn initTest(driver: host.HostDriver) void {
+    init();
+    host.setDriver(driver);
+    action.setActionResolver(keymapActionResolver);
 }
 
 /// メイン処理ループ（1スキャンサイクル）
@@ -94,20 +124,8 @@ pub fn task() void {
     matrix_prev = matrix_state;
 }
 
-// ============================================================
-// Tests
-// ============================================================
-
-const std = @import("std");
-const testing = std.testing;
-const report_mod = @import("report.zig");
-const tapping = @import("action_tapping.zig");
-const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
-
-const TestMockDriver = FixedTestDriver(64, 16);
-
-/// テスト用: madbd34 のキーマップを使ったアクションリゾルバ
-fn testActionResolver(ev: KeyEvent) Action {
+/// キーマップベースのアクションリゾルバ（test_fixture からも使用）
+pub fn keymapActionResolver(ev: KeyEvent) Action {
     const km = &test_keymap;
 
     const keymapFn = struct {
@@ -127,18 +145,23 @@ fn testActionResolver(ev: KeyEvent) Action {
     return action_code.keycodeToAction(kc);
 }
 
-/// テスト用キーマップ
-var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
+// ============================================================
+// Tests
+// ============================================================
+
+const std = @import("std");
+const testing = std.testing;
+const report_mod = @import("report.zig");
+const tapping = @import("action_tapping.zig");
+const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
+
+const TestMockDriver = FixedTestDriver(64, 16);
 
 var mock_driver: TestMockDriver = .{};
 
 fn setup() *TestMockDriver {
-    action.reset();
-    init();
     mock_driver = .{};
-    host.setDriver(host.HostDriver.from(&mock_driver));
-    action.setActionResolver(testActionResolver);
-    test_keymap = keymap_mod.emptyKeymap();
+    initTest(host.HostDriver.from(&mock_driver));
     return &mock_driver;
 }
 
