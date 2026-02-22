@@ -62,6 +62,7 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             self.extra_count = 0;
             self.keyboard_reports = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity;
             self.extra_reports = [_]ExtraReport{ExtraReport{}} ** extra_capacity;
+            self.leds = 0;
         }
     };
 }

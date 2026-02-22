@@ -288,7 +288,7 @@ pub fn reset() void {
 const testing = @import("std").testing;
 const report_mod = @import("report.zig");
 
-const TestMockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
+const MockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 fn testResolver(ev: KeyEvent) Action {
     _ = ev;
@@ -297,7 +297,7 @@ fn testResolver(ev: KeyEvent) Action {
 
 test "basic key action" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
     setActionResolver(testResolver);
@@ -315,7 +315,7 @@ test "basic key action" {
 
 test "mod-tap hold" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
@@ -335,7 +335,7 @@ test "mod-tap hold" {
 
 test "mod-tap tap" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
@@ -361,7 +361,7 @@ test "mod-tap tap" {
 
 test "layer-tap hold" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
@@ -381,7 +381,7 @@ test "layer-tap hold" {
 
 test "layer-tap tap" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
@@ -407,7 +407,7 @@ test "layer-tap tap" {
 
 test "MO layer action" {
     reset();
-    var mock = TestMockDriver{};
+    var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 

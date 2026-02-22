@@ -110,7 +110,7 @@ pub const TestFixture = struct {
     }
 
     pub fn layerClear(_: *TestFixture) void {
-        layer_mod.resetState();
+        layer_mod.layerClear();
     }
 
     pub fn isLayerOn(_: *const TestFixture, layer: u4) bool {
