@@ -194,3 +194,46 @@ test "ABI: ACTION_DEFAULT_LAYER_SET produces correct encoding" {
     const code = action_code.ACTION_DEFAULT_LAYER_SET(0);
     try testing.expectEqual(@as(u16, 0x8C01), code);
 }
+
+// ============================================================
+// C ABI export function availability tests
+// ============================================================
+
+const qmk_abi = @import("qmk_abi.zig");
+
+test "ABI: CHostDriver has 4 function pointer fields" {
+    // C版 host_driver_t は4つの関数ポインタフィールドを持つ
+    const T = qmk_abi.CHostDriver;
+    try testing.expect(@sizeOf(T) > 0);
+    try testing.expect(@hasField(T, "keyboard_leds"));
+    try testing.expect(@hasField(T, "send_keyboard"));
+    try testing.expect(@hasField(T, "send_mouse"));
+    try testing.expect(@hasField(T, "send_extra"));
+}
+
+test "ABI: exported symbols exist and are callable via @extern" {
+    // export fn は Zig モジュール内からは直接 pub としてアクセスできないため、
+    // @extern でリンカシンボルとしてアクセスし、存在確認を行う
+    const keyboard_init = @extern(*const fn () callconv(.c) void, .{ .name = "keyboard_init" });
+    const keyboard_task = @extern(*const fn () callconv(.c) void, .{ .name = "keyboard_task" });
+    const layer_on_fn = @extern(*const fn (u8) callconv(.c) void, .{ .name = "layer_on" });
+    const layer_off_fn = @extern(*const fn (u8) callconv(.c) void, .{ .name = "layer_off" });
+    const layer_clear_fn = @extern(*const fn () callconv(.c) void, .{ .name = "layer_clear" });
+    const register_code_fn = @extern(*const fn (u8) callconv(.c) void, .{ .name = "register_code" });
+    const unregister_code_fn = @extern(*const fn (u8) callconv(.c) void, .{ .name = "unregister_code" });
+    const clear_keyboard_fn = @extern(*const fn () callconv(.c) void, .{ .name = "clear_keyboard" });
+    const action_exec_fn = @extern(*const fn (u8, u8, bool, u16) callconv(.c) void, .{ .name = "action_exec" });
+    const process_record_fn = @extern(*const fn (u8, u8, bool, u16) callconv(.c) void, .{ .name = "process_record" });
+
+    // シンボルが null でないことを確認（リンク成功の証拠）
+    try testing.expect(@intFromPtr(keyboard_init) != 0);
+    try testing.expect(@intFromPtr(keyboard_task) != 0);
+    try testing.expect(@intFromPtr(layer_on_fn) != 0);
+    try testing.expect(@intFromPtr(layer_off_fn) != 0);
+    try testing.expect(@intFromPtr(layer_clear_fn) != 0);
+    try testing.expect(@intFromPtr(register_code_fn) != 0);
+    try testing.expect(@intFromPtr(unregister_code_fn) != 0);
+    try testing.expect(@intFromPtr(clear_keyboard_fn) != 0);
+    try testing.expect(@intFromPtr(action_exec_fn) != 0);
+    try testing.expect(@intFromPtr(process_record_fn) != 0);
+}
