@@ -751,7 +751,7 @@ test "E2E: デバウンスのインポートとAPIが正しく公開されてい
     const debounce_mod = @import("../core/debounce.zig");
     // デバウンスモジュールが正しくインポートできることを確認
     // DebounceState が利用可能
-    var db = debounce_mod.DebounceState.init(5);
+    var db = debounce_mod.DebounceState(4, 12).init(5);
     _ = &db;
     // デバウンス時間が正しく設定される
     try testing.expectEqual(@as(u16, 5), db.debounce_ms);
@@ -765,14 +765,14 @@ test "E2E: マトリックス設定がmadbd34と一致する" {
     const matrix = @import("../core/matrix.zig");
     const cfg = madbd34.matrixConfig();
 
-    try testing.expectEqual(@as(u8, 4), cfg.rows);
-    try testing.expectEqual(@as(u8, 12), cfg.cols);
+    try testing.expectEqual(@as(usize, 4), cfg.row_pins.len);
+    try testing.expectEqual(@as(usize, 12), cfg.col_pins.len);
 
     // Matrix型がこの設定で初期化可能であることを確認
-    var mat = matrix.Matrix.init(cfg);
+    var mat = matrix.Matrix(4, 12).init(cfg);
     _ = &mat;
-    try testing.expectEqual(@as(u8, 4), mat.config.rows);
-    try testing.expectEqual(@as(u8, 12), mat.config.cols);
+    try testing.expectEqual(@as(usize, 4), mat.config.row_pins.len);
+    try testing.expectEqual(@as(usize, 12), mat.config.col_pins.len);
 }
 
 // ============================================================
