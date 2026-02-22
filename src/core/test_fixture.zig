@@ -137,7 +137,6 @@ pub const TestFixture = struct {
 
     /// Reset fixture state for next test
     pub fn reset(self: *TestFixture) void {
-        keyboard.clearAllKeys();
         self.driver.reset();
         keyboard.init();
         keyboard.host.setDriver(keyboard.host.HostDriver.from(&self.driver));

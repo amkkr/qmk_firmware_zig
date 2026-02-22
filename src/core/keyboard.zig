@@ -76,12 +76,12 @@ pub fn init() void {
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
-    timer.mockReset();
 }
 
 /// テスト用: フル初期化（ドライバ設定 + アクションリゾルバ設定含む）
 pub fn initTest(driver: host.HostDriver) void {
     init();
+    timer.mockReset();
     host.setDriver(driver);
     action.setActionResolver(keymapActionResolver);
 }
