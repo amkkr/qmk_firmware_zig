@@ -11,6 +11,7 @@ const host_mod = @import("../core/host.zig");
 const action_mod = @import("../core/action.zig");
 const keyboard_mod = @import("../core/keyboard.zig");
 const event_mod = @import("../core/event.zig");
+const keymap_mod = @import("../core/keymap.zig");
 const timer = @import("../hal/timer.zig");
 
 // ============================================================
@@ -32,7 +33,9 @@ export fn keyboard_task() void {
 // ============================================================
 
 /// Execute action for a key event (C ABI wrapper)
-/// C版の action_exec(keyevent_t) に相当
+/// C版の action_exec(keyevent_t) に相当するが、シグネチャは意図的に異なる。
+/// C版は keyevent_t 構造体を値渡しするが、Zig版は C++ テストとの直接リンクを
+/// 目的とせず、FFI 経由の呼び出しやテストアダプタ経由での使用を想定している。
 export fn action_exec(row: u8, col: u8, pressed: bool, time: u16) void {
     const ev = if (pressed)
         event_mod.KeyEvent.keyPress(row, col, time)
@@ -47,7 +50,8 @@ export fn action_exec(row: u8, col: u8, pressed: bool, time: u16) void {
 // ============================================================
 
 /// Process a key record through action resolution and execution
-/// C版の process_record(keyrecord_t*) に相当
+/// C版の process_record(keyrecord_t*) に相当するが、シグネチャは意図的に異なる。
+/// action_exec と同様、FFI 経由の呼び出しやテストアダプタ経由での使用を想定。
 export fn process_record(row: u8, col: u8, pressed: bool, time: u16) void {
     const ev = if (pressed)
         event_mod.KeyEvent.keyPress(row, col, time)
@@ -180,6 +184,10 @@ const empty_c_driver = CHostDriver{
 
 /// Set host driver (C ABI wrapper)
 /// C版の host_set_driver(host_driver_t*) に相当
+///
+/// 注意: driver ポインタは内部に保持され、ドライバが使用される間（次の
+/// host_set_driver(null) 呼び出しまで）有効であり続ける必要がある。
+/// C版 host_set_driver と同様のライフタイム制約。
 export fn host_set_driver(driver: ?*const CHostDriver) void {
     if (driver) |d| {
         c_driver_adapter = .{ .c_driver = d };
@@ -239,7 +247,6 @@ export fn advance_time(ms: u32) void {
 /// Get keycode at given layer and position
 /// keyboard_mod の test_keymap を参照する
 export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
-    const keymap_mod = @import("../core/keymap.zig");
     const km = keyboard_mod.getTestKeymap();
     if (layer >= keymap_mod.MAX_LAYERS) return 0;
     return keymap_mod.keymapKeyToKeycode(km, @intCast(layer), row, col);
