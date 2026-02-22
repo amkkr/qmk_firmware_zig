@@ -25,6 +25,12 @@ pub const Config = struct {
 /// Using comptime `rows` and `cols` avoids the previous 32x32 over-allocation
 /// and sizes all arrays exactly to the keyboard's matrix.
 pub fn Matrix(comptime rows: u8, comptime cols: u8) type {
+    comptime {
+        if (cols > @bitSizeOf(MatrixRow)) {
+            @compileError("cols exceeds MatrixRow bit width");
+        }
+    }
+
     return struct {
         config: Config,
         /// Current debounced matrix state

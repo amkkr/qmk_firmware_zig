@@ -12,6 +12,12 @@ const MatrixRow = @import("matrix.zig").MatrixRow;
 /// Using comptime `rows` and `cols` instead of fixed 32x32 reduces memory
 /// usage to exactly what the keyboard needs (e.g. 4x12 = 48 bytes vs 2048 bytes).
 pub fn DebounceState(comptime rows: u8, comptime cols: u8) type {
+    comptime {
+        if (cols > @bitSizeOf(MatrixRow)) {
+            @compileError("cols exceeds MatrixRow bit width");
+        }
+    }
+
     return struct {
         /// Last time each key changed (used for debounce timing)
         timers: [rows][cols]u16,
@@ -30,7 +36,7 @@ pub fn DebounceState(comptime rows: u8, comptime cols: u8) type {
 
         /// Apply debounce filtering.
         /// `raw` is the raw scan result, `cooked` is the debounced output.
-        pub fn debounce(self: *@This(), raw: []const MatrixRow, cooked: []MatrixRow, time: u16) void {
+        pub fn debounce(self: *@This(), raw: *const [rows]MatrixRow, cooked: *[rows]MatrixRow, time: u16) void {
             for (raw, 0..) |raw_row, row_idx| {
                 const changed = raw_row ^ cooked[row_idx];
                 if (changed == 0 and self.active[row_idx] == 0) continue;
