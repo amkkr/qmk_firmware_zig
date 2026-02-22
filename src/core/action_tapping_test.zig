@@ -48,6 +48,7 @@ fn setup() *MockDriver {
 }
 
 fn teardown() void {
+    action.reset();
     host_mod.clearDriver();
 }
 

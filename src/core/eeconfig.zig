@@ -13,10 +13,13 @@ const EECONFIG_MAGIC_ADDR: u16 = 0;
 /// EEPROM magic number（有効な設定が書き込まれていることを示す）
 const EECONFIG_MAGIC_NUMBER: u16 = 0xFEED;
 
+/// EEPROM magic number の無効値（設定が消去されていることを示す）
+const EECONFIG_MAGIC_INVALID: u16 = 0xFFFF;
+
 /// EEPROMの設定を無効化（magic numberを消去）
 /// upstream の eeconfig_disable() に相当
 pub fn disable() void {
-    eeprom.writeWord(EECONFIG_MAGIC_ADDR, 0xFFFF);
+    eeprom.writeWord(EECONFIG_MAGIC_ADDR, EECONFIG_MAGIC_INVALID);
 }
 
 /// EEPROMに有効な設定があるか確認

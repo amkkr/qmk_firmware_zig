@@ -126,6 +126,7 @@ test "LayerOff" {
 
 test "MomentaryLayerDoesNothing" {
     var fixture = TestFixture.init();
+    fixture.setup();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -144,6 +145,7 @@ test "MomentaryLayerDoesNothing" {
 
 test "MomentaryLayerWithKeypress" {
     var fixture = TestFixture.init();
+    fixture.setup();
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
