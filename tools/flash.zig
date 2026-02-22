@@ -16,6 +16,7 @@ const BOOTSEL_VOLUME_NAME = "RPI-RP2";
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
+    const stdout = std.io.getStdOut().writer();
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -53,7 +54,7 @@ pub fn main() !void {
     };
     defer allocator.free(bootsel_path);
 
-    std.debug.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
+    try stdout.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
 
     // Copy UF2 file to BOOTSEL drive
     const dest_path = std.fs.path.join(allocator, &.{ bootsel_path, std.fs.path.basename(uf2_path) }) catch {
@@ -61,38 +62,14 @@ pub fn main() !void {
     };
     defer allocator.free(dest_path);
 
-    std.debug.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
+    try stdout.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
 
-    copyFile(uf2_path, dest_path) catch |err| {
+    std.fs.cwd().copyFile(uf2_path, std.fs.cwd(), dest_path, .{}) catch |err| {
         std.debug.print("Error: UF2 ファイルのコピーに失敗しました: {}\n", .{err});
         return error.CopyFailed;
     };
 
-    std.debug.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
-}
-
-fn copyFile(src_path: []const u8, dest_path: []const u8) !void {
-    const src_file = try std.fs.cwd().openFile(src_path, .{});
-    defer src_file.close();
-
-    const dest_dir = std.fs.path.dirname(dest_path);
-    const dest_basename = std.fs.path.basename(dest_path);
-
-    var dir = if (dest_dir) |d|
-        try std.fs.cwd().openDir(d, .{})
-    else
-        std.fs.cwd();
-    defer if (dest_dir != null) dir.close();
-
-    const dest_file = try dir.createFile(dest_basename, .{});
-    defer dest_file.close();
-
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const bytes_read = try src_file.read(&buf);
-        if (bytes_read == 0) break;
-        try dest_file.writeAll(buf[0..bytes_read]);
-    }
+    try stdout.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
 }
 
 fn detectBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
@@ -173,4 +150,32 @@ fn isDirectory(path: []const u8) bool {
 fn fileExists(path: []const u8) bool {
     std.fs.cwd().access(path, .{}) catch return false;
     return true;
+}
+
+test "copyFile copies file contents correctly" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Write source file content
+    const src_content = "test UF2 content\x00\x01\x02";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "src.uf2", .data = src_content });
+
+    // Build absolute paths for copyFile
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+    const src_path = try std.fs.path.join(allocator, &.{ tmp_path, "src.uf2" });
+    defer allocator.free(src_path);
+    const dest_path = try std.fs.path.join(allocator, &.{ tmp_path, "dest.uf2" });
+    defer allocator.free(dest_path);
+
+    // Use std.fs.cwd().copyFile (standard library function)
+    try std.fs.cwd().copyFile(src_path, std.fs.cwd(), dest_path, .{});
+
+    // Verify file contents match
+    const dest_content = try tmp_dir.dir.readFileAlloc(allocator, "dest.uf2", 1024);
+    defer allocator.free(dest_content);
+    try testing.expectEqualStrings(src_content, dest_content);
 }
