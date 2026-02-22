@@ -130,10 +130,18 @@ export fn send_keyboard_report() void {
 // ============================================================
 
 /// C ABI 互換のホストドライバ関数ポインタテーブル
-/// C版の host_driver_t に相当
+/// C版の host_driver_t に相当（tmk_core/protocol/host_driver.h）
+///
+/// フィールド順は C版と完全一致:
+///   keyboard_leds, send_keyboard, send_nkro, send_mouse, send_extra
+///
+/// 注意: send_nkro はバイナリ互換性のためフィールドとして存在するが、
+/// Zig版は NKRO 非対応のため常に null を設定する。
 pub const CHostDriver = extern struct {
     keyboard_leds: ?*const fn () callconv(.c) u8,
     send_keyboard: ?*const fn (*const @import("../core/report.zig").KeyboardReport) callconv(.c) void,
+    /// NKRO 非対応につき常に null。C版 host_driver_t とのバイナリ互換性のため維持。
+    send_nkro: ?*const fn (*const anyopaque) callconv(.c) void,
     send_mouse: ?*const fn (*const @import("../core/report.zig").MouseReport) callconv(.c) void,
     send_extra: ?*const fn (*const @import("../core/report.zig").ExtraReport) callconv(.c) void,
 };
@@ -165,6 +173,7 @@ var c_driver_adapter: CDriverAdapter = .{ .c_driver = &empty_c_driver };
 const empty_c_driver = CHostDriver{
     .keyboard_leds = null,
     .send_keyboard = null,
+    .send_nkro = null,
     .send_mouse = null,
     .send_extra = null,
 };

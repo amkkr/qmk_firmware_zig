@@ -201,12 +201,13 @@ test "ABI: ACTION_DEFAULT_LAYER_SET produces correct encoding" {
 
 const qmk_abi = @import("qmk_abi.zig");
 
-test "ABI: CHostDriver has 4 function pointer fields" {
-    // C版 host_driver_t は4つの関数ポインタフィールドを持つ
+test "ABI: CHostDriver has 5 function pointer fields matching host_driver_t" {
+    // C版 host_driver_t は5つの関数ポインタフィールドを持つ（send_nkro を含む）
     const T = qmk_abi.CHostDriver;
     try testing.expect(@sizeOf(T) > 0);
     try testing.expect(@hasField(T, "keyboard_leds"));
     try testing.expect(@hasField(T, "send_keyboard"));
+    try testing.expect(@hasField(T, "send_nkro")); // NKRO非対応だがバイナリ互換性のため存在
     try testing.expect(@hasField(T, "send_mouse"));
     try testing.expect(@hasField(T, "send_extra"));
 }
