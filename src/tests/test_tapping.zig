@@ -12,7 +12,7 @@
 //! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ
 //!
 //! 追加テスト（C版にない拡張ケース）:
-//! 8.  TAPPING_TERM 境界値: ちょうど TAPPING_TERM でリリース → タップ
+//! 8.  TAPPING_TERM 境界値: ちょうど TAPPING_TERM でリリース → ホールド
 //! 9.  TAPPING_TERM+1 境界値: TAPPING_TERM+1 の tick → ホールド
 //! 10. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
 //! 11. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
