@@ -62,6 +62,7 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             self.extra_count = 0;
             self.keyboard_reports = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity;
             self.extra_reports = [_]ExtraReport{ExtraReport{}} ** extra_capacity;
+            self.leds = 0;
         }
     };
 }
@@ -94,11 +95,13 @@ test "FixedTestDriver reset clears all state" {
     driver.sendKeyboard(KeyboardReport{});
     driver.sendMouse(MouseReport{});
     driver.sendExtra(ExtraReport{});
+    driver.leds = 0xFF;
     driver.reset();
 
     try std.testing.expectEqual(@as(usize, 0), driver.keyboard_count);
     try std.testing.expectEqual(@as(usize, 0), driver.mouse_count);
     try std.testing.expectEqual(@as(usize, 0), driver.extra_count);
+    try std.testing.expectEqual(@as(u8, 0), driver.leds);
 }
 
 test "FixedTestDriver overflow does not crash" {
