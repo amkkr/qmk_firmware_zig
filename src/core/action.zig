@@ -164,32 +164,53 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 ///
 /// C版ではACT_LAYERのparamはlayer_bitop構造体で解釈される:
 ///   bits[3:0]=bits, bit[4]=xbit, bits[7:5]=part, bits[9:8]=on, bits[11:10]=op
-/// 現在の実装は簡易版。完全なbitwise操作は未実装。
-/// TODO: C版のbitwise layer操作（OP_BIT_AND/OR/XOR/SET）の完全な移植
+///
+/// on==0 の場合はデフォルトレイヤー操作（リリース時に実行）
+/// on!=0 の場合はレイヤーstate操作（ON_PRESS/ON_RELEASE/ON_BOTHに基づく）
 fn processLayerAction(ev: KeyEvent, act: Action) void {
-    const param = act.kind.param;
-    const action_layer: u5 = @truncate(param);
+    const bitop = act.layer_bitop;
+    const shift: u5 = @as(u5, bitop.part) * 4;
+    const bits: layer.LayerState = @as(layer.LayerState, bitop.bits) << shift;
+    const mask: layer.LayerState = if (bitop.xbit != 0) ~(@as(layer.LayerState, 0xf) << shift) else 0;
 
-    // OP_ON_OFF: プレスでレイヤーON、リリースでレイヤーOFF
-    if (ev.pressed) {
-        layer.layerOn(action_layer);
+    if (bitop.on == 0) {
+        // Default Layer Bitwise Operation (on release)
+        if (!ev.pressed) {
+            switch (bitop.op) {
+                action_code.OP_BIT_AND => layer.defaultLayerAnd(bits | mask),
+                action_code.OP_BIT_OR => layer.defaultLayerOr(bits | mask),
+                action_code.OP_BIT_XOR => layer.defaultLayerXor(bits | mask),
+                action_code.OP_BIT_SET => layer.defaultLayerSet(bits | mask),
+            }
+        }
     } else {
-        layer.layerOff(action_layer);
+        // Layer Bitwise Operation
+        const should_act = if (ev.pressed) (bitop.on & action_code.ON_PRESS != 0) else (bitop.on & action_code.ON_RELEASE != 0);
+        if (should_act) {
+            switch (bitop.op) {
+                action_code.OP_BIT_AND => layer.layerAnd(bits | mask),
+                action_code.OP_BIT_OR => layer.layerOr(bits | mask),
+                action_code.OP_BIT_XOR => layer.layerXor(bits | mask),
+                action_code.OP_BIT_SET => layer.layerStateSet(bits | mask),
+            }
+        }
     }
 }
 
 /// Process layer + modifier actions
+/// layer_mods の mods フィールドは8ビットHIDフォーマットで格納されているため、
+/// 5ビット変換不要の addMods/delMods を使用する（C版 register_mods/unregister_mods 相当）。
 fn processLayerModsAction(ev: KeyEvent, act: Action) void {
     const l: u5 = act.layer_mods.layer;
     const mods = act.layer_mods.mods;
 
     if (ev.pressed) {
         layer.layerOn(l);
-        host.registerMods(mods);
+        host.addMods(mods);
         host.sendKeyboardReport();
     } else {
+        host.delMods(mods);
         layer.layerOff(l);
-        host.unregisterMods(mods);
         host.sendKeyboardReport();
     }
 }
@@ -416,13 +437,6 @@ test "MO layer action" {
 
     var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
     processAction(&press, act);
-    // MO uses layer_tap with code=0 (OP_ON_OFF is 0xF1 but ACTION_LAYER_MOMENTARY sets code=0)
-    // Actually ACTION_LAYER_MOMENTARY(1) = layer_tap | (1 << 8) | 0 = code is 0
-    // When code == 0, it's a hold action. Let me check...
-    // In the C code, ACTION_LAYER_MOMENTARY uses ACT_LAYER_TAP with OP_ON_OFF
-    // But our ACTION_LAYER_MOMENTARY just sets code=0
-
-    // With code=0, tap check returns false, so hold path activates layer
     try testing.expect(layer.layerStateIs(1));
 
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
@@ -439,4 +453,127 @@ test "isTapAction" {
     try testing.expect(!isTapAction(.{ .code = action_code.ACTION_KEY(0x04) }));
     // MO (layer-tap with code=0)
     try testing.expect(!isTapAction(.{ .code = action_code.ACTION_LAYER_MOMENTARY(1) }));
+}
+
+test "layer bitwise OP_BIT_OR on press" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ACTION_LAYER_BITOP(OP_BIT_OR, part=0, bits=0b00010, ON_PRESS)
+    const act = Action{ .code = action_code.ACTION_LAYER_BITOP(action_code.OP_BIT_OR, 0, 0b00010, action_code.ON_PRESS) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(layer.layerStateIs(1));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(layer.layerStateIs(1));
+}
+
+test "layer bitwise OP_BIT_XOR on release (TG equivalent)" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ACTION_LAYER_TOGGLE(1) = ACTION_LAYER_BITOP(OP_BIT_XOR, 0, 0b00010, ON_RELEASE)
+    const act = Action{ .code = action_code.ACTION_LAYER_TOGGLE(1) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(!layer.layerStateIs(1));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(layer.layerStateIs(1));
+
+    var press2 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 300) };
+    processAction(&press2, act);
+    try testing.expect(layer.layerStateIs(1));
+
+    var release2 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
+    processAction(&release2, act);
+    try testing.expect(!layer.layerStateIs(1));
+}
+
+test "layer bitwise OP_BIT_SET on press (TO equivalent)" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    layer.layerOn(1);
+    layer.layerOn(3);
+
+    // ACTION_LAYER_GOTO(2) = ACTION_LAYER_BITOP(OP_BIT_SET, 0, 0b00100, ON_PRESS)
+    const act = Action{ .code = action_code.ACTION_LAYER_GOTO(2) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(layer.layerStateIs(2));
+    try testing.expect(!layer.layerStateIs(1));
+    try testing.expect(!layer.layerStateIs(3));
+}
+
+test "layer bitwise OP_BIT_AND" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    layer.layerOn(0);
+    layer.layerOn(1);
+    layer.layerOn(2);
+
+    // AND with bits=0b0011 (part=0, ON_PRESS): layer_state &= 0b0011
+    const act = Action{ .code = action_code.ACTION_LAYER_BITOP(action_code.OP_BIT_AND, 0, 0b00011, action_code.ON_PRESS) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+
+    try testing.expect(layer.layerStateIs(0));
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expect(!layer.layerStateIs(2));
+}
+
+test "default layer bitwise OP_BIT_SET (DF equivalent)" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ACTION_DEFAULT_LAYER_SET(1) = ACTION_LAYER_BITOP(OP_BIT_SET, 0, 0b00010, 0)
+    const act = Action{ .code = action_code.ACTION_DEFAULT_LAYER_SET(1) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expectEqual(@as(layer.LayerState, 1), layer.getDefaultLayerState());
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expectEqual(@as(layer.LayerState, 0b10), layer.getDefaultLayerState());
+}
+
+test "layer bitwise OP_BIT_OR on both" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ON_BOTH: press and release
+    const act = Action{ .code = action_code.ACTION_LAYER_BITOP(action_code.OP_BIT_OR, 0, 0b00010, action_code.ON_BOTH) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(layer.layerStateIs(1));
+
+    layer.layerClear();
+    try testing.expect(!layer.layerStateIs(1));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(layer.layerStateIs(1));
 }
