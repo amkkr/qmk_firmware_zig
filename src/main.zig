@@ -114,4 +114,6 @@ test {
     @import("std").testing.refAllDecls(keyboards);
     // Boot2モジュールのテストを実行
     _ = @import("hal/boot2.zig");
+    // 統合テストを実行
+    _ = @import("tests/integration_test.zig");
 }
