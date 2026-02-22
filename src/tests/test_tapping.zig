@@ -263,9 +263,9 @@ test "ANewTapWithinTappingTermIsBuggy" {
     // ----- シナリオ1: TAPPING_TERM 以内の再タップは "バグ的" 動作 -----
 
     // 1回目のタップ: プレスでは何も送信されない
+    const count_before_press1 = mock.keyboard_count;
     press(0, 0, 100);
-    const count_after_press1 = mock.keyboard_count;
-    try testing.expectEqual(count_after_press1, mock.keyboard_count);
+    try testing.expectEqual(count_before_press1, mock.keyboard_count);
 
     // リリース → KC_P が送信される
     release(0, 0, 150);
