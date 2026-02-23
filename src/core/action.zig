@@ -14,6 +14,8 @@ const layer = @import("layer.zig");
 pub const host = @import("host.zig");
 const tapping = @import("action_tapping.zig");
 const extrakey = @import("extrakey.zig");
+const keymap_mod = @import("keymap.zig");
+const report_mod = @import("report.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -70,8 +72,11 @@ pub fn isTapAction(act: Action) bool {
     const kind = act.kind.id;
     switch (kind) {
         .mods_tap, .rmods_tap => {
+            const code = act.key.code;
+            // MODS_ONESHOT (0x00) はタップアクション（C版 is_tap_action 互換）
+            if (code == action_code.MODS_ONESHOT) return true;
             // Tap action if there's a tap keycode
-            return act.key.code != 0;
+            return code != 0;
         },
         .layer_tap, .layer_tap_ext => {
             const code = act.key.code;
@@ -129,6 +134,12 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
     const is_right = act.kind.id == .rmods_tap;
     const mods8 = modFourBitToFiveBit(mods, is_right);
 
+    // One-Shot Modifier (OSM) の場合は専用処理
+    if (kc == action_code.MODS_ONESHOT) {
+        processOneShotModsAction(keyp, mods8);
+        return;
+    }
+
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
             // Tapped: register the tap keycode
@@ -156,6 +167,63 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                 host.unregisterMods(mods8);
                 host.sendKeyboardReport();
             }
+        }
+    }
+}
+
+/// One-Shot Modifier (OSM) のアクション処理
+/// C版 quantum/action.c の ACT_MODS_TAP/MODS_ONESHOT 処理に相当
+///
+/// タップ時: addOneshotMods(mods) で OSM を設定
+///   → 次のキー入力時に sendKeyboardReport() で一時的に適用されクリアされる
+/// ホールド時: 通常の修飾キーとして動作（registerMods/unregisterMods）
+///
+/// 注意: mods5 は modFourBitToFiveBit() の結果（5ビットパック形式）。
+/// registerMods/unregisterMods は内部で5ビット→8ビット変換するが、
+/// addOneshotMods は8ビットHIDmodsを直接格納するため、明示的に変換が必要。
+fn processOneShotModsAction(keyp: *KeyRecord, mods5: u8) void {
+    const ev = keyp.event;
+
+    // C版互換: oneshot_enable が false の場合、通常の修飾キーとして動作
+    if (!keymap_mod.keymap_config.oneshot_enable) {
+        if (ev.pressed) {
+            host.registerMods(mods5);
+        } else {
+            host.unregisterMods(mods5);
+        }
+        host.sendKeyboardReport();
+        return;
+    }
+
+    const mods_hid = host.modFiveBitToEightBit(mods5);
+
+    if (ev.pressed) {
+        if (keyp.tap.count > 0) {
+            if (keyp.tap.count == 1) {
+                // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
+                // C版互換: OSM設定時はレポートを送信しない（次キー押下時に適用）
+                host.addOneshotMods(mods_hid);
+            } else {
+                // 複数タップ: 通常のmod toggle として扱う（C版互換）
+                host.registerMods(mods5);
+                host.sendKeyboardReport();
+            }
+        } else {
+            // ホールド: 通常の修飾キーとして登録
+            host.registerMods(mods5);
+            host.sendKeyboardReport();
+        }
+    } else {
+        if (keyp.tap.count > 0) {
+            // タップリリース: OSMは次キーまで保持（レポート送信不要）
+            if (keyp.tap.count > 1) {
+                host.unregisterMods(mods5);
+                host.sendKeyboardReport();
+            }
+        } else {
+            // ホールドリリース: 修飾キーを解除
+            host.unregisterMods(mods5);
+            host.sendKeyboardReport();
         }
     }
 }
@@ -200,9 +268,10 @@ fn processLayerAction(ev: KeyEvent, act: Action) void {
 /// Process layer + modifier actions
 /// layer_mods の mods フィールドは8ビットHIDフォーマットで格納されているため、
 /// 5ビット変換不要の addMods/delMods を使用する（C版 register_mods/unregister_mods 相当）。
+/// keymap_config によるモッドスワップも適用する（C版 mod_config() 相当）。
 fn processLayerModsAction(ev: KeyEvent, act: Action) void {
     const l: u5 = act.layer_mods.layer;
-    const mods = act.layer_mods.mods;
+    const mods = keymap_mod.modConfig(act.layer_mods.mods);
 
     if (ev.pressed) {
         layer.layerOn(l);
@@ -300,6 +369,7 @@ pub fn reset() void {
     host.hostReset();
     layer.resetState();
     tapping.reset();
+    keymap_mod.keymap_config = .{};
 }
 
 // ============================================================
@@ -307,7 +377,6 @@ pub fn reset() void {
 // ============================================================
 
 const testing = @import("std").testing;
-const report_mod = @import("report.zig");
 
 const MockDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
@@ -453,6 +522,8 @@ test "isTapAction" {
     try testing.expect(!isTapAction(.{ .code = action_code.ACTION_KEY(0x04) }));
     // MO (layer-tap with code=0)
     try testing.expect(!isTapAction(.{ .code = action_code.ACTION_LAYER_MOMENTARY(1) }));
+    // OSM (MODS_ONESHOT) はタップアクション
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_MODS_ONESHOT(0x01) }));
 }
 
 test "layer bitwise OP_BIT_OR on press" {
@@ -598,4 +669,93 @@ test "processLayerModsAction press and release" {
     processAction(&release, act);
     try testing.expect(!layer.layerStateIs(1));
     try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "OSM tap sets oneshot mods" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // OSM(LSFT): ACTION_MODS_ONESHOT(0x02) → mods_tap, mods=0x02, code=0x00
+    const act = Action{ .code = action_code.ACTION_MODS_ONESHOT(0x02) };
+
+    // タップ（tap.count=1）→ oneshot_mods が設定される
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, act);
+    try testing.expectEqual(@as(u8, 0x02), host.getOneshotMods());
+
+    // リリース（tap.count=1）→ oneshot_mods は保持される
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x02), host.getOneshotMods());
+
+    // 次のキーを押す → oneshot_mods がレポートに含まれ、クリアされる
+    host.registerCode(0x04); // KC_A
+    host.sendKeyboardReport();
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods()); // クリア済み
+
+    // さらにもう一度送信 → mods はクリア
+    host.sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "OSM hold acts as normal modifier" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // OSM(LSFT): ACTION_MODS_ONESHOT(0x02)
+    const act = Action{ .code = action_code.ACTION_MODS_ONESHOT(0x02) };
+
+    // ホールド（tap.count=0）→ 通常の修飾キーとして動作
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods()); // OSMは設定されない
+
+    // リリース → 修飾キーがクリアされる
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "OSM right modifier tap sets correct HID bits" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // OSM(RSFT) のC版互換アクションコード
+    // C版: ACTION(ACT_MODS_TAP=2, 0x12<<8 | 0x00) = (2<<12) | 0x1200 = 0x3200
+    // → kind=3 (rmods_tap), mods=2, code=0
+    // 注: ACTION_MODS_ONESHOT(0x12) は u12 param 制限のためC版と非互換。
+    //     直接C版互換値を使用する。
+    const act = Action{ .code = 0x3200 };
+
+    // タップ（tap.count=1）→ oneshot_mods に RSHIFT(0x20) が設定される
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, act);
+    try testing.expectEqual(@as(u8, 0x20), host.getOneshotMods()); // RSHIFT HID bit
+
+    // 次のキーを押す → RSHIFT がレポートに含まれクリアされる
+    host.registerCode(0x04); // KC_A
+    host.sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x20), mock.lastKeyboardReport().mods);
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods());
 }
