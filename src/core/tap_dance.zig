@@ -146,10 +146,6 @@ pub fn process(keycode: Keycode, pressed: bool) bool {
     if (pressed) {
         state.last_tap_time = timer.read();
         state.count += 1;
-        // 2タップで即座に確定するケースをチェック
-        if (state.count >= 2 and actions[td_index].on_double_tap != keycode_mod.KC.NO) {
-            // on_double_tap があれば後で確定時に判断
-        }
         active_td = if (state.finished) 0 else keycode;
     } else {
         if (state.finished) {
@@ -229,13 +225,7 @@ fn unregisterAndReset(state: *TapDanceState) void {
 fn registerKeycode(kc: Keycode) void {
     if (kc == keycode_mod.KC.NO) return;
     if (kc <= 0x00FF) {
-        // Basic keycode
-        if (kc >= 0xE0 and kc <= 0xE7) {
-            // Modifier keycode
-            host.registerCode(@truncate(kc));
-        } else {
-            host.registerCode(@truncate(kc));
-        }
+        host.registerCode(@truncate(kc));
     }
 }
 
@@ -248,9 +238,7 @@ fn unregisterKeycode(kc: Keycode) void {
 }
 
 /// Tap Dance キーコードかどうか判定
-pub fn isTapDance(kc: Keycode) bool {
-    return kc >= keycode_mod.QK_TAP_DANCE and kc <= keycode_mod.QK_TAP_DANCE_MAX;
-}
+pub const isTapDance = keycode_mod.isTapDance;
 
 /// Tap Dance キーコードからインデックスを取得
 pub fn getTdIndex(kc: Keycode) u8 {
