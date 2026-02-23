@@ -210,13 +210,13 @@ var lt_action_cache: [4][4]u16 = [_][4]u16{[_]u16{0} ** 4} ** 4;
 
 fn ltModResolveForLayer(row: u8, col: u8) Action {
     if (row == 0 and col == 0) {
-        return .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, 0x17) };
+        return .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, keycode.KC.T) };
     }
     if (row == 0 and col == 1) {
         if (layer_mod.layerStateIs(1)) {
             return .{ .code = keycode.RALT(keycode.KC.@"9") };
         }
-        return .{ .code = action_code.ACTION_KEY(0x1B) }; // KC_X
+        return .{ .code = action_code.ACTION_KEY(keycode.KC.X) };
     }
     return .{ .code = action_code.ACTION_NO };
 }
