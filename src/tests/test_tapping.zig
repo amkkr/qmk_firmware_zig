@@ -680,6 +680,20 @@ test "ModTap_Hold_WithNormalKeyInterrupt" {
     }
     try testing.expect(found_a);
 
+    // LSHIFT と KC_A が同一レポートに同時に含まれることを確認
+    // （別々のレポートに分かれていないことを保証する）
+    var found_shift_and_a = false;
+    i = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0 and
+            mock.keyboard_reports[i].hasKey(0x04))
+        {
+            found_shift_and_a = true;
+            break;
+        }
+    }
+    try testing.expect(found_shift_and_a);
+
     // 最終レポートは空
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }
