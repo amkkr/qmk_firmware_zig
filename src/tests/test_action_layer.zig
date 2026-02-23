@@ -247,9 +247,9 @@ fn lmResolver(ev: KeyEvent) Action {
     if (ev.key.row == 0 and ev.key.col == 1) {
         // レイヤー1がアクティブなら KC_B、そうでなければ KC_A
         if (layer_mod.layerStateIs(1)) {
-            return .{ .code = action_code.ACTION_KEY(0x05) }; // KC_B
+            return .{ .code = action_code.ACTION_KEY(keycode.KC.B) }; // KC_B
         }
-        return .{ .code = action_code.ACTION_KEY(0x04) }; // KC_A
+        return .{ .code = action_code.ACTION_KEY(keycode.KC.A) }; // KC_A
     }
     return .{ .code = action_code.ACTION_NO };
 }
