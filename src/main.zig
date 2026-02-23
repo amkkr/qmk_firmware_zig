@@ -99,8 +99,9 @@ pub const startup = if (is_freestanding) struct {
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
 
-        // キーボード内部状態初期化・アクションリゾルバ設定
+        // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
+        keyboard.getTestKeymap().* = kb.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
         // メインループ
