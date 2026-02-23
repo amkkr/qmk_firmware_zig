@@ -109,6 +109,99 @@ pub fn modConfig(mod: u8) u8 {
     return m;
 }
 
+/// キーコードに対して keymap_config のスワップ設定を適用する
+/// C版 quantum/keycode_config.c の keycode_config() に相当。
+pub fn keycodeConfig(kc: u8) u8 {
+    switch (kc) {
+        @as(u8, @truncate(KC.CAPS_LOCK)) => {
+            if (keymap_config.swap_control_capslock or keymap_config.capslock_to_control) {
+                return @truncate(KC.LEFT_CTRL);
+            } else if (keymap_config.swap_escape_capslock) {
+                return @truncate(KC.ESCAPE);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.LEFT_CTRL)) => {
+            if (keymap_config.swap_control_capslock) {
+                return @truncate(KC.CAPS_LOCK);
+            }
+            if (keymap_config.swap_lctl_lgui) {
+                if (keymap_config.no_gui) return 0;
+                return @truncate(KC.LEFT_GUI);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.LEFT_ALT)) => {
+            if (keymap_config.swap_lalt_lgui) {
+                if (keymap_config.no_gui) return 0;
+                return @truncate(KC.LEFT_GUI);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.LEFT_GUI)) => {
+            if (keymap_config.swap_lalt_lgui) {
+                return @truncate(KC.LEFT_ALT);
+            }
+            if (keymap_config.swap_lctl_lgui) {
+                return @truncate(KC.LEFT_CTRL);
+            }
+            if (keymap_config.no_gui) return 0;
+            return kc;
+        },
+        @as(u8, @truncate(KC.RIGHT_CTRL)) => {
+            if (keymap_config.swap_rctl_rgui) {
+                if (keymap_config.no_gui) return 0;
+                return @truncate(KC.RIGHT_GUI);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.RIGHT_ALT)) => {
+            if (keymap_config.swap_ralt_rgui) {
+                if (keymap_config.no_gui) return 0;
+                return @truncate(KC.RIGHT_GUI);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.RIGHT_GUI)) => {
+            if (keymap_config.swap_ralt_rgui) {
+                return @truncate(KC.RIGHT_ALT);
+            }
+            if (keymap_config.swap_rctl_rgui) {
+                return @truncate(KC.RIGHT_CTRL);
+            }
+            if (keymap_config.no_gui) return 0;
+            return kc;
+        },
+        @as(u8, @truncate(KC.GRAVE)) => {
+            if (keymap_config.swap_grave_esc) {
+                return @truncate(KC.ESCAPE);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.ESCAPE)) => {
+            if (keymap_config.swap_grave_esc) {
+                return @truncate(KC.GRAVE);
+            } else if (keymap_config.swap_escape_capslock) {
+                return @truncate(KC.CAPS_LOCK);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.BACKSLASH)) => {
+            if (keymap_config.swap_backslash_backspace) {
+                return @truncate(KC.BACKSPACE);
+            }
+            return kc;
+        },
+        @as(u8, @truncate(KC.BACKSPACE)) => {
+            if (keymap_config.swap_backslash_backspace) {
+                return @truncate(KC.BACKSLASH);
+            }
+            return kc;
+        },
+        else => return kc,
+    }
+}
+
 /// Keymap type: [layer][row][col] = Keycode
 pub const Keymap = [MAX_LAYERS][MATRIX_ROWS][MATRIX_COLS]Keycode;
 
@@ -326,4 +419,75 @@ test "layoutMadbd34: realistic keymap layer 0" {
     try testing.expectEqual(KC.LCTL, m[3][3]);
     try testing.expectEqual(keycode.MO(1), m[3][8]);
     try testing.expectEqual(KC.NO, m[3][0]); // unused
+}
+
+test "KeymapConfig size is 2 bytes" {
+    try testing.expectEqual(@as(usize, 2), @sizeOf(KeymapConfig));
+}
+
+test "keycodeConfig: no swap returns unchanged" {
+    keymap_config = .{};
+    try testing.expectEqual(@as(u8, 0x04), keycodeConfig(0x04)); // KC_A
+    try testing.expectEqual(@as(u8, 0x29), keycodeConfig(0x29)); // KC_ESCAPE
+    try testing.expectEqual(@as(u8, 0x35), keycodeConfig(0x35)); // KC_GRAVE
+}
+
+test "keycodeConfig: swap_grave_esc" {
+    keymap_config = .{};
+    keymap_config.swap_grave_esc = true;
+    try testing.expectEqual(@as(u8, 0x29), keycodeConfig(0x35)); // GRAVE → ESCAPE
+    try testing.expectEqual(@as(u8, 0x35), keycodeConfig(0x29)); // ESCAPE → GRAVE
+    try testing.expectEqual(@as(u8, 0x04), keycodeConfig(0x04)); // unaffected
+}
+
+test "keycodeConfig: swap_backslash_backspace" {
+    keymap_config = .{};
+    keymap_config.swap_backslash_backspace = true;
+    try testing.expectEqual(@as(u8, 0x2A), keycodeConfig(0x31)); // BACKSLASH → BACKSPACE
+    try testing.expectEqual(@as(u8, 0x31), keycodeConfig(0x2A)); // BACKSPACE → BACKSLASH
+}
+
+test "keycodeConfig: swap_control_capslock" {
+    keymap_config = .{};
+    keymap_config.swap_control_capslock = true;
+    try testing.expectEqual(@as(u8, @truncate(KC.LEFT_CTRL)), keycodeConfig(@truncate(KC.CAPS_LOCK)));
+    try testing.expectEqual(@as(u8, @truncate(KC.CAPS_LOCK)), keycodeConfig(@truncate(KC.LEFT_CTRL)));
+}
+
+test "keycodeConfig: capslock_to_control" {
+    keymap_config = .{};
+    keymap_config.capslock_to_control = true;
+    try testing.expectEqual(@as(u8, @truncate(KC.LEFT_CTRL)), keycodeConfig(@truncate(KC.CAPS_LOCK)));
+    // LEFT_CTRL は変わらない（swap_control_capslock がfalseのため）
+    try testing.expectEqual(@as(u8, @truncate(KC.LEFT_CTRL)), keycodeConfig(@truncate(KC.LEFT_CTRL)));
+}
+
+test "keycodeConfig: swap_escape_capslock" {
+    keymap_config = .{};
+    keymap_config.swap_escape_capslock = true;
+    try testing.expectEqual(@as(u8, @truncate(KC.ESCAPE)), keycodeConfig(@truncate(KC.CAPS_LOCK)));
+    try testing.expectEqual(@as(u8, @truncate(KC.CAPS_LOCK)), keycodeConfig(@truncate(KC.ESCAPE)));
+}
+
+test "modConfig: no swap returns unchanged" {
+    keymap_config = .{};
+    try testing.expectEqual(@as(u8, 0x04), modConfig(0x04)); // LALT
+    try testing.expectEqual(@as(u8, 0x01), modConfig(0x01)); // LCTRL
+}
+
+test "modConfig: swap_lalt_lgui" {
+    keymap_config = .{};
+    keymap_config.swap_lalt_lgui = true;
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LGUI), modConfig(report_mod.ModBit.LALT));
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LALT), modConfig(report_mod.ModBit.LGUI));
+    // 両方セットされている場合はスワップしない
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LALT | report_mod.ModBit.LGUI), modConfig(report_mod.ModBit.LALT | report_mod.ModBit.LGUI));
+}
+
+test "modConfig: no_gui" {
+    keymap_config = .{};
+    keymap_config.no_gui = true;
+    try testing.expectEqual(@as(u8, 0), modConfig(report_mod.ModBit.LGUI));
+    try testing.expectEqual(@as(u8, 0), modConfig(report_mod.ModBit.RGUI));
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LCTRL), modConfig(report_mod.ModBit.LCTRL | report_mod.ModBit.LGUI));
 }
