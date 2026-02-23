@@ -21,7 +21,6 @@ const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
 const KeyRecord = event_mod.KeyRecord;
 const KeyEvent = event_mod.KeyEvent;
-const ModBit = report_mod.ModBit;
 
 /// Action resolver callback type
 /// Given a KeyEvent, return the action code to execute.
@@ -185,7 +184,7 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods8: u8) void {
         if (keyp.tap.count > 0) {
             // タップ: One-Shot Mods を設定
             if (keyp.tap.count == 1) {
-                host.addOneshotMods(mods8);
+                host.addOneshotMods(host.modFiveBitToEightBit(mods8));
             } else {
                 // 複数タップ: 通常のmod toggle として扱う（C版互換）
                 host.registerMods(mods8);

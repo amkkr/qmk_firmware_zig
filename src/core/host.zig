@@ -261,7 +261,7 @@ pub fn getOneshotMods() u8 {
 
 /// Convert 5-bit modifier encoding to 8-bit HID modifier bits
 /// 5-bit format: bit4=right, bit3=GUI, bit2=ALT, bit1=SHIFT, bit0=CTRL
-fn modFiveBitToEightBit(mods5: u8) u8 {
+pub fn modFiveBitToEightBit(mods5: u8) u8 {
     var result: u8 = 0;
     const is_right = (mods5 & 0x10) != 0;
     if (is_right) {
