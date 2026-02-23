@@ -144,6 +144,7 @@ pub fn task() void {
 }
 
 /// キーコードをキーマップから解決する（Tap Dance 判定用）
+/// pressed 時はソースレイヤーキャッシュも更新する（TD ブランチでも正しいレイヤーが使われるように）
 fn resolveKeycode(ev: KeyEvent) Keycode {
     const keymapFn = struct {
         fn f(l: u5, row: u8, col: u8) Keycode {
@@ -152,6 +153,11 @@ fn resolveKeycode(ev: KeyEvent) Keycode {
     }.f;
 
     const resolved_layer = layer.layerSwitchGetLayer(keymapFn, ev.key.row, ev.key.col);
+
+    if (ev.pressed) {
+        layer.updateSourceLayersCache(ev.key.row, ev.key.col, resolved_layer);
+    }
+
     const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
     return keymap_mod.keymapKeyToKeycode(&test_keymap, use_layer, ev.key.row, ev.key.col);
 }
