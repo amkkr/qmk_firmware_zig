@@ -213,17 +213,12 @@ pub fn task() void {
         }
     }
 
-    if (mouse_report.buttons != tmpmr.buttons or shouldSend(&mouse_report)) {
+    if (shouldSend(&mouse_report)) {
         send();
     }
 
     // 状態を復元（方向情報を保持するため）
     mouse_report = tmpmr;
-}
-
-/// マウスレポートに変化があるか判定
-fn hasChanged(a: *const MouseReport, b: *const MouseReport) bool {
-    return a.buttons != b.buttons or a.x != b.x or a.y != b.y or a.v != b.v or a.h != b.h;
 }
 
 /// レポートを送信すべきか判定
