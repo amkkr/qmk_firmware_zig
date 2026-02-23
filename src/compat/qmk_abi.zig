@@ -8,20 +8,58 @@
 const std = @import("std");
 const layer_mod = @import("../core/layer.zig");
 const host_mod = @import("../core/host.zig");
+const action_mod = @import("../core/action.zig");
+const keyboard_mod = @import("../core/keyboard.zig");
+const event_mod = @import("../core/event.zig");
+const keymap_mod = @import("../core/keymap.zig");
+const report_mod = @import("../core/report.zig");
 const timer = @import("../hal/timer.zig");
 
 // ============================================================
-// Keyboard lifecycle (TODO: wire to keyboard.zig when ready)
+// Keyboard lifecycle
 // ============================================================
 
 /// Initialize keyboard hardware and subsystems
 export fn keyboard_init() void {
-    // TODO: Wire to keyboard.init() when keyboard.zig is integrated
+    keyboard_mod.init();
 }
 
 /// Run one iteration of the keyboard processing loop
 export fn keyboard_task() void {
-    // TODO: Wire to keyboard.task() when keyboard.zig is integrated
+    keyboard_mod.task();
+}
+
+// ============================================================
+// Action execution
+// ============================================================
+
+/// Execute action for a key event (C ABI wrapper)
+/// C版の action_exec(keyevent_t) に相当するが、シグネチャは意図的に異なる。
+/// C版は keyevent_t 構造体を値渡しするが、Zig版は C++ テストとの直接リンクを
+/// 目的とせず、FFI 経由の呼び出しやテストアダプタ経由での使用を想定している。
+export fn action_exec(row: u8, col: u8, pressed: bool, time: u16) void {
+    const ev = if (pressed)
+        event_mod.KeyEvent.keyPress(row, col, time)
+    else
+        event_mod.KeyEvent.keyRelease(row, col, time);
+    var record = event_mod.KeyRecord{ .event = ev };
+    action_mod.actionExec(&record);
+}
+
+// ============================================================
+// Record processing
+// ============================================================
+
+/// Process a key record through action resolution and execution
+/// C版の process_record(keyrecord_t*) に相当するが、シグネチャは意図的に異なる。
+/// action_exec と同様、FFI 経由の呼び出しやテストアダプタ経由での使用を想定。
+export fn process_record(row: u8, col: u8, pressed: bool, time: u16) void {
+    const ev = if (pressed)
+        event_mod.KeyEvent.keyPress(row, col, time)
+    else
+        event_mod.KeyEvent.keyRelease(row, col, time);
+    var record = event_mod.KeyRecord{ .event = ev };
+    action_mod.processRecord(&record);
 }
 
 // ============================================================
@@ -63,12 +101,111 @@ export fn layer_move(layer: u8) void {
 }
 
 // ============================================================
+// Key registration
+// ============================================================
+
+/// Register a keycode (add to HID report)
+/// C版の register_code(uint8_t) に相当
+export fn register_code(kc: u8) void {
+    host_mod.registerCode(kc);
+}
+
+/// Unregister a keycode (remove from HID report)
+/// C版の unregister_code(uint8_t) に相当
+export fn unregister_code(kc: u8) void {
+    host_mod.unregisterCode(kc);
+}
+
+// ============================================================
 // Host / Report
 // ============================================================
 
 /// Clear all keyboard state and send empty report
 export fn clear_keyboard() void {
     host_mod.clearKeyboard();
+}
+
+/// Send the current keyboard report
+export fn send_keyboard_report() void {
+    host_mod.sendKeyboardReport();
+}
+
+// ============================================================
+// Host driver management
+// ============================================================
+
+/// C ABI 互換のホストドライバ関数ポインタテーブル
+/// C版の host_driver_t に相当（tmk_core/protocol/host_driver.h）
+///
+/// フィールド順は C版と完全一致:
+///   keyboard_leds, send_keyboard, send_nkro, send_mouse, send_extra
+///
+/// 注意: send_nkro はバイナリ互換性のためフィールドとして存在するが、
+/// Zig版は NKRO 非対応のため常に null を設定する。
+pub const CHostDriver = extern struct {
+    keyboard_leds: ?*const fn () callconv(.c) u8,
+    send_keyboard: ?*const fn (*const report_mod.KeyboardReport) callconv(.c) void,
+    /// NKRO 非対応につき常に null。C版 host_driver_t とのバイナリ互換性のため維持。
+    send_nkro: ?*const fn (*const anyopaque) callconv(.c) void,
+    send_mouse: ?*const fn (*const report_mod.MouseReport) callconv(.c) void,
+    send_extra: ?*const fn (*const report_mod.ExtraReport) callconv(.c) void,
+};
+
+/// C ABI ドライバアダプタ
+/// CHostDriver の関数ポインタを HostDriver インターフェースに変換する
+const CDriverAdapter = struct {
+    c_driver: *const CHostDriver,
+
+    pub fn keyboardLeds(self: *CDriverAdapter) u8 {
+        if (self.c_driver.keyboard_leds) |f| return f();
+        return 0;
+    }
+
+    pub fn sendKeyboard(self: *CDriverAdapter, r: report_mod.KeyboardReport) void {
+        if (self.c_driver.send_keyboard) |f| f(&r);
+    }
+
+    pub fn sendMouse(self: *CDriverAdapter, r: report_mod.MouseReport) void {
+        if (self.c_driver.send_mouse) |f| f(&r);
+    }
+
+    pub fn sendExtra(self: *CDriverAdapter, r: report_mod.ExtraReport) void {
+        if (self.c_driver.send_extra) |f| f(&r);
+    }
+};
+
+var c_driver_adapter: CDriverAdapter = .{ .c_driver = &empty_c_driver };
+const empty_c_driver = CHostDriver{
+    .keyboard_leds = null,
+    .send_keyboard = null,
+    .send_nkro = null,
+    .send_mouse = null,
+    .send_extra = null,
+};
+
+/// Set host driver (C ABI wrapper)
+/// C版の host_set_driver(host_driver_t*) に相当
+///
+/// 注意: driver ポインタは内部に保持され、ドライバが使用される間（次の
+/// host_set_driver(null) 呼び出しまで）有効であり続ける必要がある。
+/// C版 host_set_driver と同様のライフタイム制約。
+export fn host_set_driver(driver: ?*const CHostDriver) void {
+    if (driver) |d| {
+        c_driver_adapter = .{ .c_driver = d };
+        host_mod.setDriver(host_mod.HostDriver.from(&c_driver_adapter));
+    } else {
+        c_driver_adapter = .{ .c_driver = &empty_c_driver };
+        host_mod.clearDriver();
+    }
+}
+
+/// Get host driver (C ABI wrapper)
+/// 現在ドライバが設定されているかどうかを返す（簡易版）
+export fn host_get_driver() ?*const CHostDriver {
+    if (host_mod.getDriver() != null) {
+        return c_driver_adapter.c_driver;
+    }
+    return null;
 }
 
 // ============================================================
@@ -106,16 +243,15 @@ export fn advance_time(ms: u32) void {
 }
 
 // ============================================================
-// Keymap (TODO: wire to keymap.zig when ready)
+// Keymap
 // ============================================================
 
 /// Get keycode at given layer and position
+/// keyboard_mod の test_keymap を参照する
 export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
-    _ = layer;
-    _ = row;
-    _ = col;
-    // TODO: Wire to keymap module when keymap_key_to_keycode is available
-    return 0;
+    const km = keyboard_mod.getTestKeymap();
+    if (layer >= keymap_mod.MAX_LAYERS) return 0;
+    return keymap_mod.keymapKeyToKeycode(km, @intCast(layer), row, col);
 }
 
 // ============================================================
@@ -189,12 +325,94 @@ test "qmk_abi: timer_clear resets timer" {
     try testing.expectEqual(@as(u32, 0), timer_read32());
 }
 
-test "qmk_abi: keyboard_init/task do not crash" {
+test "qmk_abi: keyboard_init/task lifecycle" {
     keyboard_init();
     keyboard_task();
 }
 
-test "qmk_abi: keymap_key_to_keycode stub returns 0" {
+test "qmk_abi: register_code/unregister_code with mock driver" {
+    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const MockDriver = FixedTestDriver(32, 4);
+
+    keyboard_init();
+    var mock = MockDriver{};
+    host_mod.setDriver(host_mod.HostDriver.from(&mock));
+    defer host_mod.clearDriver();
+
+    register_code(0x04); // KC_A
+    send_keyboard_report();
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+
+    unregister_code(0x04);
+    send_keyboard_report();
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x04));
+}
+
+test "qmk_abi: register_code modifier key" {
+    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const MockDriver = FixedTestDriver(32, 4);
+
+    keyboard_init();
+    host_mod.hostReset(); // real_mods を確実にクリアして前テストの影響を排除
+    var mock = MockDriver{};
+    host_mod.setDriver(host_mod.HostDriver.from(&mock));
+    defer host_mod.clearDriver();
+
+    register_code(0xE1); // LSHIFT
+    send_keyboard_report();
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+
+    unregister_code(0xE1);
+    send_keyboard_report();
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "qmk_abi: clear_keyboard clears all state" {
+    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const MockDriver = FixedTestDriver(32, 4);
+
+    keyboard_init();
+    var mock = MockDriver{};
+    host_mod.setDriver(host_mod.HostDriver.from(&mock));
+    defer host_mod.clearDriver();
+
+    register_code(0x04);
+    register_code(0xE1);
+    clear_keyboard();
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+test "qmk_abi: host_set_driver/host_get_driver null" {
+    keyboard_init();
+    host_set_driver(null);
+    try testing.expectEqual(@as(?*const CHostDriver, null), host_get_driver());
+}
+
+test "qmk_abi: action_exec does not crash" {
+    keyboard_init();
+    action_exec(0, 0, true, 100);
+    action_exec(0, 0, false, 200);
+}
+
+test "qmk_abi: process_record does not crash" {
+    keyboard_init();
+    process_record(0, 0, true, 100);
+    process_record(0, 0, false, 200);
+}
+
+test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
+    const keycode_mod = @import("../core/keycode.zig");
+    keyboard_init();
+    // 初期状態ではすべて KC_NO (0)
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
-    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(1, 2, 3));
+
+    // テストキーマップにキーを設定
+    keyboard_mod.setTestKey(0, 0, 0, keycode_mod.KC.A);
+    try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
+
+    // 範囲外のレイヤーは 0 を返す
+    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(255, 0, 0));
+
+    // クリーンアップ
+    keyboard_init();
 }

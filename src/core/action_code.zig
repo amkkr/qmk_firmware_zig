@@ -153,7 +153,9 @@ pub inline fn ACTION_LAYER_MOMENTARY(layer: u5) u16 {
 // C版とのバイナリ互換性を comptime で検証 (Issue #55)
 comptime {
     // C版: ACT_LAYER_TAP=0b1010, OP_ON_OFF=0xF1
+    // ACTION_LAYER_MOMENTARY(0) = 0b1010<<12 | 0<<8 | 0xF1 = 0xA0F1
     // ACTION_LAYER_MOMENTARY(1) = 0b1010<<12 | 1<<8 | 0xF1 = 0xA1F1
+    // ACTION_LAYER_MOMENTARY(15) = 0b1010<<12 | 15<<8 | 0xF1 = 0xAFF1
     if (ACTION_LAYER_MOMENTARY(0) != 0xA0F1) @compileError("ACTION_LAYER_MOMENTARY(0) must be 0xA0F1 for C compat");
     if (ACTION_LAYER_MOMENTARY(1) != 0xA1F1) @compileError("ACTION_LAYER_MOMENTARY(1) must be 0xA1F1 for C compat");
     if (ACTION_LAYER_MOMENTARY(15) != 0xAFF1) @compileError("ACTION_LAYER_MOMENTARY(15) must be 0xAFF1 for C compat");
