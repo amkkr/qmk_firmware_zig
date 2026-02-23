@@ -6,9 +6,28 @@
 
 const std = @import("std");
 const eeprom = @import("../hal/eeprom.zig");
+const keymap_mod = @import("keymap.zig");
+
+/// C版 eeprom_core_t 互換のEEPROMアドレスレイアウト（quantum/nvm/eeprom/nvm_eeprom_eeconfig_internal.h 参照）
+/// struct PACKED {
+///   uint16_t magic;          // offset 0
+///   uint8_t  debug;          // offset 2
+///   uint8_t  default_layer;  // offset 3
+///   uint16_t keymap;         // offset 4
+///   ...
+/// }
 
 /// EEPROM magic number のアドレス（QMK upstream互換）
 const EECONFIG_MAGIC_ADDR: u16 = 0;
+
+/// EEPROM debug フラグのアドレス
+const EECONFIG_DEBUG_ADDR: u16 = 2;
+
+/// EEPROM default layer のアドレス
+const EECONFIG_DEFAULT_LAYER_ADDR: u16 = 3;
+
+/// EEPROM keymap_config のアドレス（C版 EECONFIG_KEYMAP に相当）
+const EECONFIG_KEYMAP_ADDR: u16 = 4;
 
 /// EEPROM magic number（有効な設定が書き込まれていることを示す）
 const EECONFIG_MAGIC_NUMBER: u16 = 0xFEED;
@@ -32,6 +51,29 @@ pub fn isEnabled() bool {
 /// upstream の eeconfig_enable() に相当
 pub fn enable() void {
     eeprom.writeWord(EECONFIG_MAGIC_ADDR, EECONFIG_MAGIC_NUMBER);
+}
+
+// ============================================================
+// KeymapConfig EEPROM API
+// upstream の eeconfig_read_keymap() / eeconfig_update_keymap() に相当
+// ============================================================
+
+/// EEPROMから KeymapConfig を読み出す
+/// upstream の eeconfig_read_keymap() に相当。
+/// EEPROMが無効な場合はデフォルト値（全フラグ OFF）を返す。
+pub fn readKeymapConfig() keymap_mod.KeymapConfig {
+    if (!isEnabled()) {
+        return .{};
+    }
+    const raw = eeprom.readWord(EECONFIG_KEYMAP_ADDR);
+    return @bitCast(raw);
+}
+
+/// KeymapConfig を EEPROM に書き込む
+/// upstream の eeconfig_update_keymap() に相当。
+pub fn updateKeymapConfig(config: keymap_mod.KeymapConfig) void {
+    const raw: u16 = @bitCast(config);
+    eeprom.writeWord(EECONFIG_KEYMAP_ADDR, raw);
 }
 
 // ============================================================

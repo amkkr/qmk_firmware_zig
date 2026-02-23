@@ -9,6 +9,7 @@ const keycode = @import("keycode.zig");
 const layer_mod = @import("layer.zig");
 const action_code = @import("action_code.zig");
 const report_mod = @import("report.zig");
+const eeconfig = @import("eeconfig.zig");
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 const LayerState = layer_mod.LayerState;
@@ -107,6 +108,24 @@ pub fn modConfig(mod: u8) u8 {
     }
 
     return m;
+}
+
+// ============================================================
+// EEPROM 永続化
+// ============================================================
+
+/// 起動時に EEPROM から KeymapConfig をロードする
+/// C版 quantum/keymap.c の eeconfig_read_keymap() 呼び出し相当。
+/// EEPROMが未初期化の場合はデフォルト値のまま（全フラグ OFF）。
+pub fn keymapInit() void {
+    keymap_config = eeconfig.readKeymapConfig();
+}
+
+/// KeymapConfig を更新し、EEPROM に永続化する
+/// C版 eeconfig_update_keymap() 呼び出しを行う箇所に相当。
+pub fn updateKeymapConfig(config: KeymapConfig) void {
+    keymap_config = config;
+    eeconfig.updateKeymapConfig(config);
 }
 
 /// Keymap type: [layer][row][col] = Keycode
