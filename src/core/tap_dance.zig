@@ -36,6 +36,9 @@ pub const TapDanceAction = struct {
 };
 
 /// Tap Dance の状態
+/// 注意: C版には `interrupted` フィールドがあるが、Zig版では簡略化のため省略。
+/// C版では割り込み時にホールド中でも `on_tap` を選ぶ場合があるが、
+/// Zig版では `pressed` のみで判断する（ホールド中は常に `on_hold`）。
 pub const TapDanceState = struct {
     /// タップ回数
     count: u8 = 0,
@@ -43,8 +46,6 @@ pub const TapDanceState = struct {
     pressed: bool = false,
     /// ダンス確定済みか
     finished: bool = false,
-    /// 他のキーによって割り込まれたか
-    interrupted: bool = false,
     /// 使用中か
     in_use: bool = false,
     /// Tap Dance テーブルのインデックス
@@ -123,7 +124,6 @@ pub fn preprocess(keycode: Keycode, pressed: bool) bool {
     if (td_index >= actions.len) return false;
 
     const state = getState(td_index) orelse return false;
-    state.interrupted = true;
     finishDance(td_index, state);
 
     return true;
