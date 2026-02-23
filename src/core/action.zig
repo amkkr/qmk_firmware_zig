@@ -129,19 +129,21 @@ fn processMousekeyAction(ev: KeyEvent, act: Action) void {
 }
 
 /// Process basic modifier actions (hold for mod, with optional key)
-/// keycodeConfig を適用してキーコードのスワップ設定を反映する。
+/// keycodeConfig / modConfig を適用してスワップ設定を反映する。
+/// C版 keymap_common.c では ACTION_MODS_KEY 生成時に mod_config() / keycode_config() の両方が適用される。
 fn processModsAction(ev: KeyEvent, act: Action) void {
     const mods = act.key.mods;
     const kc = keymap_mod.keycodeConfig(act.key.code);
-    const mods8 = modFourBitToFiveBit(mods, act.kind.id == .rmods);
+    const mods5 = modFourBitToFiveBit(mods, act.kind.id == .rmods);
+    const mods_hid = keymap_mod.modConfig(host.modFiveBitToEightBit(mods5));
 
     if (ev.pressed) {
-        if (mods8 != 0) host.registerMods(mods8);
+        if (mods_hid != 0) host.addMods(mods_hid);
         if (kc != 0) host.registerCode(kc);
         host.sendKeyboardReport();
     } else {
         if (kc != 0) host.unregisterCode(kc);
-        if (mods8 != 0) host.unregisterMods(mods8);
+        if (mods_hid != 0) host.delMods(mods_hid);
         host.sendKeyboardReport();
     }
 }
@@ -942,6 +944,30 @@ test "keycodeConfig swap_backslash_backspace" {
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
     processAction(&release, act);
     try testing.expect(!mock.lastKeyboardReport().hasKey(0x2A));
+}
+
+test "modConfig swap_lalt_lgui for mods action" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    keymap_mod.keymap_config.swap_lalt_lgui = true;
+
+    // ACTION_MODS_KEY(LALT=0x04, KC_A=0x04): modConfig で LGUI に変換される
+    // 5ビットmods: 0x04 (LALT) → modFourBitToFiveBit(0x4, false) = 0x04
+    // modFiveBitToEightBit(0x04) = 0x04 (LALT HID)
+    // modConfig(0x04) = 0x08 (LGUI HID) ← swap適用
+    const act = Action{ .code = action_code.ACTION_MODS_KEY(0x04, 0x04) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LGUI), mock.lastKeyboardReport().mods);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
 test "modConfig swap_lalt_lgui for layer_mods" {
