@@ -10,12 +10,10 @@
 //! TAPPING_TERM 内の連続タップをカウントし、タイムアウトまたは
 //! 他のキー入力による割り込みでダンスを確定する。
 
-const action_code = @import("action_code.zig");
 const host = @import("host.zig");
 const keycode_mod = @import("keycode.zig");
 const timer = @import("../hal/timer.zig");
 
-const Action = action_code.Action;
 const Keycode = keycode_mod.Keycode;
 
 /// Tap Dance で使用するタッピングターム（ms）
@@ -149,7 +147,7 @@ pub fn process(keycode: Keycode, pressed: bool) bool {
         active_td = if (state.finished) 0 else keycode;
     } else {
         if (state.finished) {
-            resetState(td_index, state);
+            unregisterAndReset(state);
             if (active_td == keycode) {
                 active_td = 0;
             }
@@ -202,11 +200,6 @@ fn finishDance(td_index: u8, state: *TapDanceState) void {
         // キーはすでにリリースされているので即リセット
         unregisterAndReset(state);
     }
-}
-
-/// 状態をリセットし、登録したキーコードを解除する
-fn resetState(_: u8, state: *TapDanceState) void {
-    unregisterAndReset(state);
 }
 
 /// キーコード解除とスロットクリア
