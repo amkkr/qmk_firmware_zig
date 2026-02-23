@@ -183,29 +183,43 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 /// addOneshotMods は8ビットHIDmodsを直接格納するため、明示的に変換が必要。
 fn processOneShotModsAction(keyp: *KeyRecord, mods5: u8) void {
     const ev = keyp.event;
+
+    // C版互換: oneshot_enable が false の場合、通常の修飾キーとして動作
+    if (!keymap_mod.keymap_config.oneshot_enable) {
+        if (ev.pressed) {
+            host.registerMods(mods5);
+        } else {
+            host.unregisterMods(mods5);
+        }
+        host.sendKeyboardReport();
+        return;
+    }
+
     const mods_hid = host.modFiveBitToEightBit(mods5);
 
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
-            // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
             if (keyp.tap.count == 1) {
+                // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
+                // C版互換: OSM設定時はレポートを送信しない（次キー押下時に適用）
                 host.addOneshotMods(mods_hid);
             } else {
                 // 複数タップ: 通常のmod toggle として扱う（C版互換）
                 host.registerMods(mods5);
+                host.sendKeyboardReport();
             }
         } else {
             // ホールド: 通常の修飾キーとして登録
             host.registerMods(mods5);
+            host.sendKeyboardReport();
         }
-        host.sendKeyboardReport();
     } else {
         if (keyp.tap.count > 0) {
-            // タップリリース: 何もしない（OSMは次キーまで保持）
+            // タップリリース: OSMは次キーまで保持（レポート送信不要）
             if (keyp.tap.count > 1) {
                 host.unregisterMods(mods5);
+                host.sendKeyboardReport();
             }
-            host.sendKeyboardReport();
         } else {
             // ホールドリリース: 修飾キーを解除
             host.unregisterMods(mods5);
@@ -355,6 +369,7 @@ pub fn reset() void {
     host.hostReset();
     layer.resetState();
     tapping.reset();
+    keymap_mod.keymap_config = .{};
 }
 
 // ============================================================
@@ -658,6 +673,7 @@ test "processLayerModsAction press and release" {
 
 test "OSM tap sets oneshot mods" {
     reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
     var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -695,6 +711,7 @@ test "OSM tap sets oneshot mods" {
 
 test "OSM hold acts as normal modifier" {
     reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
     var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -716,6 +733,7 @@ test "OSM hold acts as normal modifier" {
 
 test "OSM right modifier tap sets correct HID bits" {
     reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
     var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();

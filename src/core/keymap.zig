@@ -8,6 +8,7 @@ const std = @import("std");
 const keycode = @import("keycode.zig");
 const layer_mod = @import("layer.zig");
 const action_code = @import("action_code.zig");
+const report_mod = @import("report.zig");
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 const LayerState = layer_mod.LayerState;
@@ -71,7 +72,6 @@ pub var keymap_config: KeymapConfig = .{};
 /// C版は5ビットパックモッドを扱うが、本実装は8ビットHIDモッドを直接扱う。
 /// 変換ロジックは等価。
 pub fn modConfig(mod: u8) u8 {
-    const report_mod = @import("report.zig");
     var m = mod;
 
     if (keymap_config.swap_lalt_lgui) {

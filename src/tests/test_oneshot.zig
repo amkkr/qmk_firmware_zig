@@ -15,6 +15,7 @@ const event_mod = @import("../core/event.zig");
 const host_mod = @import("../core/host.zig");
 const report_mod = @import("../core/report.zig");
 const keycode = @import("../core/keycode.zig");
+const keymap_mod = @import("../core/keymap.zig");
 const layer_mod = @import("../core/layer.zig");
 const tapping_mod = @import("../core/action_tapping.zig");
 
@@ -54,6 +55,7 @@ var mock_driver: MockDriver = .{};
 
 fn setup() *MockDriver {
     action.reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
     mock_driver = .{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock_driver));
     action.setActionResolver(testActionResolver);
