@@ -61,7 +61,6 @@ const MockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
 //   (0,3) = KC_A        → ACTION_KEY(KC_A) (通常キー、interrupt テスト用)
 //   (0,4) = MO(1)       → ACTION_LAYER_MOMENTARY(1) (layer test 用)
 //   (0,5) = LT(1, KC_B) → ACTION_LAYER_TAP_KEY(1, KC_B) (LT テスト用)
-//   (0,6) = KC_C        → ACTION_KEY(KC_C) (通常キー、LT ホールドテスト用)
 
 fn testActionResolver(ev: KeyEvent) Action {
     if (ev.key.row == 0) {
@@ -81,8 +80,6 @@ fn testActionResolver(ev: KeyEvent) Action {
             4 => .{ .code = action_code.ACTION_LAYER_MOMENTARY(1) },
             // LT(1, KC_B): hold=layer 1, tap=KC_B
             5 => .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, @truncate(KC.B)) },
-            // KC_C: plain key (LT ホールドテスト用)
-            6 => .{ .code = action_code.ACTION_KEY(@truncate(KC.C)) },
             else => .{ .code = action_code.ACTION_NO },
         };
     }
@@ -487,7 +484,7 @@ test "TappingTermBoundary_ExactTerm_IsHold" {
     // ホールドとして処理されるため LSHIFT が送信される
     var found_shift = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
             found_shift = true;
             break;
@@ -514,7 +511,7 @@ test "TappingTermBoundary_TermMinusOne_IsTap" {
     try testing.expect(mock.keyboard_count >= 2);
     var found_p = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
     }
     try testing.expect(found_p);
@@ -525,7 +522,7 @@ test "TappingTermBoundary_TermMinusOne_IsTap" {
     // LSHIFT は送信されていない
     var found_shift = false;
     i = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
             found_shift = true;
             break;
@@ -553,7 +550,7 @@ test "TappingTermBoundary_TermPlusOne_IsHold" {
     try testing.expect(mock.keyboard_count >= 1);
     var found_shift = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
             found_shift = true;
             break;
@@ -564,7 +561,7 @@ test "TappingTermBoundary_TermPlusOne_IsHold" {
     // KC_P は送信されていない
     var found_p = false;
     i = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
     }
     try testing.expect(!found_p);
@@ -592,7 +589,7 @@ test "LT_Tap_ReportsKey" {
     try testing.expect(mock.keyboard_count >= 2);
     var found_b = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
     }
     try testing.expect(found_b);
@@ -624,7 +621,7 @@ test "LT_Hold_ActivatesLayer" {
     // KC_B は送信されていない（ホールド動作のためキーは送信されない）
     var found_b = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
     }
     try testing.expect(!found_b);
@@ -660,7 +657,7 @@ test "ModTap_Hold_WithNormalKeyInterrupt" {
     // LSHIFT がレポートされる（SFT_T のホールド動作）
     var found_shift = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
             found_shift = true;
             break;
@@ -671,7 +668,7 @@ test "ModTap_Hold_WithNormalKeyInterrupt" {
     // KC_A (0x04) がレポートされている
     var found_a = false;
     i = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x04)) { found_a = true; break; }
     }
     try testing.expect(found_a);
@@ -696,7 +693,7 @@ test "ConsecutiveDifferentModTaps" {
     // KC_P が送信される
     var found_p1 = false;
     var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x13)) { found_p1 = true; break; }
     }
     try testing.expect(found_p1);
@@ -714,7 +711,7 @@ test "ConsecutiveDifferentModTaps" {
     // 2回目も KC_P が送信される
     var found_p2 = false;
     i = count_before_ctl;
-    while (i < mock.keyboard_count) : (i += 1) {
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x13)) { found_p2 = true; break; }
     }
     try testing.expect(found_p2);
