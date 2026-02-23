@@ -577,3 +577,25 @@ test "layer bitwise OP_BIT_OR on both" {
     processAction(&release, act);
     try testing.expect(layer.layerStateIs(1));
 }
+
+test "processLayerModsAction press and release" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ACTION_LAYER_MODS(1, 0x40): layer 1 + RALT(0x40)
+    const act = Action{ .code = action_code.ACTION_LAYER_MODS(1, 0x40) };
+
+    // Press -> layer 1 on + mods=0x40
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0x40), mock.lastKeyboardReport().mods);
+
+    // Release -> layer 1 off + mods=0x00
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(!layer.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
