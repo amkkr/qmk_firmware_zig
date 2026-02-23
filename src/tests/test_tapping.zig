@@ -1,15 +1,24 @@
-//! Tapping テスト - Mod-Tap キーのタップ/ホールド動作検証
+//! Tapping テスト - Mod-Tap / Layer-Tap キーのタップ/ホールド動作検証
 //!
 //! upstream参照: tests/basic/test_tapping.cpp
 //!
-//! テストケース:
-//! 1. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) タップ → KC_P
-//! 2. HoldA_SHFT_T_KeyReportsShift   — SFT_T(KC_P) ホールド → LSHIFT
-//! 3. TapA_CTL_T_KeyReportsKey       — CTL_T(KC_P) タップ → KC_P
-//! 4. HoldA_CTL_T_KeyReportsCtrl     — CTL_T(KC_P) ホールド → LCTRL
-//! 5. ANewTapWithinTappingTermIsBuggy — 連続タップの既知バグ動作（issue #1478）
-//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ
-//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ
+//! C版テスト対応（1-2, 5: C版と同一、3-4: Zig独自追加、6-7: 挙動差異あり）:
+//! 1. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) タップ → KC_P              [C版対応]
+//! 2. HoldA_SHFT_T_KeyReportsShift   — SFT_T(KC_P) ホールド → LSHIFT          [C版対応]
+//! 3. TapA_CTL_T_KeyReportsKey       — CTL_T(KC_P) タップ → KC_P              [Zig独自]
+//! 4. HoldA_CTL_T_KeyReportsCtrl     — CTL_T(KC_P) ホールド → LCTRL           [Zig独自]
+//! 5. ANewTapWithinTappingTermIsBuggy — 連続タップの既知バグ動作（issue #1478）[C版対応]
+//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ           [挙動差異]
+//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ         [挙動差異]
+//!
+//! 追加テスト（C版にない拡張ケース）:
+//! 8.  TAPPING_TERM 境界値: ちょうど TAPPING_TERM でリリース → ホールド
+//! 9.  TAPPING_TERM 境界値: TAPPING_TERM-1 でリリース → タップ
+//! 10. TAPPING_TERM+1 境界値: TAPPING_TERM+1 の tick → ホールド
+//! 11. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
+//! 12. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
+//! 13. Mod-Tap 中の通常キー割り込み: SFT_T ホールド中に KC_A → LSHIFT+A
+//! 14. 異なる Mod-Tap の連続タップ: SFT_T タップ → CTL_T タップ
 
 const std = @import("std");
 const testing = std.testing;
@@ -52,6 +61,7 @@ const MockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
 //   (0,2) = KC_LSFT     → ACTION_MODS_KEY(Mod.LSFT, 0)
 //   (0,3) = KC_A        → ACTION_KEY(KC_A) (通常キー、interrupt テスト用)
 //   (0,4) = MO(1)       → ACTION_LAYER_MOMENTARY(1) (layer test 用)
+//   (0,5) = LT(1, KC_B) → ACTION_LAYER_TAP_KEY(1, KC_B) (LT テスト用)
 
 fn testActionResolver(ev: KeyEvent) Action {
     if (ev.key.row == 0) {
@@ -69,6 +79,8 @@ fn testActionResolver(ev: KeyEvent) Action {
             3 => .{ .code = action_code.ACTION_KEY(@truncate(KC.A)) },
             // MO(1): momentary layer key
             4 => .{ .code = action_code.ACTION_LAYER_MOMENTARY(1) },
+            // LT(1, KC_B): hold=layer 1, tap=KC_B
+            5 => .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, @truncate(KC.B)) },
             else => .{ .code = action_code.ACTION_NO },
         };
     }
@@ -450,4 +462,282 @@ test "TapA_CTL_T_KeyWhileReleasingLayer" {
     try testing.expect(found_p);
     try testing.expect(!found_q);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
+// 8. TAPPING_TERM 境界値テスト（ちょうど TAPPING_TERM でリリース → ホールド扱い）
+//    withinTappingTerm は「< TAPPING_TERM」（厳密に未満）のため、
+//    ちょうど TAPPING_TERM 経過時のリリースはホールドとして処理される。
+//    TAPPING_TERM-1 でのリリースはタップとして処理される。
+// ============================================================
+
+test "TappingTermBoundary_ExactTerm_IsHold" {
+    const mock = setup();
+    defer teardown();
+
+    // SFT_T(KC_P) をプレス (time=100)
+    press(0, 0, 100);
+
+    // ちょうど TAPPING_TERM でリリース (time=100+200=300)
+    // withinTappingTerm: (300 - 100) < 200 → false → ホールド判定
+    release(0, 0, 100 + TAPPING_TERM);
+
+    // ホールドとして処理されるため LSHIFT が送信される
+    var found_shift = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
+            found_shift = true;
+            break;
+        }
+    }
+    try testing.expect(found_shift);
+
+    // 最終レポートは空（リリース済み）
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
+// 9. TAPPING_TERM 境界値テスト（TAPPING_TERM-1 でリリース → タップ扱い）
+//    withinTappingTerm は「< TAPPING_TERM」（厳密に未満）のため、
+//    TAPPING_TERM-1 でのリリースはタップとして処理される。
+// ============================================================
+
+test "TappingTermBoundary_TermMinusOne_IsTap" {
+    const mock = setup();
+    defer teardown();
+
+    // SFT_T(KC_P) をプレス (time=100)
+    press(0, 0, 100);
+
+    // TAPPING_TERM - 1 でリリース (time=100+199=299)
+    // withinTappingTerm: (299 - 100) < 200 → 199 < 200 → true → タップ判定
+    release(0, 0, 100 + TAPPING_TERM - 1);
+
+    // タップとして処理され KC_P (0x13) が送信される
+    try testing.expect(mock.keyboard_count >= 2);
+    var found_p = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
+    }
+    try testing.expect(found_p);
+
+    // 最終レポートは空
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    // LSHIFT は送信されていない
+    var found_shift = false;
+    i = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
+            found_shift = true;
+            break;
+        }
+    }
+    try testing.expect(!found_shift);
+}
+
+// ============================================================
+// 10. TAPPING_TERM+1 境界値テスト（ホールド側）
+//    SFT_T(KC_P) を TAPPING_TERM+1 まで保持 → ホールドとして処理される
+// ============================================================
+
+test "TappingTermBoundary_TermPlusOne_IsHold" {
+    const mock = setup();
+    defer teardown();
+
+    // SFT_T(KC_P) をプレス (time=100)
+    press(0, 0, 100);
+
+    // TAPPING_TERM+1 の tick でホールド判定
+    tick(100 + TAPPING_TERM + 1);
+
+    // LSHIFT がレポートされる
+    try testing.expect(mock.keyboard_count >= 1);
+    var found_shift = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
+            found_shift = true;
+            break;
+        }
+    }
+    try testing.expect(found_shift);
+
+    // KC_P は送信されていない
+    var found_p = false;
+    i = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
+    }
+    try testing.expect(!found_p);
+
+    // リリース
+    release(0, 0, 100 + TAPPING_TERM + 50);
+    try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
+}
+
+// ============================================================
+// 11. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
+// ============================================================
+
+test "LT_Tap_ReportsKey" {
+    const mock = setup();
+    defer teardown();
+
+    // LT(1, KC_B) をプレス
+    press(0, 5, 100);
+
+    // TAPPING_TERM 以内にリリース → タップとして処理される
+    release(0, 5, 150);
+
+    // KC_B (0x05) が送信される
+    try testing.expect(mock.keyboard_count >= 2);
+    var found_b = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
+    }
+    try testing.expect(found_b);
+
+    // レイヤー1は有効化されていない
+    try testing.expect(!layer_mod.layerStateIs(1));
+
+    // 最終レポートは空
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
+// 12. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
+// ============================================================
+
+test "LT_Hold_ActivatesLayer" {
+    const mock = setup();
+    defer teardown();
+
+    // LT(1, KC_B) をプレス
+    press(0, 5, 100);
+
+    // TAPPING_TERM 超過
+    tick(100 + TAPPING_TERM + 1);
+
+    // レイヤー1が有効化されている
+    try testing.expect(layer_mod.layerStateIs(1));
+
+    // KC_B は送信されていない（ホールド動作のためキーは送信されない）
+    var found_b = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
+    }
+    try testing.expect(!found_b);
+
+    // リリース → レイヤー1が無効化
+    release(0, 5, 100 + TAPPING_TERM + 50);
+    try testing.expect(!layer_mod.layerStateIs(1));
+}
+
+// ============================================================
+// 13. Mod-Tap 中の通常キー割り込み（プレス+リリース両方バッファ内）
+//    SFT_T(KC_P) 押下中に通常キー KC_A をプレス・リリース → バッファに蓄積。
+//    TAPPING_TERM 超過後の次のキーイベントでホールド判定 → LSHIFT として処理、
+//    バッファ内の KC_A プレス/リリースも順次処理される。
+// ============================================================
+
+test "ModTap_Hold_WithNormalKeyInterrupt" {
+    const mock = setup();
+    defer teardown();
+
+    // SFT_T(KC_P) をプレス
+    press(0, 0, 100);
+
+    // TAPPING_TERM 以内に通常キー KC_A をプレス・リリース
+    // → 両方バッファに入り、tapping_key.tap.interrupted = true がセットされる
+    press(0, 3, 120);
+    release(0, 3, 160);
+
+    // TAPPING_TERM 超過後に SFT_T をリリース
+    // → SFT_T がホールドとして処理（LSHIFT 登録）、バッファ内の KC_A 操作も処理される
+    release(0, 0, 100 + TAPPING_TERM + 10);
+
+    // LSHIFT がレポートされる（SFT_T のホールド動作）
+    var found_shift = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
+            found_shift = true;
+            break;
+        }
+    }
+    try testing.expect(found_shift);
+
+    // KC_A (0x04) がレポートされている
+    var found_a = false;
+    i = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x04)) { found_a = true; break; }
+    }
+    try testing.expect(found_a);
+
+    // LSHIFT と KC_A が同一レポートに同時に含まれることを確認
+    // （別々のレポートに分かれていないことを保証する）
+    var found_shift_and_a = false;
+    i = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0 and
+            mock.keyboard_reports[i].hasKey(0x04))
+        {
+            found_shift_and_a = true;
+            break;
+        }
+    }
+    try testing.expect(found_shift_and_a);
+
+    // 最終レポートは空
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
+// 14. 異なる Mod-Tap キーの連続タップ
+//    SFT_T(KC_P) タップ → CTL_T(KC_P) タップ → それぞれ KC_P が送信される
+// ============================================================
+
+test "ConsecutiveDifferentModTaps" {
+    const mock = setup();
+    defer teardown();
+
+    // 1回目: SFT_T(KC_P) をタップ
+    press(0, 0, 100);
+    release(0, 0, 150);
+
+    // KC_P が送信される
+    var found_p1 = false;
+    var i: usize = 0;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p1 = true; break; }
+    }
+    try testing.expect(found_p1);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    // TAPPING_TERM 以上待機して状態をリセット
+    tick(150 + TAPPING_TERM + 1);
+
+    const count_before_ctl = mock.keyboard_count;
+
+    // 2回目: CTL_T(KC_P) をタップ
+    press(0, 1, 150 + TAPPING_TERM + 10);
+    release(0, 1, 150 + TAPPING_TERM + 60);
+
+    // 2回目も KC_P が送信される
+    var found_p2 = false;
+    i = count_before_ctl;
+    while (i < mock.keyboard_count and i < 64) : (i += 1) {
+        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p2 = true; break; }
+    }
+    try testing.expect(found_p2);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    // LSHIFT, LCTRL ともに最終レポートには含まれない
+    try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
 }
