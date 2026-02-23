@@ -400,9 +400,11 @@ fn processLayerTapSpecial(keyp: *KeyRecord, l: u5, code: u8) void {
 /// One-Shot Layer (OSL) のアクション処理
 /// C版 quantum/action.c の ACT_LAYER_TAP/OP_ONESHOT 処理に相当
 ///
-/// タップ時: setOneshotLayer(l, START) でレイヤーを有効化
+/// C版互換: tap_count に関わらず常に oneshot 挙動を行う。
+/// 押下時: setOneshotLayer(l, START) でレイヤーを有効化
 ///   → 次のキー入力時に do_release_oneshot ロジックでレイヤーが解除される
-/// ホールド時: 通常の MO (momentary layer) として動作
+/// リリース時: clearOneshotLayerState(PRESSED) でフラグをクリア
+///   → tap_count > 1 の場合は OTHER_KEY_PRESSED もクリア（即時解除）
 fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
     const ev = keyp.event;
 
@@ -416,25 +418,14 @@ fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
         return;
     }
 
+    // C版互換: tap_count をチェックせず、常に oneshot 挙動
+    // （ONESHOT_TAP_TOGGLE 未定義時の C版ロジックと等価）
     if (ev.pressed) {
-        if (keyp.tap.count > 0) {
-            // タップ: One-Shot Layer を START 状態で設定
-            host.setOneshotLayer(l, host.OneshotState.START);
-        } else {
-            // ホールド: 通常のレイヤーとして有効化
-            layer.layerOn(l);
-        }
+        host.setOneshotLayer(l, host.OneshotState.START);
     } else {
-        if (keyp.tap.count > 0) {
-            // タップリリース: PRESSED フラグをクリア
-            host.clearOneshotLayerState(host.OneshotState.PRESSED);
-            // 複数タップ: OTHER_KEY_PRESSED もクリア（即時解除）
-            if (keyp.tap.count > 1) {
-                host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
-            }
-        } else {
-            // ホールドリリース: レイヤーをオフにする
-            layer.layerOff(l);
+        host.clearOneshotLayerState(host.OneshotState.PRESSED);
+        if (keyp.tap.count > 1) {
+            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
         }
     }
 }
@@ -858,7 +849,7 @@ test "OSL tap activates layer for next key then deactivates" {
     try testing.expect(!layer.layerStateIs(1));
 }
 
-test "OSL hold acts as MO (momentary layer)" {
+test "OSL hold also uses oneshot behavior (C-compat)" {
     reset();
     keymap_mod.keymap_config.oneshot_enable = true;
     var mock = MockDriver{};
@@ -867,15 +858,24 @@ test "OSL hold acts as MO (momentary layer)" {
 
     const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
 
-    // ホールド（tap.count=0）→ 通常のレイヤーとして有効化
+    // ホールド（tap.count=0）→ C版互換: tap_count に関わらず oneshot 挙動
     var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
     processAction(&press, osl_act);
     try testing.expect(layer.layerStateIs(1));
-    try testing.expect(!host.isOneshotLayerActive()); // OSL状態ではない
+    try testing.expect(host.isOneshotLayerActive()); // OSL状態でもある
 
-    // リリース → レイヤーが無効化される
+    // リリース（tap.count=0）→ PRESSED クリア。OTHER_KEY_PRESSED が残るのでレイヤー維持
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processAction(&release, osl_act);
+    // OTHER_KEY_PRESSED が残っているのでレイヤーはまだアクティブ
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+
+    // 次のキーを押す → do_release_oneshot でレイヤーが解除される
+    const key_act = Action{ .code = action_code.ACTION_KEY(0x04) };
+    var key_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 500) };
+    processAction(&key_press, key_act);
+    try testing.expect(!host.isOneshotLayerActive());
     try testing.expect(!layer.layerStateIs(1));
 }
 
