@@ -189,6 +189,7 @@ pub fn processCombo(record: *KeyRecord) bool {
         }
     } else {
         // リリースイベント
+        var deactivated = false;
         for (combo_table, 0..) |combo_def, i| {
             if (i >= MAX_COMBOS) break;
             var state = &combo_states[i];
@@ -205,6 +206,7 @@ pub fn processCombo(record: *KeyRecord) bool {
                     // 最後のキーがリリースされたらコンボを解除
                     if (!state.key1_pressed and !state.key2_pressed) {
                         deactivateCombo(i);
+                        deactivated = true;
                     }
                     is_combo_key = true;
                 }
@@ -214,6 +216,11 @@ pub fn processCombo(record: *KeyRecord) bool {
                     state.disabled = true;
                 }
             }
+        }
+
+        // コンボ解除後に他コンボの disabled フラグをリセット
+        if (deactivated) {
+            clearCombos();
         }
 
         if (!is_combo_key and key_buffer_len > 0) {
@@ -322,6 +329,7 @@ fn deactivateCombo(combo_index: usize) void {
         },
     };
     action.processAction(&release_record, act);
+
 }
 
 /// 全コンボ状態をリセット（アクティブなコンボ以外）
@@ -528,4 +536,42 @@ test "combo: 複数コンボ定義" {
     // TAB が登録される（ESC ではない）
     try testing.expect(driver.lastKeyboardReport().hasKey(KC.TAB));
     try testing.expect(!driver.lastKeyboardReport().hasKey(KC.ESCAPE));
+}
+
+test "combo: コンボ解除後に別のコンボが発動できる" {
+    const driver = setupTest();
+    defer teardownTest();
+
+    const multi_combos = [_]ComboDefinition{
+        .{ .key1 = KC.J, .key2 = KC.K, .result = KC.ESCAPE },
+        .{ .key1 = KC.K, .key2 = KC.L, .result = KC.TAB },
+    };
+    setComboTable(&multi_combos);
+    setKeycodeResolver(testKeycodeResolver);
+
+    // 1回目: J+K でコンボ発動 → ESC
+    var press_j = KeyRecord{ .event = KeyEvent.keyPress(0, 0, timer.read()) };
+    _ = processCombo(&press_j);
+    timer.mockAdvance(5);
+    var press_k = KeyRecord{ .event = KeyEvent.keyPress(0, 1, timer.read()) };
+    _ = processCombo(&press_k);
+    try testing.expect(driver.lastKeyboardReport().hasKey(KC.ESCAPE));
+
+    // J・K をリリース → コンボ解除
+    timer.mockAdvance(10);
+    var release_j = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, timer.read()) };
+    _ = processCombo(&release_j);
+    timer.mockAdvance(5);
+    var release_k = KeyRecord{ .event = KeyEvent.keyRelease(0, 1, timer.read()) };
+    _ = processCombo(&release_k);
+    try testing.expect(!driver.lastKeyboardReport().hasKey(KC.ESCAPE));
+
+    // 2回目: K+L でコンボ発動 → TAB（disabled フラグがリセットされていること）
+    timer.mockAdvance(50);
+    var press_k2 = KeyRecord{ .event = KeyEvent.keyPress(0, 1, timer.read()) };
+    _ = processCombo(&press_k2);
+    timer.mockAdvance(5);
+    var press_l = KeyRecord{ .event = KeyEvent.keyPress(0, 2, timer.read()) };
+    _ = processCombo(&press_l);
+    try testing.expect(driver.lastKeyboardReport().hasKey(KC.TAB));
 }
