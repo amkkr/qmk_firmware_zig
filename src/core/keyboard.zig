@@ -15,7 +15,7 @@ const layer = @import("layer.zig");
 const keymap_mod = @import("keymap.zig");
 const keycode = @import("keycode.zig");
 const tap_dance = @import("tap_dance.zig");
-pub const leader = @import("leader.zig");
+const leader = @import("leader.zig");
 const timer = @import("../hal/timer.zig");
 
 const KeyEvent = event_mod.KeyEvent;

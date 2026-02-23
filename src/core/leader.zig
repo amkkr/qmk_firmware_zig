@@ -127,7 +127,7 @@ pub fn processKeycode(kc: Keycode, pressed: bool) bool {
             leaderEnd();
             return true;
         }
-        return false;
+        return true;
     } else if (kc == keycode_mod.QK_LEAD) {
         leaderStart();
         return true;
@@ -142,16 +142,12 @@ pub fn processKeycode(kc: Keycode, pressed: bool) bool {
 
 /// 内部: シーケンスバッファが指定の5キーと一致するか確認
 fn sequenceIs(seq: []const u16, kc1: u16, kc2: u16, kc3: u16, kc4: u16, kc5: u16) bool {
-    if (seq.len < 5) {
-        // 5要素未満のスライスに対して0パディングで比較
-        const get = struct {
-            fn f(s: []const u16, i: usize) u16 {
-                return if (i < s.len) s[i] else 0;
-            }
-        }.f;
-        return get(seq, 0) == kc1 and get(seq, 1) == kc2 and get(seq, 2) == kc3 and get(seq, 3) == kc4 and get(seq, 4) == kc5;
-    }
-    return seq[0] == kc1 and seq[1] == kc2 and seq[2] == kc3 and seq[3] == kc4 and seq[4] == kc5;
+    const get = struct {
+        fn f(s: []const u16, i: usize) u16 {
+            return if (i < s.len) s[i] else 0;
+        }
+    }.f;
+    return get(seq, 0) == kc1 and get(seq, 1) == kc2 and get(seq, 2) == kc3 and get(seq, 3) == kc4 and get(seq, 4) == kc5;
 }
 
 /// 1キーシーケンスと一致するか確認（C版 leader_sequence_one_key() と同等）
@@ -302,8 +298,8 @@ test "processKeycode adds keys to sequence while active" {
     timer.mockReset();
     _ = processKeycode(keycode_mod.QK_LEAD, true);
     const consumed = processKeycode(KC.A, true);
-    // シーケンス追加成功時は false（上位に伝播させない）
-    try testing.expect(!consumed);
+    // シーケンス追加成功時は true（消費済み: アクションパイプラインに渡さない）
+    try testing.expect(consumed);
     try testing.expectEqual(@as(usize, 1), leader_sequence_size);
     try testing.expectEqual(KC.A, leader_sequence[0]);
     reset();
