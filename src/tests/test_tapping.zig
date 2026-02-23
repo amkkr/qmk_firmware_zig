@@ -2,22 +2,23 @@
 //!
 //! upstream参照: tests/basic/test_tapping.cpp
 //!
-//! C版テスト対応（1-5: C版と同一、6-7: 挙動差異あり）:
-//! 1. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) タップ → KC_P
-//! 2. HoldA_SHFT_T_KeyReportsShift   — SFT_T(KC_P) ホールド → LSHIFT
-//! 3. TapA_CTL_T_KeyReportsKey       — CTL_T(KC_P) タップ → KC_P
-//! 4. HoldA_CTL_T_KeyReportsCtrl     — CTL_T(KC_P) ホールド → LCTRL
-//! 5. ANewTapWithinTappingTermIsBuggy — 連続タップの既知バグ動作（issue #1478）
-//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ
-//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ
+//! C版テスト対応（1-2, 5: C版と同一、3-4: Zig独自追加、6-7: 挙動差異あり）:
+//! 1. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) タップ → KC_P              [C版対応]
+//! 2. HoldA_SHFT_T_KeyReportsShift   — SFT_T(KC_P) ホールド → LSHIFT          [C版対応]
+//! 3. TapA_CTL_T_KeyReportsKey       — CTL_T(KC_P) タップ → KC_P              [Zig独自]
+//! 4. HoldA_CTL_T_KeyReportsCtrl     — CTL_T(KC_P) ホールド → LCTRL           [Zig独自]
+//! 5. ANewTapWithinTappingTermIsBuggy — 連続タップの既知バグ動作（issue #1478）[C版対応]
+//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ           [挙動差異]
+//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ         [挙動差異]
 //!
 //! 追加テスト（C版にない拡張ケース）:
 //! 8.  TAPPING_TERM 境界値: ちょうど TAPPING_TERM でリリース → ホールド
-//! 9.  TAPPING_TERM+1 境界値: TAPPING_TERM+1 の tick → ホールド
-//! 10. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
-//! 11. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
-//! 12. Mod-Tap 中の通常キー割り込み: SFT_T ホールド中に KC_A → LSHIFT+A
-//! 13. 異なる Mod-Tap の連続タップ: SFT_T タップ → CTL_T タップ
+//! 9.  TAPPING_TERM 境界値: TAPPING_TERM-1 でリリース → タップ
+//! 10. TAPPING_TERM+1 境界値: TAPPING_TERM+1 の tick → ホールド
+//! 11. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
+//! 12. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
+//! 13. Mod-Tap 中の通常キー割り込み: SFT_T ホールド中に KC_A → LSHIFT+A
+//! 14. 異なる Mod-Tap の連続タップ: SFT_T タップ → CTL_T タップ
 
 const std = @import("std");
 const testing = std.testing;
