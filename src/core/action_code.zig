@@ -55,6 +55,16 @@ pub const Action = packed union {
         kind: u3,
     },
 
+    /// Layer bitwise operation (ACT_LAYER)
+    layer_bitop: packed struct {
+        bits: u4,
+        xbit: u1,
+        part: u3,
+        on: u2,
+        op: u2,
+        kind: u4,
+    },
+
     /// Usage action (consumer/system)
     usage: packed struct {
         code: u10,
@@ -465,4 +475,14 @@ test "keycodeToAction LM() keycodes" {
 test "keycodeToAction mouse keys" {
     const action = keycodeToAction(keycode.KC.MS_UP);
     try testing.expectEqual(@as(u16, 0x50CD), action.code);
+}
+
+test "layer_bitop field decoding" {
+    // ACTION_LAYER_BITOP(OP_BIT_OR=1, part=0, bits=0b00010, ON_PRESS=1) = 0x8502
+    const act = Action{ .code = ACTION_LAYER_BITOP(OP_BIT_OR, 0, 0b00010, ON_PRESS) };
+    try testing.expectEqual(@as(u4, 0b0010), act.layer_bitop.bits);
+    try testing.expectEqual(@as(u1, 0), act.layer_bitop.xbit);
+    try testing.expectEqual(@as(u3, 0), act.layer_bitop.part);
+    try testing.expectEqual(@as(u2, 1), act.layer_bitop.on);
+    try testing.expectEqual(@as(u2, 1), act.layer_bitop.op);
 }

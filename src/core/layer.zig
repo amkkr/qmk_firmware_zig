@@ -111,6 +111,16 @@ pub fn defaultLayerOr(state: LayerState) void {
     default_layer_state |= state;
 }
 
+/// AND bits with default layer state
+pub fn defaultLayerAnd(state: LayerState) void {
+    default_layer_state &= state;
+}
+
+/// XOR bits with default layer state
+pub fn defaultLayerXor(state: LayerState) void {
+    default_layer_state ^= state;
+}
+
 // ============================================================
 // Helper functions
 // ============================================================
@@ -398,11 +408,11 @@ test "layerSwitchGetLayer: finds active layer with non-transparent key" {
     // Only default layer: should resolve to layer 0
     try testing.expectEqual(@as(u5, 0), layerSwitchGetLayer(keymapFn, 0, 0));
 
-    // Layer 1 on but transparent → falls through to layer 0
+    // Layer 1 on but transparent -> falls through to layer 0
     layerOn(1);
     try testing.expectEqual(@as(u5, 0), layerSwitchGetLayer(keymapFn, 0, 0));
 
-    // Layer 2 on with KC_B → resolves to layer 2
+    // Layer 2 on with KC_B -> resolves to layer 2
     layerOn(2);
     try testing.expectEqual(@as(u5, 2), layerSwitchGetLayer(keymapFn, 0, 0));
 }
@@ -417,4 +427,15 @@ test "layerOr/And/Xor operations" {
 
     layerXor(0b1100);
     try testing.expectEqual(@as(LayerState, 0b0110), layer_state);
+}
+
+test "defaultLayerAnd and defaultLayerXor" {
+    resetState();
+    // default_layer_state starts as 1 (layer 0)
+    defaultLayerSet(0b1111);
+    defaultLayerAnd(0b1010);
+    try testing.expectEqual(@as(LayerState, 0b1010), default_layer_state);
+
+    defaultLayerXor(0b1100);
+    try testing.expectEqual(@as(LayerState, 0b0110), default_layer_state);
 }
