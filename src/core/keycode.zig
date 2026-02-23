@@ -324,6 +324,8 @@ pub const QK_ONE_SHOT_MOD: Keycode = 0x52A0;
 pub const QK_ONE_SHOT_MOD_MAX: Keycode = 0x52BF;
 pub const QK_LAYER_TAP_TOGGLE: Keycode = 0x52C0;
 pub const QK_LAYER_TAP_TOGGLE_MAX: Keycode = 0x52DF;
+pub const QK_TAP_DANCE: Keycode = 0x5700;
+pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
 
 // ============================================================
 // Modifier bit constants
@@ -440,6 +442,11 @@ pub inline fn OSM(mod: u5) Keycode {
     return QK_ONE_SHOT_MOD | @as(Keycode, mod);
 }
 
+/// Tap Dance: TD(n) - n はタップダンステーブルのインデックス
+pub inline fn TD(index: u8) Keycode {
+    return QK_TAP_DANCE | @as(Keycode, index);
+}
+
 /// Convenience Mod-Tap constructors
 pub inline fn LCTL_T(kc: u8) Keycode {
     return MT(Mod.LCTL, kc);
@@ -510,6 +517,10 @@ pub inline fn isExtrakeyKeycode(kc: Keycode) bool {
     return isSystemKeycode(kc) or isConsumerKeycode(kc);
 }
 
+pub inline fn isTapDance(kc: Keycode) bool {
+    return kc >= QK_TAP_DANCE and kc <= QK_TAP_DANCE_MAX;
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -572,4 +583,18 @@ test "keycode classification" {
     try testing.expect(isModifier(KC.LEFT_CTRL));
     try testing.expect(isModifier(KC.RIGHT_GUI));
     try testing.expect(!isModifier(KC.A));
+}
+
+test "tap dance keycodes" {
+    // TD(0) = 0x5700
+    try testing.expectEqual(@as(Keycode, 0x5700), TD(0));
+    // TD(1) = 0x5701
+    try testing.expectEqual(@as(Keycode, 0x5701), TD(1));
+    // TD(255) = 0x57FF
+    try testing.expectEqual(@as(Keycode, 0x57FF), TD(255));
+    // Classification
+    try testing.expect(isTapDance(TD(0)));
+    try testing.expect(isTapDance(TD(255)));
+    try testing.expect(!isTapDance(KC.A));
+    try testing.expect(!isTapDance(MO(1)));
 }
