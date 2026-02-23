@@ -127,7 +127,7 @@ fn wheelUnit() u8 {
 
 /// キーコードからマウスボタンかどうか判定
 fn isMouseButton(code: u8) bool {
-    return code >= @as(u8, @truncate(KC.MS_BTN1)) and code <= @as(u8, @truncate(KC.MS_BTN5));
+    return code >= @as(u8, @truncate(KC.MS_BTN1)) and code <= @as(u8, @truncate(KC.MS_BTN8));
 }
 
 // ============================================================
@@ -213,7 +213,7 @@ pub fn task() void {
         }
     }
 
-    if (hasChanged(&mouse_report, &tmpmr) or shouldSend(&mouse_report)) {
+    if (mouse_report.buttons != tmpmr.buttons or shouldSend(&mouse_report)) {
         send();
     }
 

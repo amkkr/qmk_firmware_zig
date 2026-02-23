@@ -73,8 +73,8 @@ fn teardownMouseTest() void {
 // C版テスト移植: tests/mousekeys/test_mousekeys.cpp
 // ============================================================
 
-/// SendMouseNotCalledWhenNoKeyIsPressed
-/// マウスキーが押されていないときは sendMouse が呼ばれないことを検証
+// SendMouseNotCalledWhenNoKeyIsPressed
+// マウスキーが押されていないときは sendMouse が呼ばれないことを検証
 test "SendMouseNotCalledWhenNoKeyIsPressed" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -87,14 +87,14 @@ test "SendMouseNotCalledWhenNoKeyIsPressed" {
     try testing.expectEqual(@as(usize, 0), driver.mouse_count);
 }
 
-/// PressAndHoldCursorUpIsCorrectlyReported
-/// カーソル上キーを押し続けた場合の動作を検証
-/// C版: 初回 y=-8、MOUSEKEY_INTERVAL(20ms)経過後 y=-2（遅延リピート中）、
-///      リリース後は空レポート
-/// Zig版: mousekey.interval=20ms, delay_ms=100ms
-/// 注意: C版との違い — C版では初回 on() で y=-8 を設定し send()、
-///       interval後に task() 内で再計算して send() する（repeat=1なので y=-2相当）。
-///       Zig版では同じ挙動を on()/send()/task() の組み合わせで検証する。
+// PressAndHoldCursorUpIsCorrectlyReported
+// カーソル上キーを押し続けた場合の動作を検証
+// C版: 初回 y=-8、MOUSEKEY_INTERVAL(20ms)経過後 y=-2（遅延リピート中）、
+//      リリース後は空レポート
+// Zig版: mousekey.interval=20ms, delay_ms=100ms
+// 注意: C版との違い — C版では初回 on() で y=-8 を設定し send()、
+//       interval後に task() 内で再計算して send() する（repeat=1なので y=-2相当）。
+//       Zig版では同じ挙動を on()/send()/task() の組み合わせで検証する。
 test "PressAndHoldCursorUpIsCorrectlyReported" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -115,8 +115,9 @@ test "PressAndHoldCursorUpIsCorrectlyReported" {
     mousekey.task();
 
     // リピートが発生してレポートが追加送信されるはず
+    // repeat=1: unit = (8 * 10 * 1) / 30 = 2 → y == -2
     try testing.expect(driver.mouse_count > count_after_press);
-    try testing.expect(driver.last_mouse.y < 0);
+    try testing.expectEqual(@as(i8, -2), driver.last_mouse.y);
 
     // キーをリリース → 空レポート
     mousekey.off(KC.MS_UP);
@@ -127,9 +128,9 @@ test "PressAndHoldCursorUpIsCorrectlyReported" {
     try testing.expectEqual(@as(u8, 0), driver.last_mouse.buttons);
 }
 
-/// PressAndHoldButtonOneCorrectlyReported
-/// マウスボタン1を押し続けた場合の動作を検証
-/// ボタンはリピートしない（押下時のみレポート送信）
+// PressAndHoldButtonOneCorrectlyReported
+// マウスボタン1を押し続けた場合の動作を検証
+// ボタンはリピートしない（押下時のみレポート送信）
 test "PressAndHoldButtonOneCorrectlyReported" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -148,7 +149,7 @@ test "PressAndHoldButtonOneCorrectlyReported" {
     timer.mockAdvance(21);
     mousekey.task();
     // ボタンだけ押している場合はtask()内でhasChangedがfalseになるためcount変化なし
-    _ = count_before; // ボタンリピートなしの確認（mouse_countは変化しない可能性）
+    try testing.expectEqual(count_before, driver.mouse_count);
 
     // キーをリリース → 空レポート
     mousekey.off(KC.MS_BTN1);
@@ -157,10 +158,10 @@ test "PressAndHoldButtonOneCorrectlyReported" {
     try testing.expectEqual(@as(u8, 0), driver.last_mouse.buttons);
 }
 
-/// PressAndReleaseIsCorrectlyReported — 各マウスキーのパラメタライズドテスト相当
-/// C版 INSTANTIATE_TEST_CASE_P のテストケースを個別にテストとして移植
-///
-/// 各キーを押してリリースしたとき、期待するレポート値が得られることを検証する。
+// PressAndReleaseIsCorrectlyReported — 各マウスキーのパラメタライズドテスト相当
+// C版 INSTANTIATE_TEST_CASE_P のテストケースを個別にテストとして移植
+//
+// 各キーを押してリリースしたとき、期待するレポート値が得られることを検証する。
 
 test "PressAndRelease_Button1" {
     var driver = TestMouseDriver{};
@@ -182,7 +183,7 @@ test "PressAndRelease_Button1" {
     // 追加スキャン後もレポートなし
     const count = driver.mouse_count;
     mousekey.task();
-    _ = count;
+    try testing.expectEqual(count, driver.mouse_count);
 }
 
 test "PressAndRelease_Button2" {
@@ -439,7 +440,7 @@ test "PressAndRelease_WheelRight" {
 // 追加テスト: mousekey の加速・タイマー動作
 // ============================================================
 
-/// delay_ms 経過前は task() がリピートしないことを検証
+// delay_ms 経過前は task() がリピートしないことを検証
 test "NoRepeatBeforeDelayExpires" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -461,7 +462,7 @@ test "NoRepeatBeforeDelayExpires" {
     mousekey.off(KC.MS_RIGHT);
 }
 
-/// delay_ms 経過後に task() がリピートを開始することを検証
+// delay_ms 経過後に task() がリピートを開始することを検証
 test "RepeatStartsAfterDelay" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -483,7 +484,7 @@ test "RepeatStartsAfterDelay" {
     mousekey.off(KC.MS_RIGHT);
 }
 
-/// 加速: ACCEL0 (1/4最大速度) の検証
+// 加速: ACCEL0 (1/4最大速度) の検証
 test "Accel0_QuarterMaxSpeed" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -500,7 +501,7 @@ test "Accel0_QuarterMaxSpeed" {
     mousekey.off(KC.MS_RIGHT);
 }
 
-/// 加速: ACCEL1 (1/2最大速度) の検証
+// 加速: ACCEL1 (1/2最大速度) の検証
 test "Accel1_HalfMaxSpeed" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -517,7 +518,7 @@ test "Accel1_HalfMaxSpeed" {
     mousekey.off(KC.MS_RIGHT);
 }
 
-/// 加速: ACCEL2 (最大速度) の検証
+// 加速: ACCEL2 (最大速度) の検証
 test "Accel2_FullMaxSpeed" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -534,7 +535,7 @@ test "Accel2_FullMaxSpeed" {
     mousekey.off(KC.MS_RIGHT);
 }
 
-/// ホイール遅延前はリピートしないことを検証
+// ホイール遅延前はリピートしないことを検証
 test "WheelNoRepeatBeforeDelay" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -555,7 +556,7 @@ test "WheelNoRepeatBeforeDelay" {
     mousekey.off(KC.MS_WH_UP);
 }
 
-/// ホイール delay 経過後にリピートが開始することを検証
+// ホイール delay 経過後にリピートが開始することを検証
 test "WheelRepeatStartsAfterDelay" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -576,7 +577,7 @@ test "WheelRepeatStartsAfterDelay" {
     mousekey.off(KC.MS_WH_UP);
 }
 
-/// clear() 後は状態がリセットされることを検証
+// clear() 後は状態がリセットされることを検証
 test "ClearResetsState" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
@@ -592,7 +593,7 @@ test "ClearResetsState" {
     try testing.expect(report.isEmpty());
 }
 
-/// off() 後にリピートカウンタがリセットされることを検証
+// off() 後にリピートカウンタがリセットされることを検証
 test "OffResetsRepeatCounter" {
     var driver = TestMouseDriver{};
     setupMouseTest(&driver);
