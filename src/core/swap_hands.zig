@@ -111,8 +111,10 @@ pub fn processSwapHandsAction(keyp: *KeyRecord, act: Action) void {
             }
         },
         OP_SH_ONESHOT => {
-            // One-shot: 簡易実装（プレスで ON、次キー後に OFF）
-            // 本格的な one-shot は action_tapping との連携が必要
+            // TODO: One-shot Swap Hands は未実装（C版 set_oneshot_swaphands() 相当）
+            // C版では「次のキー入力まで swap_hands を維持し、そのキー後に自動 OFF」
+            // というセマンティクスだが、action_tapping との連携が必要なため簡易実装。
+            // 現状は SH_MON と同等の動作（モメンタリー ON/OFF）。
             if (ev.pressed) {
                 swap_hands = true;
             } else {
