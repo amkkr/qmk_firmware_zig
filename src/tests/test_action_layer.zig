@@ -312,7 +312,7 @@ test "LayerTapReleasedBeforeKeypressReleaseWithModifiers" {
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & ModBit.RALT != 0 and
-            mock.keyboard_reports[i].hasKey(0x26))
+            mock.keyboard_reports[i].hasKey(0x26)) // KC_9
         {
             found_ralt_9 = true;
             break;
@@ -359,7 +359,7 @@ test "LayerModWithKeypress" {
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
         if (mock.keyboard_reports[i].mods & ModBit.RALT != 0 and
-            mock.keyboard_reports[i].hasKey(0x05))
+            mock.keyboard_reports[i].hasKey(0x05)) // KC_B
         {
             found_ralt_b = true;
             break;
