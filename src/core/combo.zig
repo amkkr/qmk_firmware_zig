@@ -330,6 +330,8 @@ fn deactivateCombo(combo_index: usize) void {
     };
     action.processAction(&release_record, act);
 
+    // 他コンボの disabled フラグをリセットして次のコンボが発動できるようにする
+    clearCombos();
 }
 
 /// 全コンボ状態をリセット（アクティブなコンボ以外）
