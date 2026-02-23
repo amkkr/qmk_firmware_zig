@@ -86,6 +86,9 @@ var current_driver: ?HostDriver = null;
 var keyboard_report: KeyboardReport = .{};
 var real_mods: u8 = 0;
 var weak_mods: u8 = 0;
+/// One-Shot Mods: 次の1回のキー入力にのみ適用される修飾キー
+/// C版 action_util.c の oneshot_mods に相当
+var oneshot_mods: u8 = 0;
 
 pub fn setDriver(driver: HostDriver) void {
     current_driver = driver;
@@ -202,8 +205,15 @@ pub fn unregisterMods(mods: u8) void {
 }
 
 /// Send the current keyboard report to the host
+/// C版 send_keyboard_report() に相当。
+/// oneshot_mods は一時的にレポートに含め、キーが送信されていたらクリアする。
 pub fn sendKeyboardReport() void {
-    keyboard_report.mods = real_mods | weak_mods;
+    keyboard_report.mods = real_mods | weak_mods | oneshot_mods;
+    // oneshot_mods が設定されており、かつキーが登録されていればクリアする
+    // C版 get_mods_for_report() の has_anykey() チェックに相当
+    if (oneshot_mods != 0 and keyboard_report.hasAnyKey()) {
+        oneshot_mods = 0;
+    }
     if (current_driver) |driver| {
         driver.sendKeyboard(&keyboard_report);
     }
@@ -221,6 +231,32 @@ pub fn hostReset() void {
     keyboard_report.clear();
     real_mods = 0;
     weak_mods = 0;
+    oneshot_mods = 0;
+}
+
+// ============================================================
+// One-Shot Mods operations
+// C版 action_util.c の oneshot_mods 関連関数に相当
+// ============================================================
+
+/// One-Shot Mods を追加する
+pub fn addOneshotMods(mods: u8) void {
+    oneshot_mods |= mods;
+}
+
+/// One-Shot Mods から削除する
+pub fn delOneshotMods(mods: u8) void {
+    oneshot_mods &= ~mods;
+}
+
+/// One-Shot Mods をクリアする
+pub fn clearOneshotMods() void {
+    oneshot_mods = 0;
+}
+
+/// 現在の One-Shot Mods を取得する
+pub fn getOneshotMods() u8 {
+    return oneshot_mods;
 }
 
 /// Convert 5-bit modifier encoding to 8-bit HID modifier bits
