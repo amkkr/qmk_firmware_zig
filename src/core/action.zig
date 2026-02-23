@@ -15,7 +15,9 @@ pub const host = @import("host.zig");
 const tapping = @import("action_tapping.zig");
 const extrakey = @import("extrakey.zig");
 const keymap_mod = @import("keymap.zig");
-const report_mod = @import("report.zig");
+const caps_word = @import("caps_word.zig");
+const repeat_key = @import("repeat_key.zig");
+const layer_lock = @import("layer_lock.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -91,8 +93,20 @@ pub fn isTapAction(act: Action) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+    if (processSpecialAction(keyp.event, act)) return;
+
     const ev = keyp.event;
     const kind = act.kind.id;
+
+    // Caps Word 処理: 基本キーアクション（mods/rmods）の場合、
+    // キー押下時に Caps Word のフィルタリングを適用
+    if (caps_word.isActive()) {
+        if (kind == .mods or kind == .rmods) {
+            const kc = act.key.code;
+            _ = caps_word.process(kc, ev.pressed);
+        }
+    }
 
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
@@ -109,6 +123,28 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
     }
 }
 
+/// 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+/// 処理した場合は true を返す
+fn processSpecialAction(ev: KeyEvent, act: Action) bool {
+    switch (act.code) {
+        action_code.ACTION_CAPS_WORD_TOGGLE => {
+            if (ev.pressed) {
+                caps_word.toggle();
+            }
+            return true;
+        },
+        action_code.ACTION_REPEAT_KEY => {
+            repeat_key.processRepeatKey(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_LAYER_LOCK => {
+            layer_lock.processLayerLock(ev.pressed);
+            return true;
+        },
+        else => return false,
+    }
+}
+
 /// Process basic modifier actions (hold for mod, with optional key)
 fn processModsAction(ev: KeyEvent, act: Action) void {
     const mods = act.key.mods;
@@ -117,7 +153,11 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
 
     if (ev.pressed) {
         if (mods8 != 0) host.registerMods(mods8);
-        if (kc != 0) host.registerCode(kc);
+        if (kc != 0) {
+            host.registerCode(kc);
+            // Repeat Key 用に直前のキーを記録
+            repeat_key.setLastKeycode(kc, host.getMods());
+        }
         host.sendKeyboardReport();
     } else {
         if (kc != 0) host.unregisterCode(kc);

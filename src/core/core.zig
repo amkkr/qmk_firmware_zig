@@ -20,6 +20,9 @@ pub const bootmagic = @import("bootmagic.zig");
 pub const mousekey = @import("mousekey.zig");
 pub const tap_dance = @import("tap_dance.zig");
 pub const keyboard = @import("keyboard.zig");
+pub const caps_word = @import("caps_word.zig");
+pub const repeat_key = @import("repeat_key.zig");
+pub const layer_lock = @import("layer_lock.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
