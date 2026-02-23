@@ -456,7 +456,7 @@ setup-test-libs:
 	else \
 		echo "lib/googletest already exists, skipping."; \
 	fi
-	@if [ ! -d lib/printf/src ]; then \
+	@if [ ! -d lib/printf/.git ] && [ ! -f lib/printf/src/printf.c ]; then \
 		git clone --depth=1 https://github.com/qmk/printf lib/printf; \
 	else \
 		echo "lib/printf already exists, skipping."; \
