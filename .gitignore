@@ -138,11 +138,5 @@ zig-out/
 .claude/worktrees/
 
 # 外部ライブラリ（git管理外、make setup-test-libs でオンデマンドDL）
-lib/googletest/
-lib/printf/
-lib/chibios/
-lib/chibios-contrib/
-lib/lufa/
-lib/pico-sdk/
-lib/vusb/
-lib/lvgl/
+# lib/fnv, lib/lib8tion, lib/python, lib/usbhost はtracked のため影響なし
+lib/*
