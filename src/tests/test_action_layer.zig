@@ -377,28 +377,20 @@ test "LayerModWithKeypress" {
     try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
 }
 
+// ============================================================
 // LayerModHonorsModConfig
 // (C版 line 435-467, keymap_config.swap_ralt_rgui 機能への依存)
 //
 // keymap_config.swap_ralt_rgui によるモッドスワップの検証。
 // LM(1, MOD_RALT) が swap_ralt_rgui=true のとき RGUI として動作することを確認。
 // action.zig API を直接使用（TestFixture不使用）。
+// ============================================================
 
-const action = @import("../core/action.zig");
-const action_code = @import("../core/action_code.zig");
-const event_mod = @import("../core/event.zig");
-const host_mod = @import("../core/host.zig");
 const keymap = @import("../core/keymap.zig");
-
-const Action = action_code.Action;
-const KeyRecord = event_mod.KeyRecord;
-const KeyEvent = event_mod.KeyEvent;
-
-const LMTestDriver = @import("../core/test_driver.zig").FixedTestDriver(32, 4);
 
 test "LayerModHonorsModConfig" {
     action.reset();
-    var mock = LMTestDriver{};
+    var mock = DirectMockDriver{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock));
     defer {
         host_mod.clearDriver();
