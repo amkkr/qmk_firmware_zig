@@ -377,10 +377,43 @@ test "LayerModWithKeypress" {
     try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
 }
 
+// ============================================================
 // LayerModHonorsModConfig
 // (C版 line 435-467, keymap_config.swap_ralt_rgui 機能への依存)
 //
-// 未移植の理由:
-//   keymap_config.swap_ralt_rgui 機能（RALT/RGUI スワップ）が未実装のためスキップ。
-//
-// test "LayerModHonorsModConfig" { ... }
+// keymap_config.swap_ralt_rgui によるモッドスワップの検証。
+// LM(1, MOD_RALT) が swap_ralt_rgui=true のとき RGUI として動作することを確認。
+// action.zig API を直接使用（TestFixture不使用）。
+// ============================================================
+
+const keymap = @import("../core/keymap.zig");
+
+test "LayerModHonorsModConfig" {
+    action.reset();
+    var mock = DirectMockDriver{};
+    host_mod.setDriver(host_mod.HostDriver.from(&mock));
+    defer {
+        host_mod.clearDriver();
+        action.reset();
+        keymap.keymap_config = .{};
+    }
+
+    // swap_ralt_rgui を有効化
+    keymap.keymap_config.swap_ralt_rgui = true;
+
+    // ACTION_LAYER_MODS(1, 0x40): layer 1 + RALT(0x40)
+    // swap_ralt_rgui=true なので RALT(0x40) → RGUI(0x80) にスワップされる
+    const act = Action{ .code = action_code.ACTION_LAYER_MODS(1, 0x40) };
+
+    // Press → layer 1 on + mods=0x80 (RGUI, スワップ後)
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    action.processAction(&press, act);
+    try testing.expect(layer_mod.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0x80), mock.lastKeyboardReport().mods); // RGUI
+
+    // Release → layer 1 off + mods=0x00
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    action.processAction(&release, act);
+    try testing.expect(!layer_mod.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}

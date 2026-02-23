@@ -99,6 +99,15 @@ pub const KeyboardReport = extern struct {
         return true;
     }
 
+    /// Check if any non-modifier key is registered in the report.
+    /// C版 has_anykey() に相当。
+    pub fn hasAnyKey(self: *const KeyboardReport) bool {
+        for (self.keys) |k| {
+            if (k != 0) return true;
+        }
+        return false;
+    }
+
     comptime {
         if (@sizeOf(KeyboardReport) != 8) {
             @compileError("KeyboardReport must be 8 bytes");

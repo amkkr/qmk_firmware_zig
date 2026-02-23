@@ -8,6 +8,7 @@ const std = @import("std");
 const keycode = @import("keycode.zig");
 const layer_mod = @import("layer.zig");
 const action_code = @import("action_code.zig");
+const report_mod = @import("report.zig");
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 const LayerState = layer_mod.LayerState;
@@ -15,6 +16,98 @@ const LayerState = layer_mod.LayerState;
 pub const MATRIX_ROWS = 4;
 pub const MATRIX_COLS = 12;
 pub const MAX_LAYERS = layer_mod.MAX_LAYERS;
+
+// ============================================================
+// KeymapConfig (C版 keymap_config_t 相当)
+// quantum/keycode_config.h の keymap_config_t を移植
+// ============================================================
+
+/// キーマップ設定フラグ（EEPROM 永続化対象）
+/// C版 keymap_config_t に相当する packed struct。
+/// フィールド順は C 版ビットフィールドの順序と一致させる。
+pub const KeymapConfig = packed struct(u16) {
+    /// CapsLock と Left Ctrl を入れ替える
+    swap_control_capslock: bool = false,
+    /// CapsLock を Left Ctrl として扱う
+    capslock_to_control: bool = false,
+    /// Left Alt と Left GUI を入れ替える
+    swap_lalt_lgui: bool = false,
+    /// Right Alt と Right GUI を入れ替える
+    swap_ralt_rgui: bool = false,
+    /// GUI キーを無効化する
+    no_gui: bool = false,
+    /// Grave と Escape を入れ替える
+    swap_grave_esc: bool = false,
+    /// Backslash と Backspace を入れ替える
+    swap_backslash_backspace: bool = false,
+    /// N-Key Rollover を有効化する
+    nkro: bool = false,
+    /// Left Ctrl と Left GUI を入れ替える
+    swap_lctl_lgui: bool = false,
+    /// Right Ctrl と Right GUI を入れ替える
+    swap_rctl_rgui: bool = false,
+    /// One-shot modifier を有効化する
+    oneshot_enable: bool = false,
+    /// Escape と CapsLock を入れ替える
+    swap_escape_capslock: bool = false,
+    /// 自動補正を有効化する
+    autocorrect_enable: bool = false,
+    /// 予約（将来の使用のため）
+    _reserved: u3 = 0,
+};
+
+comptime {
+    if (@sizeOf(KeymapConfig) != 2) {
+        @compileError("KeymapConfig must be 2 bytes (same as uint16_t in C version)");
+    }
+}
+
+/// グローバル keymap_config インスタンス
+/// C版 `extern keymap_config_t keymap_config;` に相当。
+pub var keymap_config: KeymapConfig = .{};
+
+/// 8ビット HID モッドに対して keymap_config のスワップ設定を適用する
+/// C版 quantum/keycode_config.c の mod_config() に相当（8ビットHID版）
+///
+/// C版は5ビットパックモッドを扱うが、本実装は8ビットHIDモッドを直接扱う。
+/// 変換ロジックは等価。
+pub fn modConfig(mod: u8) u8 {
+    var m = mod;
+
+    if (keymap_config.swap_lalt_lgui) {
+        const has_lalt = (m & report_mod.ModBit.LALT) != 0;
+        const has_lgui = (m & report_mod.ModBit.LGUI) != 0;
+        if (has_lalt != has_lgui) {
+            m ^= (report_mod.ModBit.LALT | report_mod.ModBit.LGUI);
+        }
+    }
+    if (keymap_config.swap_ralt_rgui) {
+        const has_ralt = (m & report_mod.ModBit.RALT) != 0;
+        const has_rgui = (m & report_mod.ModBit.RGUI) != 0;
+        if (has_ralt != has_rgui) {
+            m ^= (report_mod.ModBit.RALT | report_mod.ModBit.RGUI);
+        }
+    }
+    if (keymap_config.swap_lctl_lgui) {
+        const has_lctl = (m & report_mod.ModBit.LCTRL) != 0;
+        const has_lgui = (m & report_mod.ModBit.LGUI) != 0;
+        if (has_lctl != has_lgui) {
+            m ^= (report_mod.ModBit.LCTRL | report_mod.ModBit.LGUI);
+        }
+    }
+    if (keymap_config.swap_rctl_rgui) {
+        const has_rctl = (m & report_mod.ModBit.RCTRL) != 0;
+        const has_rgui = (m & report_mod.ModBit.RGUI) != 0;
+        if (has_rctl != has_rgui) {
+            m ^= (report_mod.ModBit.RCTRL | report_mod.ModBit.RGUI);
+        }
+    }
+    if (keymap_config.no_gui) {
+        m &= ~@as(u8, report_mod.ModBit.LGUI | report_mod.ModBit.RGUI);
+    }
+
+    return m;
+}
 
 /// Keymap type: [layer][row][col] = Keycode
 pub const Keymap = [MAX_LAYERS][MATRIX_ROWS][MATRIX_COLS]Keycode;

@@ -19,6 +19,7 @@ pub const eeconfig = @import("eeconfig.zig");
 pub const bootmagic = @import("bootmagic.zig");
 pub const mousekey = @import("mousekey.zig");
 pub const combo = @import("combo.zig");
+pub const tap_dance = @import("tap_dance.zig");
 pub const keyboard = @import("keyboard.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
