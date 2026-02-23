@@ -522,10 +522,6 @@ pub inline fn isTapDance(kc: Keycode) bool {
     return kc >= QK_TAP_DANCE and kc <= QK_TAP_DANCE_MAX;
 }
 
-pub inline fn isLeader(kc: Keycode) bool {
-    return kc == QK_LEAD;
-}
-
 // ============================================================
 // Tests
 // ============================================================
