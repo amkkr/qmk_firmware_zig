@@ -214,7 +214,7 @@ fn ltModResolveForLayer(row: u8, col: u8) Action {
     }
     if (row == 0 and col == 1) {
         if (layer_mod.layerStateIs(1)) {
-            return .{ .code = 0x1426 }; // RALT(KC_9)
+            return .{ .code = keycode.RALT(keycode.KC.@"9") };
         }
         return .{ .code = action_code.ACTION_KEY(0x1B) }; // KC_X
     }
