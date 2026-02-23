@@ -25,13 +25,13 @@ pub const MAX_SIMULTANEOUS: u8 = 3;
 /// Tap Dance アクション定義
 /// タップ数に応じて異なるキーコードを送信する
 pub const TapDanceAction = struct {
-    /// 1タップ時のキーコード
+    /// 1タップ時のキーコード（基本キーおよびモディファイヤ 0x00-0xFF のみ有効、0xFF超は無視される）
     on_tap: Keycode = keycode_mod.KC.NO,
-    /// 2タップ時のキーコード
+    /// 2タップ時のキーコード（基本キーおよびモディファイヤ 0x00-0xFF のみ有効、0xFF超は無視される）
     on_double_tap: Keycode = keycode_mod.KC.NO,
-    /// ホールド時のキーコード
+    /// ホールド時のキーコード（基本キーおよびモディファイヤ 0x00-0xFF のみ有効、0xFF超は無視される）
     on_hold: Keycode = keycode_mod.KC.NO,
-    /// 2タップ+ホールド時のキーコード
+    /// 2タップ+ホールド時のキーコード（基本キーおよびモディファイヤ 0x00-0xFF のみ有効、0xFF超は無視される）
     on_tap_hold: Keycode = keycode_mod.KC.NO,
 };
 
@@ -167,9 +167,7 @@ pub fn task() void {
 
     if (timerElapsed(state.last_tap_time) <= TAPPING_TERM) return;
 
-    if (!state.interrupted) {
-        finishDance(td_index, state);
-    }
+    finishDance(td_index, state);
 }
 
 /// ダンスを確定する
