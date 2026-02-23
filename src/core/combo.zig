@@ -13,6 +13,7 @@
 //!   4. COMBO_TERM タイムアウトでバッファを吐き出し（通常キーとして処理）
 //!   5. 構成キーでないキーが来たらバッファを吐き出し
 
+const std = @import("std");
 const action = @import("action.zig");
 const action_code = @import("action_code.zig");
 const event_mod = @import("event.zig");
@@ -86,6 +87,7 @@ var keycode_resolver: ?*const fn (event: KeyEvent) Keycode = null;
 
 /// コンボテーブルを設定
 pub fn setComboTable(table: []const ComboDefinition) void {
+    std.debug.assert(table.len <= MAX_COMBOS);
     combo_table = table;
 }
 
@@ -335,7 +337,6 @@ fn clearCombos() void {
 // テスト
 // ============================================================
 
-const std = @import("std");
 const testing = std.testing;
 const keycode_mod = @import("keycode.zig");
 const KC = keycode_mod.KC;
