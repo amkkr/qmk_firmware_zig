@@ -497,6 +497,12 @@ test "TappingTermBoundary_ExactTerm_IsHold" {
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }
 
+// ============================================================
+// 9. TAPPING_TERM 境界値テスト（TAPPING_TERM-1 でリリース → タップ扱い）
+//    withinTappingTerm は「< TAPPING_TERM」（厳密に未満）のため、
+//    TAPPING_TERM-1 でのリリースはタップとして処理される。
+// ============================================================
+
 test "TappingTermBoundary_TermMinusOne_IsTap" {
     const mock = setup();
     defer teardown();
@@ -533,7 +539,7 @@ test "TappingTermBoundary_TermMinusOne_IsTap" {
 }
 
 // ============================================================
-// 9. TAPPING_TERM+1 境界値テスト（ホールド側）
+// 10. TAPPING_TERM+1 境界値テスト（ホールド側）
 //    SFT_T(KC_P) を TAPPING_TERM+1 まで保持 → ホールドとして処理される
 // ============================================================
 
@@ -573,7 +579,7 @@ test "TappingTermBoundary_TermPlusOne_IsHold" {
 }
 
 // ============================================================
-// 10. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
+// 11. LT タップ: LT(1, KC_B) を TAPPING_TERM 以内にタップ → KC_B
 // ============================================================
 
 test "LT_Tap_ReportsKey" {
@@ -603,7 +609,7 @@ test "LT_Tap_ReportsKey" {
 }
 
 // ============================================================
-// 11. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
+// 12. LT ホールド: LT(1, KC_B) を TAPPING_TERM 以上ホールド → レイヤー1有効化
 // ============================================================
 
 test "LT_Hold_ActivatesLayer" {
@@ -633,7 +639,7 @@ test "LT_Hold_ActivatesLayer" {
 }
 
 // ============================================================
-// 12. Mod-Tap 中の通常キー割り込み（プレス+リリース両方バッファ内）
+// 13. Mod-Tap 中の通常キー割り込み（プレス+リリース両方バッファ内）
 //    SFT_T(KC_P) 押下中に通常キー KC_A をプレス・リリース → バッファに蓄積。
 //    TAPPING_TERM 超過後の次のキーイベントでホールド判定 → LSHIFT として処理、
 //    バッファ内の KC_A プレス/リリースも順次処理される。
@@ -679,7 +685,7 @@ test "ModTap_Hold_WithNormalKeyInterrupt" {
 }
 
 // ============================================================
-// 13. 異なる Mod-Tap キーの連続タップ
+// 14. 異なる Mod-Tap キーの連続タップ
 //    SFT_T(KC_P) タップ → CTL_T(KC_P) タップ → それぞれ KC_P が送信される
 // ============================================================
 
