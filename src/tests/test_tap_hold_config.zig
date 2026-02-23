@@ -20,6 +20,7 @@
 //!  8. RetroTapping_TapAndHold           — SFT_T ホールド後リリース → retro tapping 動作
 //!  9. PermissiveHold_RegularKeyRelease  — SFT_T ホールド中に通常キーリリース → ホールド判定
 //! 10. NestedLayerTapKeys                — LT ネスト → 外側ホールド + 内側タップ
+//! 11. ModTapTwoModsSequential           — SFT_T タップ → RSFT_T タップ → 独立処理
 
 const std = @import("std");
 const testing = std.testing;
@@ -75,9 +76,8 @@ fn testActionResolver(ev: KeyEvent) Action {
                 .{ .code = action_code.ACTION_KEY(@truncate(KC.A)) },
             // LT(1, KC_P): hold=layer 1, tap=KC_P
             2 => .{ .code = action_code.ACTION_LAYER_TAP_KEY(1, @truncate(KC.P)) },
-            // RSFT_T(KC_A): right shift mod-tap
-            // C版互換: ACTION(ACT_RMODS_TAP, 0x02<<8 | KC_A) = 0x3204
-            3 => .{ .code = 0x3204 },
+            // RSFT_T(KC_A): ACTION(ACT_RMODS_TAP, RSFT_5bit<<8 | KC_A)
+            3 => .{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x02) << 8 | @as(u12, @truncate(KC.A))) },
             // LT(1, KC_A)
             4 => if (l1_active)
                 .{ .code = action_code.ACTION_KEY(@truncate(KC.B)) }

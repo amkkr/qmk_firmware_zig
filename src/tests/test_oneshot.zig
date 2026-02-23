@@ -56,21 +56,21 @@ fn testActionResolver(ev: KeyEvent) Action {
             0 => .{ .code = action_code.ACTION_MODS_ONESHOT(Mod.LSFT) },
             1 => .{ .code = action_code.ACTION_KEY(@truncate(KC.A)) },
             2 => .{ .code = action_code.ACTION_MODS_ONESHOT(Mod.LCTL) },
-            // OSM(RSFT): C版互換 ACTION(ACT_RMODS_TAP, 0x02<<8 | 0x00) = 0x3200
-            3 => .{ .code = 0x3200 },
+            // OSM(RSFT): ACTION(ACT_RMODS_TAP, RSFT_5bit<<8 | MODS_ONESHOT)
+            3 => .{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x02) << 8 | @as(u12, action_code.MODS_ONESHOT)) },
             4 => .{ .code = action_code.ACTION_MODS_ONESHOT(Mod.LALT) },
             5 => .{ .code = action_code.ACTION_MODS_ONESHOT(Mod.LGUI) },
-            // OSM(RCTL): C版互換 ACTION(ACT_RMODS_TAP, 0x01<<8 | 0x00) = 0x3100
-            6 => .{ .code = 0x3100 },
-            // OSM(RALT): C版互換 ACTION(ACT_RMODS_TAP, 0x04<<8 | 0x00) = 0x3400
-            7 => .{ .code = 0x3400 },
+            // OSM(RCTL): ACTION(ACT_RMODS_TAP, RCTL_5bit<<8 | MODS_ONESHOT)
+            6 => .{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x01) << 8 | @as(u12, action_code.MODS_ONESHOT)) },
+            // OSM(RALT): ACTION(ACT_RMODS_TAP, RALT_5bit<<8 | MODS_ONESHOT)
+            7 => .{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x04) << 8 | @as(u12, action_code.MODS_ONESHOT)) },
             else => .{ .code = action_code.ACTION_NO },
         };
     }
     if (ev.key.row == 1) {
         return switch (ev.key.col) {
-            // OSM(RGUI): C版互換 ACTION(ACT_RMODS_TAP, 0x08<<8 | 0x00) = 0x3800
-            0 => .{ .code = 0x3800 },
+            // OSM(RGUI): ACTION(ACT_RMODS_TAP, RGUI_5bit<<8 | MODS_ONESHOT)
+            0 => .{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x08) << 8 | @as(u12, action_code.MODS_ONESHOT)) },
             else => .{ .code = action_code.ACTION_NO },
         };
     }
@@ -220,20 +220,19 @@ test "OsmWithoutAdditionalKeypressDoesNothing" {
     const mock = setup();
     defer teardown();
 
+    const count_before = mock.keyboard_count;
+
     // OSM(LSFT) をタップ
     press(0, 0, 100);
     release(0, 0, 150);
 
     // OSM タップのみではキーボードレポートが送信されない（OSMは次キーまで保留）
-    // 注: tapping パイプラインの処理でレポートが発生しないことを確認
-    // OSM のタップリリースは tap.count==1 でレポートを送信しないため
-    try testing.expectEqual(@as(u8, 0x02), host_mod.getOneshotMods());
+    // C版 OSMWithoutAdditionalKeypressDoesNothing と同等:
+    // OSM のタップはレポートを発行せず、oneshot_mods を設定するのみ
+    try testing.expectEqual(count_before, mock.keyboard_count);
 
-    // 明示的に send_keyboard_report() を呼ぶと OSM が含まれる
-    // （C版の send_keyboard_report() 呼び出しテストと同等）
-    host_mod.sendKeyboardReport();
-    // 空のレポートに LSHIFT mods が含まれるが、キーがないので oneshot はクリアされない
-    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+    // oneshot_mods は設定されている（次のキー入力を待っている状態）
+    try testing.expectEqual(@as(u8, 0x02), host_mod.getOneshotMods());
 
     // oneshot_mods クリア
     host_mod.clearOneshotMods();
@@ -331,17 +330,7 @@ test "OsmHoldWithRegularKey" {
     press(0, 1, 100 + TAPPING_TERM + 10);
 
     // LSHIFT + KC_A がレポートされる
-    var found_shift_a = false;
-    var i: usize = count_before;
-    while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x04) and
-            mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0)
-        {
-            found_shift_a = true;
-            break;
-        }
-    }
-    try testing.expect(found_shift_a);
+    try testing.expect(findReportWithKeyAndMods(mock, count_before, 0x04, report_mod.ModBit.LSHIFT, true));
 
     // KC_A をリリース
     release(0, 1, 100 + TAPPING_TERM + 60);
