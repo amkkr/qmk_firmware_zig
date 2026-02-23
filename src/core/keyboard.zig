@@ -439,9 +439,7 @@ test "keyboard_task: Layer Lock がレイヤーをロックする" {
     // MO(1) を離す -> ロックされているのでレイヤー1は維持される
     releaseKey(0, 0);
     task();
-    // MO(1) のリリースでlayerOffが呼ばれるが、layer_lock がレイヤーを維持する
-    // 注: 現在の実装ではMO(1)のリリースでlayerOffが呼ばれてしまう。
-    // Layer Lock のロック状態はレイヤーを再度ONにする機能が必要。
-    // ここではロック状態が記録されていることだけ確認する。
+    // Layer Lock がロック中のレイヤーの layerOff をスキップする
     try testing.expect(layer_lock.isLayerLocked(1));
+    try testing.expect(layer.layerStateIs(1)); // レイヤー1はまだアクティブ
 }

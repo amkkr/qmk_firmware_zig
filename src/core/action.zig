@@ -137,6 +137,10 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
             repeat_key.processRepeatKey(ev.pressed);
             return true;
         },
+        action_code.ACTION_ALT_REPEAT_KEY => {
+            // Alt Repeat Key は未実装（将来拡張用）
+            return true;
+        },
         action_code.ACTION_LAYER_LOCK => {
             layer_lock.processLayerLock(ev.pressed);
             return true;
@@ -184,7 +188,13 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Tapped: register the tap keycode
             if (kc != 0) {
+                // Caps Word: タップキーにも Shift を適用
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(kc, true);
+                }
                 host.registerCode(kc);
+                // Repeat Key: タップキーも記録
+                repeat_key.setLastKeycode(kc, host.getMods());
                 host.sendKeyboardReport();
             }
         } else {
@@ -343,7 +353,13 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Tapped: register the tap keycode
             if (code != 0) {
+                // Caps Word: タップキーにも Shift を適用
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, true);
+                }
                 host.registerCode(code);
+                // Repeat Key: タップキーも記録
+                repeat_key.setLastKeycode(code, host.getMods());
                 host.sendKeyboardReport();
             }
         } else {
@@ -378,7 +394,10 @@ fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
             if (ev.pressed) {
                 layer.layerOn(l);
             } else {
-                layer.layerOff(l);
+                // Layer Lock でロック中のレイヤーは layerOff をスキップ
+                if (!layer_lock.isLayerLocked(l)) {
+                    layer.layerOff(l);
+                }
             }
         },
         OP_OFF_ON => {

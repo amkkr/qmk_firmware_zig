@@ -28,8 +28,11 @@ pub fn toggle() void {
 }
 
 /// Caps Word を有効化する
+/// C版 caps_word_on() と同様に、有効化時にモッドをクリアする
 pub fn activate() void {
     caps_word_active = true;
+    host.setMods(0);
+    host.clearWeakMods();
 }
 
 /// Caps Word を無効化する
