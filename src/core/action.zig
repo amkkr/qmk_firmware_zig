@@ -118,7 +118,7 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
 
     // Auto Shift: 修飾なしの基本キーで、Auto Shift 対象の場合は委譲
     if (mods8 == 0 and kc != 0) {
-        if (auto_shift.processAutoShift(kc, ev.pressed, ev.time)) {
+        if (auto_shift.processAutoShift(@as(u16, kc), ev.pressed, ev.time)) {
             return;
         }
     }
