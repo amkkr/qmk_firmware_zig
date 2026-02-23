@@ -162,9 +162,10 @@ pub fn processCombo(record: *KeyRecord) bool {
                 is_combo_key = true;
             }
 
-            // 両方押された → コンボ成立待ち
+            // 両方押された → コンボ成立
             if (state.key1_pressed and state.key2_pressed) {
                 activateCombo(i);
+                return true;
             }
         }
 
@@ -193,16 +194,11 @@ pub fn processCombo(record: *KeyRecord) bool {
             if (state.active) {
                 // アクティブなコンボのキーがリリースされた
                 if (keycode == combo_def.key1 or keycode == combo_def.key2) {
-                    var keys_remaining: u8 = 0;
                     if (keycode == combo_def.key1) {
                         state.key1_pressed = false;
-                    } else {
-                        keys_remaining += 1;
                     }
                     if (keycode == combo_def.key2) {
                         state.key2_pressed = false;
-                    } else {
-                        keys_remaining += 1;
                     }
                     // 最後のキーがリリースされたらコンボを解除
                     if (!state.key1_pressed and !state.key2_pressed) {
@@ -233,8 +229,7 @@ pub fn processCombo(record: *KeyRecord) bool {
 pub fn comboTask() void {
     if (!combo_enabled or combo_timer == 0) return;
 
-    const elapsed = timer.read() -% combo_timer;
-    if (elapsed > COMBO_TERM) {
+    if (timer.elapsed(combo_timer) > COMBO_TERM) {
         // タイムアウト: バッファを通常キーとして処理
         dumpKeyBuffer();
         combo_timer = 0;
