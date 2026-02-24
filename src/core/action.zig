@@ -132,6 +132,13 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         },
     }
 
+    // C版 action.c:830-847: layer アクション後は do_release_oneshot をクリア
+    // layer_tap/layer_tap_ext の処理中に OSL 解除が起きないようにする
+    switch (kind) {
+        .layer, .layer_mods, .layer_tap, .layer_tap_ext => do_release_oneshot = false,
+        else => {},
+    }
+
     // ---- do_release_oneshot 後処理（C版 process_action の末尾ロジック） ----
     // OSL が解除されるべき場合、キーを一時的にリリースしてからレイヤーをオフにする
     if (do_release_oneshot and (host.getOneshotLayerState() & host.OneshotState.PRESSED) == 0) {
