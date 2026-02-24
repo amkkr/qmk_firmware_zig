@@ -127,7 +127,7 @@ fn wheelUnit() u8 {
 
 /// キーコードからマウスボタンかどうか判定
 fn isMouseButton(code: u8) bool {
-    return code >= @as(u8, @truncate(KC.MS_BTN1)) and code <= @as(u8, @truncate(KC.MS_BTN5));
+    return code >= @as(u8, @truncate(KC.MS_BTN1)) and code <= @as(u8, @truncate(KC.MS_BTN8));
 }
 
 // ============================================================
@@ -213,17 +213,12 @@ pub fn task() void {
         }
     }
 
-    if (hasChanged(&mouse_report, &tmpmr) or shouldSend(&mouse_report)) {
+    if (shouldSend(&mouse_report)) {
         send();
     }
 
     // 状態を復元（方向情報を保持するため）
     mouse_report = tmpmr;
-}
-
-/// マウスレポートに変化があるか判定
-fn hasChanged(a: *const MouseReport, b: *const MouseReport) bool {
-    return a.buttons != b.buttons or a.x != b.x or a.y != b.y or a.v != b.v or a.h != b.h;
 }
 
 /// レポートを送信すべきか判定
