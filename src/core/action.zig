@@ -154,12 +154,14 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
     const mods = act.key.mods;
     const kc = act.key.code;
     const is_right = act.kind.id == .rmods_tap;
-    const mods8 = modFourBitToFiveBit(mods, is_right);
+    const mods5 = modFourBitToFiveBit(mods, is_right);
+    // C版 mod_config() に相当: modConfig を全ケースに適用（processModsAction と対称）
+    const mods_hid = keymap_mod.modConfig(host.modFiveBitToEightBit(mods5));
 
     switch (kc) {
         action_code.MODS_ONESHOT => {
             // One-Shot Modifier (OSM) の場合は専用処理
-            processOneShotModsAction(keyp, mods8);
+            processOneShotModsAction(keyp, mods5);
             return;
         },
         action_code.MODS_TAP_TOGGLE => {
@@ -167,12 +169,12 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
             // C版 quantum/action.c の MODS_TAP_TOGGLE 処理に相当
             if (ev.pressed) {
                 if (keyp.tap.count <= TAPPING_TOGGLE) {
-                    host.registerMods(mods8);
+                    host.addMods(mods_hid);
                     host.sendKeyboardReport();
                 }
             } else {
                 if (keyp.tap.count < TAPPING_TOGGLE) {
-                    host.unregisterMods(mods8);
+                    host.delMods(mods_hid);
                     host.sendKeyboardReport();
                 }
             }
@@ -189,8 +191,8 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                     }
                 } else {
                     // Held: register modifier
-                    if (mods8 != 0) {
-                        host.registerMods(mods8);
+                    if (mods_hid != 0) {
+                        host.addMods(mods_hid);
                         host.sendKeyboardReport();
                     }
                 }
@@ -203,8 +205,8 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                     }
                 } else {
                     // Release hold
-                    if (mods8 != 0) {
-                        host.unregisterMods(mods8);
+                    if (mods_hid != 0) {
+                        host.delMods(mods_hid);
                         host.sendKeyboardReport();
                     }
                 }
@@ -812,6 +814,12 @@ test "OSM right modifier tap sets correct HID bits" {
     };
     processAction(&release, act);
     try testing.expectEqual(@as(u8, 0x20), host.getOneshotMods()); // 保持される
+
+    // 次のキー入力で OSM が適用されてクリアされることを確認
+    host.registerCode(0x04); // KC_A
+    host.sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x20), mock.lastKeyboardReport().mods); // OSM適用済みレポート
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods()); // OSMクリア
 }
 
 test "ACT_MOUSEKEY dispatch" {
