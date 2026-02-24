@@ -169,7 +169,8 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
     switch (kc) {
         action_code.MODS_ONESHOT => {
             // One-Shot Modifier (OSM) の場合は専用処理
-            processOneShotModsAction(keyp, mods5);
+            // C版と同様に modConfig 適用済みの8ビットHID形式を渡す
+            processOneShotModsAction(keyp, mods_hid);
             return;
         },
         action_code.MODS_TAP_TOGGLE => {
@@ -233,21 +234,19 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 /// 注意: mods5 は modFourBitToFiveBit() の結果（5ビットパック形式）。
 /// registerMods/unregisterMods は内部で5ビット→8ビット変換するが、
 /// addOneshotMods は8ビットHIDmodsを直接格納するため、明示的に変換が必要。
-fn processOneShotModsAction(keyp: *KeyRecord, mods5: u8) void {
+fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
     const ev = keyp.event;
 
     // C版互換: oneshot_enable が false の場合、通常の修飾キーとして動作
     if (!keymap_mod.keymap_config.oneshot_enable) {
         if (ev.pressed) {
-            host.registerMods(mods5);
+            host.addMods(mods_hid);
         } else {
-            host.unregisterMods(mods5);
+            host.delMods(mods_hid);
         }
         host.sendKeyboardReport();
         return;
     }
-
-    const mods_hid = host.modFiveBitToEightBit(mods5);
 
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
@@ -257,24 +256,24 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods5: u8) void {
                 host.addOneshotMods(mods_hid);
             } else {
                 // 複数タップ: 通常のmod toggle として扱う（C版互換）
-                host.registerMods(mods5);
+                host.addMods(mods_hid);
                 host.sendKeyboardReport();
             }
         } else {
             // ホールド: 通常の修飾キーとして登録
-            host.registerMods(mods5);
+            host.addMods(mods_hid);
             host.sendKeyboardReport();
         }
     } else {
         if (keyp.tap.count > 0) {
             // タップリリース: OSMは次キーまで保持（レポート送信不要）
             if (keyp.tap.count > 1) {
-                host.unregisterMods(mods5);
+                host.delMods(mods_hid);
                 host.sendKeyboardReport();
             }
         } else {
             // ホールドリリース: 修飾キーを解除
-            host.unregisterMods(mods5);
+            host.delMods(mods_hid);
             host.sendKeyboardReport();
         }
     }
