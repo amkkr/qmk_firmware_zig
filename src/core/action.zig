@@ -216,6 +216,9 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Release tap
             if (kc != 0) {
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(kc, false);
+                }
                 host.unregisterCode(kc);
                 host.sendKeyboardReport();
             }
@@ -378,6 +381,9 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Release tap
             if (code != 0) {
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, false);
+                }
                 host.unregisterCode(code);
                 host.sendKeyboardReport();
             }

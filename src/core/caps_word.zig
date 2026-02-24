@@ -51,8 +51,10 @@ pub fn deactivate() void {
 pub fn process(kc: u8, pressed: bool) bool {
     if (!caps_word_active) return true;
 
-    // リリース時は何もしない（通常通り処理）
+    // リリース時: weak mods の LSHIFT をクリアして通常通り処理
+    // C版 process_caps_word() の release パスと同様
     if (!pressed) {
+        host.delWeakMods(report_mod.ModBit.LSHIFT);
         return true;
     }
 
