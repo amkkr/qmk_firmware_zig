@@ -17,6 +17,7 @@ const extrakey = @import("extrakey.zig");
 const auto_shift = @import("auto_shift.zig");
 const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
+pub const swap_hands = @import("swap_hands.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -84,6 +85,13 @@ pub fn isTapAction(act: Action) bool {
             // Regular layer-tap key (not special operation)
             return code != 0 and code < OP_TAP_TOGGLE;
         },
+        .swap_hands => {
+            const code = act.key.code;
+            // SH_T(kc): C版と同様 KC_NO(0x00)〜KC_RIGHT_GUI(0xE7) がタップアクション
+            // C版では OP_SH_TAP_TOGGLE(0xF1) は default フォールスルーで code <= 0xE7 評価され false
+            // 特殊操作コード (0xF0-0xF6) はタップアクションではない
+            return code != 0 and code <= 0xE7;
+        },
         else => return false,
     }
 }
@@ -102,6 +110,7 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         .layer => processLayerAction(ev, act),
         .layer_mods => processLayerModsAction(ev, act),
         .layer_tap, .layer_tap_ext => processLayerTapAction(keyp, act),
+        .swap_hands => swap_hands.processSwapHandsAction(keyp, act),
         else => {
             if (@import("builtin").is_test) {
                 @import("std").log.warn("unhandled action kind: {}", .{@intFromEnum(kind)});
@@ -379,6 +388,7 @@ pub fn reset() void {
     tapping.reset();
     auto_shift.reset();
     keymap_mod.keymap_config = .{};
+    swap_hands.reset();
 }
 
 // ============================================================

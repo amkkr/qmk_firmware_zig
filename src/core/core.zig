@@ -21,6 +21,7 @@ pub const mousekey = @import("mousekey.zig");
 pub const combo = @import("combo.zig");
 pub const tap_dance = @import("tap_dance.zig");
 pub const leader = @import("leader.zig");
+pub const swap_hands = @import("swap_hands.zig");
 pub const keyboard = @import("keyboard.zig");
 pub const auto_shift = @import("auto_shift.zig");
 
