@@ -15,6 +15,7 @@ const layer = @import("layer.zig");
 const keymap_mod = @import("keymap.zig");
 const keycode = @import("keycode.zig");
 const tap_dance = @import("tap_dance.zig");
+const leader = @import("leader.zig");
 const timer = @import("../hal/timer.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
@@ -78,6 +79,7 @@ pub fn init() void {
     action.reset();
     layer.resetState();
     tap_dance.reset();
+    leader.reset();
     caps_word.reset();
     repeat_key.reset();
     layer_lock.reset();
@@ -117,13 +119,15 @@ pub fn task() void {
                     else
                         KeyEvent.keyRelease(@intCast(row), @intCast(col), time);
 
-                    // キーコードを解決し、Tap Dance キーコードならインターセプト
+                    // キーコードを解決し、Tap Dance / Leader Key ならインターセプト
                     const kc = resolveKeycode(ev);
                     if (keycode.isTapDance(kc)) {
                         // Tap Dance プリプロセス: 別キー押下でアクティブな TD を確定
                         _ = tap_dance.preprocess(kc, pressed);
                         // Tap Dance 処理
                         _ = tap_dance.process(kc, pressed);
+                    } else if (leader.processKeycode(kc, pressed)) {
+                        // Leader Key として処理済み: アクションパイプラインに渡さない
                     } else {
                         // 通常のアクションパイプライン
                         // 非TD キーが押されたらアクティブな TD を確定
@@ -144,6 +148,9 @@ pub fn task() void {
 
     // Tap Dance タイムアウト処理
     tap_dance.task();
+
+    // Leader Key タイムアウト処理
+    leader.leaderTask();
 
     // 現在の状態を保存
     matrix_prev = matrix_state;
