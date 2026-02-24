@@ -282,6 +282,9 @@ pub const KC = struct {
     pub const MS_BTN3: Keycode = 0x00D3;
     pub const MS_BTN4: Keycode = 0x00D4;
     pub const MS_BTN5: Keycode = 0x00D5;
+    pub const MS_BTN6: Keycode = 0x00D6;
+    pub const MS_BTN7: Keycode = 0x00D7;
+    pub const MS_BTN8: Keycode = 0x00D8;
     pub const MS_WH_UP: Keycode = 0x00D9;
     pub const MS_WH_DOWN: Keycode = 0x00DA;
     pub const MS_WH_LEFT: Keycode = 0x00DB;
@@ -339,6 +342,7 @@ pub const QK_SWAP_HANDS: Keycode = 0x5600;
 pub const QK_SWAP_HANDS_MAX: Keycode = 0x56FF;
 pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
+pub const QK_LEAD: Keycode = 0x7C58;
 
 // ============================================================
 // Modifier bit constants
