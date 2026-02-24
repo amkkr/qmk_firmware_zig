@@ -296,6 +296,13 @@ pub const KC = struct {
     pub const RALT: Keycode = RIGHT_ALT;
     pub const RIGHT_GUI: Keycode = 0x00E7;
     pub const RGUI: Keycode = RIGHT_GUI;
+
+    // Dynamic Macro keycodes
+    pub const DM_REC1: Keycode = 0x7C72; // マクロ1 録音開始
+    pub const DM_REC2: Keycode = 0x7C73; // マクロ2 録音開始
+    pub const DM_RSTP: Keycode = 0x7C74; // 録音停止
+    pub const DM_PLY1: Keycode = 0x7C75; // マクロ1 再生
+    pub const DM_PLY2: Keycode = 0x7C76; // マクロ2 再生
 };
 
 // ============================================================

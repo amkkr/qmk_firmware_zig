@@ -19,6 +19,7 @@ pub const eeconfig = @import("eeconfig.zig");
 pub const bootmagic = @import("bootmagic.zig");
 pub const mousekey = @import("mousekey.zig");
 pub const keyboard = @import("keyboard.zig");
+pub const dynamic_macro = @import("dynamic_macro.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
