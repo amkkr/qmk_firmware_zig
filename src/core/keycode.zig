@@ -325,6 +325,15 @@ pub const QK_ONE_SHOT_MOD_MAX: Keycode = 0x52BF;
 pub const QK_LAYER_TAP_TOGGLE: Keycode = 0x52C0;
 pub const QK_LAYER_TAP_TOGGLE_MAX: Keycode = 0x52DF;
 
+// QMK special feature keycodes
+pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C51;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = 0x7C52;
+pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = 0x7C53;
+pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C54;
+pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C55;
+pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C56;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C57;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================
