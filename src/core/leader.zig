@@ -123,9 +123,9 @@ pub fn processKeycode(kc: Keycode, pressed: bool) bool {
             return true;
         }
         if (!leaderSequenceAdd(kc)) {
-            // バッファ満杯: シーケンス終了
+            // バッファ満杯: シーケンス終了。overflow キーはアクションパイプラインに渡す（C版互換）
             leaderEnd();
-            return true;
+            return false;
         }
         return true;
     } else if (kc == keycode_mod.QK_LEAD) {
