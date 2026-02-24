@@ -87,9 +87,9 @@ pub fn isTapAction(act: Action) bool {
         .swap_hands => {
             const code = act.key.code;
             // SH_T(kc): C版と同様 KC_NO(0x00)〜KC_RIGHT_GUI(0xE7) がタップアクション
-            // SH_TT (OP_SH_TAP_TOGGLE=0xF1) もタップアクション
-            // 特殊操作コード (0xF0, 0xF2-0xF6) はタップアクションではない
-            return (code != 0 and code <= 0xE7) or code == swap_hands.OP_SH_TAP_TOGGLE;
+            // C版では OP_SH_TAP_TOGGLE(0xF1) は default フォールスルーで code <= 0xE7 評価され false
+            // 特殊操作コード (0xF0-0xF6) はタップアクションではない
+            return code != 0 and code <= 0xE7;
         },
         else => return false,
     }
