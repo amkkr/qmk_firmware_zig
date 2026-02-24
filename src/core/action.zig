@@ -437,8 +437,11 @@ fn processLayerModsAction(ev: KeyEvent, act: Action) void {
         host.addMods(mods);
         host.sendKeyboardReport();
     } else {
-        host.delMods(mods);
-        layer.layerOff(l);
+        // Layer Lock でロック中のレイヤーは layerOff/delMods をスキップ
+        if (!layer_lock.isLayerLocked(l)) {
+            host.delMods(mods);
+            layer.layerOff(l);
+        }
         host.sendKeyboardReport();
     }
 }
