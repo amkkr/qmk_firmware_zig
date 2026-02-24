@@ -103,8 +103,8 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (host.isOneshotLayerActive() and ev.pressed and keymap_mod.keymap_config.oneshot_enable) {
         const is_modifier_action = blk: {
             if (kind == .mods or kind == .rmods) {
-                // 純粋な修飾キーアクション（code==0）または修飾キーコード
-                break :blk report_mod.isModifierKeycode(act.key.code) or act.key.code == 0;
+                // C版 IS_MODIFIER_KEYCODE(action.key.code) と等価
+                break :blk report_mod.isModifierKeycode(act.key.code);
             }
             if (kind == .mods_tap or kind == .rmods_tap) {
                 // mod-tap のホールド状態（tap.count==0）またはOSM/TAP_TOGGLE
@@ -935,7 +935,7 @@ test "OSL modifier key does not trigger release" {
     try testing.expect(host.isOneshotLayerActive());
 
     // 修飾キーを押す → OSL は解除されない
-    const mod_act = Action{ .code = action_code.ACTION_MODS_KEY(0x00, 0) }; // 純粋な修飾キー（code=0）
+    const mod_act = Action{ .code = action_code.ACTION_KEY(0xE1) }; // KC_LSHIFT (0xE1)
     var mod_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 200) };
     processAction(&mod_press, mod_act);
     try testing.expect(host.isOneshotLayerActive());
