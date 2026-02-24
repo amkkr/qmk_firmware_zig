@@ -148,7 +148,7 @@ test "PressAndHoldButtonOneCorrectlyReported" {
     const count_before = driver.mouse_count;
     timer.mockAdvance(21);
     mousekey.task();
-    // ボタンだけ押している場合はtask()内でhasChangedがfalseになるためcount変化なし
+    // ボタンだけ押している場合はshouldSend()がx/y/v/hのみ検査しbuttonsを見ないためレポート送信なし
     try testing.expectEqual(count_before, driver.mouse_count);
 
     // キーをリリース → 空レポート
