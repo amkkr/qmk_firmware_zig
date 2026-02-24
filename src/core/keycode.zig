@@ -325,6 +325,9 @@ pub const QK_ONE_SHOT_MOD_MAX: Keycode = 0x52BF;
 pub const QK_LAYER_TAP_TOGGLE: Keycode = 0x52C0;
 pub const QK_LAYER_TAP_TOGGLE_MAX: Keycode = 0x52DF;
 
+// QMK special feature keycodes
+pub const QK_LOCK: Keycode = 0x7C04;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================
