@@ -383,7 +383,10 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
             }
         } else {
             // Release hold
-            layer.layerOff(l);
+            // Layer Lock でロック中のレイヤーは layerOff をスキップ
+            if (!layer_lock.isLayerLocked(l)) {
+                layer.layerOff(l);
+            }
         }
     }
 }

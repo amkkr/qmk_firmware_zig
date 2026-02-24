@@ -33,6 +33,7 @@ pub fn activate() void {
     caps_word_active = true;
     host.setMods(0);
     host.clearWeakMods();
+    host.clearOneshotMods();
 }
 
 /// Caps Word を無効化する
