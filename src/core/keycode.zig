@@ -326,6 +326,7 @@ pub const QK_LAYER_TAP_TOGGLE: Keycode = 0x52C0;
 pub const QK_LAYER_TAP_TOGGLE_MAX: Keycode = 0x52DF;
 pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
+pub const QK_LEAD: Keycode = 0x7C58;
 
 // ============================================================
 // Modifier bit constants
