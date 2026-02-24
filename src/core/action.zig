@@ -227,13 +227,12 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 /// One-Shot Modifier (OSM) のアクション処理
 /// C版 quantum/action.c の ACT_MODS_TAP/MODS_ONESHOT 処理に相当
 ///
-/// タップ時: addOneshotMods(mods) で OSM を設定
+/// タップ時: addOneshotMods(mods_hid) で OSM を設定
 ///   → 次のキー入力時に sendKeyboardReport() で一時的に適用されクリアされる
-/// ホールド時: 通常の修飾キーとして動作（registerMods/unregisterMods）
+/// ホールド時: 通常の修飾キーとして動作（addMods/delMods）
 ///
-/// 注意: mods5 は modFourBitToFiveBit() の結果（5ビットパック形式）。
-/// registerMods/unregisterMods は内部で5ビット→8ビット変換するが、
-/// addOneshotMods は8ビットHIDmodsを直接格納するため、明示的に変換が必要。
+/// 注意: mods_hid は modConfig 適用済みの8ビットHID形式。
+/// 呼び出し元（processModsTapAction）で modFiveBitToEightBit + modConfig を適用済み。
 fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
     const ev = keyp.event;
 
@@ -384,7 +383,8 @@ fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8, tap_count: u8) void {
             // Layer tap toggle (TT)
             // C版: press 時 tap_count < TAPPING_TOGGLE なら layer_invert
             //       release 時 tap_count <= TAPPING_TOGGLE なら layer_invert
-            // → タップ数が TAPPING_TOGGLE に達するとリリース時にinvertされず固定される
+            // → tap_count == TAPPING_TOGGLE: pressでinvertなし、releaseでinvertあり（ラッチON）
+            // → tap_count > TAPPING_TOGGLE: press/releaseともinvertなし（固定）
             if (ev.pressed) {
                 if (tap_count < TAPPING_TOGGLE) {
                     layer.layerInvert(l);
