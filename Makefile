@@ -445,6 +445,23 @@ git-submodule:
 .PHONY: git-submodules
 git-submodules: git-submodule
 
+# Cユニットテストに必要なライブラリをオンデマンドで取得する
+# lib/googletest と lib/printf は git 管理外のため手動で clone する
+# CI では .github/workflows/unit_test.yml が自動実行する
+.PHONY: setup-test-libs
+setup-test-libs:
+	@echo "Fetching C test libraries..."
+	@if [ ! -d lib/googletest/.git ] && [ ! -f lib/googletest/CMakeLists.txt ]; then \
+		git clone --depth=1 https://github.com/qmk/googletest lib/googletest; \
+	else \
+		echo "lib/googletest already exists, skipping."; \
+	fi
+	@if [ ! -d lib/printf/.git ] && [ ! -f lib/printf/src/printf.c ]; then \
+		git clone --depth=1 https://github.com/qmk/printf lib/printf; \
+	else \
+		echo "lib/printf already exists, skipping."; \
+	fi
+
 .PHONY: list-keyboards
 list-keyboards:
 	$(QMK_BIN) list-keyboards | tr '\n' ' '
