@@ -15,6 +15,7 @@ pub const host = @import("host.zig");
 const tapping = @import("action_tapping.zig");
 const extrakey = @import("extrakey.zig");
 const mousekey = @import("mousekey.zig");
+const auto_shift = @import("auto_shift.zig");
 const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
 
@@ -136,6 +137,13 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
     const kc = keymap_mod.keycodeConfig(act.key.code);
     const mods5 = modFourBitToFiveBit(mods, act.kind.id == .rmods);
     const mods_hid = keymap_mod.modConfig(host.modFiveBitToEightBit(mods5));
+
+    // Auto Shift: 修飾なしの基本キーで、Auto Shift 対象の場合は委譲
+    if (mods_hid == 0 and kc != 0) {
+        if (auto_shift.processAutoShift(@as(u16, kc), ev.pressed, ev.time)) {
+            return;
+        }
+    }
 
     if (ev.pressed) {
         if (mods_hid != 0) host.addMods(mods_hid);
@@ -424,6 +432,7 @@ pub fn reset() void {
     host.hostReset();
     layer.resetState();
     tapping.reset();
+    auto_shift.reset();
     keymap_mod.keymap_config = .{};
 }
 
