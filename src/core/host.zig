@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const report_mod = @import("report.zig");
+const layer_mod = @import("layer.zig");
 const KeyboardReport = report_mod.KeyboardReport;
 const MouseReport = report_mod.MouseReport;
 const ExtraReport = report_mod.ExtraReport;
@@ -89,6 +90,11 @@ var weak_mods: u8 = 0;
 /// One-Shot Mods: 次の1回のキー入力にのみ適用される修飾キー
 /// C版 action_util.c の oneshot_mods に相当
 var oneshot_mods: u8 = 0;
+
+/// One-Shot Layer 状態データ
+/// C版 action_util.c の oneshot_layer_data に相当
+/// 上位5ビット: レイヤー番号、下位3ビット: 状態フラグ
+var oneshot_layer_data: u8 = 0;
 
 pub fn setDriver(driver: HostDriver) void {
     current_driver = driver;
@@ -232,6 +238,7 @@ pub fn hostReset() void {
     real_mods = 0;
     weak_mods = 0;
     oneshot_mods = 0;
+    oneshot_layer_data = 0;
 }
 
 // ============================================================
@@ -257,6 +264,67 @@ pub fn clearOneshotMods() void {
 /// 現在の One-Shot Mods を取得する
 pub fn getOneshotMods() u8 {
     return oneshot_mods;
+}
+
+// ============================================================
+// One-Shot Layer operations
+// C版 action_util.c の oneshot_layer 関連関数に相当
+// ============================================================
+
+/// One-Shot Layer 状態フラグ
+/// C版 oneshot_fullfillment_t に相当
+pub const OneshotState = struct {
+    pub const PRESSED: u3 = 0b001;
+    pub const OTHER_KEY_PRESSED: u3 = 0b010;
+    pub const START: u3 = 0b011; // PRESSED | OTHER_KEY_PRESSED
+    pub const TOGGLED: u3 = 0b100;
+};
+
+/// One-Shot Layer を設定し、レイヤーを有効化する
+/// C版 set_oneshot_layer() に相当
+pub fn setOneshotLayer(l: u5, state: u3) void {
+    oneshot_layer_data = (@as(u8, l) << 3) | @as(u8, state);
+    layer_mod.layerOn(l);
+}
+
+/// One-Shot Layer データをリセットする（レイヤー操作なし）
+/// C版 reset_oneshot_layer() に相当
+pub fn resetOneshotLayer() void {
+    oneshot_layer_data = 0;
+}
+
+/// One-Shot Layer の状態フラグをクリアする
+/// 全フラグがクリアされた場合、レイヤーをオフにしてリセットする
+/// C版 clear_oneshot_layer_state() に相当
+pub fn clearOneshotLayerState(state: u3) void {
+    const start_state = oneshot_layer_data;
+    oneshot_layer_data &= ~@as(u8, state);
+    if (getOneshotLayerState() == 0 and start_state != oneshot_layer_data) {
+        layer_mod.layerOff(getOneshotLayerFromData(start_state));
+        resetOneshotLayer();
+    }
+}
+
+/// One-Shot Layer のレイヤー番号を取得する
+/// C版 get_oneshot_layer() に相当
+pub fn getOneshotLayer() u5 {
+    return @truncate(oneshot_layer_data >> 3);
+}
+
+/// 指定データからレイヤー番号を取得する（内部用）
+fn getOneshotLayerFromData(data: u8) u5 {
+    return @truncate(data >> 3);
+}
+
+/// One-Shot Layer の状態フラグを取得する
+/// C版 get_oneshot_layer_state() に相当
+pub fn getOneshotLayerState() u3 {
+    return @truncate(oneshot_layer_data & 0b111);
+}
+
+/// One-Shot Layer がアクティブかどうかを確認する
+pub fn isOneshotLayerActive() bool {
+    return getOneshotLayerState() != 0;
 }
 
 /// Convert 5-bit modifier encoding to 8-bit HID modifier bits

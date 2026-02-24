@@ -85,6 +85,8 @@ pub fn isTapAction(act: Action) bool {
         },
         .layer_tap, .layer_tap_ext => {
             const code = act.key.code;
+            // OSL (OP_ONESHOT) はタップアクション（C版 is_tap_action 互換）
+            if (code == OP_ONESHOT) return true;
             // Regular layer-tap key (not special operation)
             return code != 0 and code < OP_TAP_TOGGLE;
         },
@@ -118,6 +120,28 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         }
     }
 
+    // ---- do_release_oneshot 前処理（C版 process_action の先頭ロジック） ----
+    // OSL がアクティブで、修飾キー以外のキーが押された場合、
+    // OTHER_KEY_PRESSED フラグをクリアして OSL 解除準備をする
+    var do_release_oneshot = false;
+    if (host.isOneshotLayerActive() and ev.pressed and keymap_mod.keymap_config.oneshot_enable) {
+        const is_modifier_action = blk: {
+            if (kind == .mods or kind == .rmods) {
+                // C版 IS_MODIFIER_KEYCODE(action.key.code) と等価
+                break :blk report_mod.isModifierKeycode(act.key.code);
+            }
+            if (kind == .mods_tap or kind == .rmods_tap) {
+                // mod-tap のホールド状態（tap.count==0）またはOSM/TAP_TOGGLE
+                break :blk act.layer_tap.code <= action_code.MODS_TAP_TOGGLE or keyp.tap.count == 0;
+            }
+            break :blk false;
+        };
+        if (kind == .usage or !is_modifier_action) {
+            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+            do_release_oneshot = !host.isOneshotLayerActive();
+        }
+    }
+
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
         .mods_tap, .rmods_tap => processModsTapAction(keyp, act),
@@ -131,6 +155,23 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
                 @import("std").log.warn("unhandled action kind: {}", .{@intFromEnum(kind)});
             }
         },
+    }
+
+    // C版 action.c:830-847: layer アクション後は do_release_oneshot をクリア
+    // layer_tap/layer_tap_ext の処理中に OSL 解除が起きないようにする
+    switch (kind) {
+        .layer, .layer_mods, .layer_tap, .layer_tap_ext => do_release_oneshot = false,
+        else => {},
+    }
+
+    // ---- do_release_oneshot 後処理（C版 process_action の末尾ロジック） ----
+    // OSL が解除されるべき場合、キーを一時的にリリースしてからレイヤーをオフにする
+    if (do_release_oneshot and (host.getOneshotLayerState() & host.OneshotState.PRESSED) == 0) {
+        const osl_layer = host.getOneshotLayer();
+        keyp.event.pressed = false;
+        layer.layerOn(osl_layer);
+        processRecord(keyp);
+        layer.layerOff(osl_layer);
     }
 }
 
@@ -365,7 +406,7 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
 
     if (code >= OP_TAP_TOGGLE) {
         // Special layer operations
-        processLayerTapSpecial(ev, l, code);
+        processLayerTapSpecial(keyp, l, code);
         return;
     }
 
@@ -407,8 +448,9 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
     }
 }
 
-/// Process special layer tap operations (MO, TG, TO, etc.)
-fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
+/// Process special layer tap operations (MO, TG, TO, OSL, etc.)
+fn processLayerTapSpecial(keyp: *KeyRecord, l: u5, code: u8) void {
+    const ev = keyp.event;
     switch (code) {
         OP_TAP_TOGGLE => {
             // Layer tap toggle (TT)
@@ -440,7 +482,44 @@ fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
                 layer.layerMove(l);
             }
         },
+        OP_ONESHOT => {
+            // One-Shot Layer (OSL)
+            processOneShotLayerAction(keyp, l);
+        },
         else => {},
+    }
+}
+
+/// One-Shot Layer (OSL) のアクション処理
+/// C版 quantum/action.c の ACT_LAYER_TAP/OP_ONESHOT 処理に相当
+///
+/// C版互換: tap_count に関わらず常に oneshot 挙動を行う。
+/// 押下時: setOneshotLayer(l, START) でレイヤーを有効化
+///   → 次のキー入力時に do_release_oneshot ロジックでレイヤーが解除される
+/// リリース時: clearOneshotLayerState(PRESSED) でフラグをクリア
+///   → tap_count > 1 の場合は OTHER_KEY_PRESSED もクリア（即時解除）
+fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
+    const ev = keyp.event;
+
+    // oneshot_enable が false の場合、通常の MO() として動作
+    if (!keymap_mod.keymap_config.oneshot_enable) {
+        if (ev.pressed) {
+            layer.layerOn(l);
+        } else {
+            layer.layerOff(l);
+        }
+        return;
+    }
+
+    // C版互換: tap_count をチェックせず、常に oneshot 挙動
+    // （ONESHOT_TAP_TOGGLE 未定義時の C版ロジックと等価）
+    if (ev.pressed) {
+        host.setOneshotLayer(l, host.OneshotState.START);
+    } else {
+        host.clearOneshotLayerState(host.OneshotState.PRESSED);
+        if (keyp.tap.count > 1) {
+            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+        }
     }
 }
 
@@ -817,6 +896,165 @@ test "OSM hold acts as normal modifier" {
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processAction(&release, act);
     try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "isTapAction: OSL is tap action" {
+    // OSL(1): layer_tap with OP_ONESHOT
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_LAYER_ONESHOT(1) }));
+    // OSL(3)
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_LAYER_ONESHOT(3) }));
+}
+
+test "OSL tap activates layer for next key then deactivates" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // OSL(1): ACTION_LAYER_ONESHOT(1)
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // タップ（tap.count=1）→ OSL が START 状態で設定される
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expectEqual(@as(u5, 1), host.getOneshotLayer());
+    try testing.expect(layer.layerStateIs(1));
+
+    // タップリリース → PRESSED フラグがクリアされる
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, osl_act);
+    // OTHER_KEY_PRESSED がまだ残っているのでレイヤーはアクティブ
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+
+    // 次のキーを押す → do_release_oneshot でレイヤーが解除される
+    const key_act = Action{ .code = action_code.ACTION_KEY(0x04) }; // KC_A
+    var key_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 200) };
+    processAction(&key_press, key_act);
+    // キーが登録された後、do_release_oneshot によりリリースも実行される
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
+}
+
+test "OSL hold also uses oneshot behavior (C-compat)" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // ホールド（tap.count=0）→ C版互換: tap_count に関わらず oneshot 挙動
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, osl_act);
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expect(host.isOneshotLayerActive()); // OSL状態でもある
+
+    // リリース（tap.count=0）→ PRESSED クリア。OTHER_KEY_PRESSED が残るのでレイヤー維持
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
+    processAction(&release, osl_act);
+    // OTHER_KEY_PRESSED が残っているのでレイヤーはまだアクティブ
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+
+    // 次のキーを押す → do_release_oneshot でレイヤーが解除される
+    const key_act = Action{ .code = action_code.ACTION_KEY(0x04) };
+    var key_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 500) };
+    processAction(&key_press, key_act);
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
+}
+
+test "OSL disabled: acts as plain MO" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = false;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(2) };
+
+    // タップでも MO として動作
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(layer.layerStateIs(2));
+    try testing.expect(!host.isOneshotLayerActive());
+
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, osl_act);
+    try testing.expect(!layer.layerStateIs(2));
+}
+
+test "OSL modifier key does not trigger release" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // OSL(1) をタップ
+    var osl_press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&osl_press, osl_act);
+    var osl_release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&osl_release, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+
+    // 修飾キーを押す → OSL は解除されない
+    const mod_act = Action{ .code = action_code.ACTION_KEY(0xE1) }; // KC_LSHIFT (0xE1)
+    var mod_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 200) };
+    processAction(&mod_press, mod_act);
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+}
+
+test "OSL double tap deactivates immediately" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // ダブルタップ（tap.count=2）
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 2 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+
+    // リリース（tap.count=2）→ PRESSED と OTHER_KEY_PRESSED の両方がクリアされる
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 2 },
+    };
+    processAction(&release, osl_act);
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
 }
 
 test "OSM right modifier tap sets correct HID bits" {
