@@ -531,6 +531,15 @@ test "keycodeToAction LM() keycodes" {
     try testing.expectEqual(@as(u16, 0x9102), action.code);
 }
 
+test "keycodeToAction swap hands keycodes" {
+    // SH_TG = 0x56F0 → ACTION_SWAP_HANDS_TAP_KEY(0xF0) = 0x60F0
+    const sh_tg = keycodeToAction(keycode.KC.SH_TG);
+    try testing.expectEqual(@as(u16, 0x60F0), sh_tg.code);
+    // SH_T(KC_A=0x04) = 0x5604 → ACTION_SWAP_HANDS_TAP_KEY(0x04) = 0x6004
+    const sh_t_a = keycodeToAction(keycode.SH_T(0x04));
+    try testing.expectEqual(@as(u16, 0x6004), sh_t_a.code);
+}
+
 test "keycodeToAction mouse keys" {
     const action = keycodeToAction(keycode.KC.MS_UP);
     try testing.expectEqual(@as(u16, 0x50CD), action.code);
