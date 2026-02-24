@@ -79,8 +79,9 @@ pub fn process(kc: u8, pressed: bool) bool {
         return true;
     }
 
-    // Minus/Underscore: Shift なしで継続
+    // Minus/Underscore: C版同様 Shift を適用（_ を送信）
     if (kc == KC.MINS) {
+        host.addWeakMods(report_mod.ModBit.LSHIFT);
         return true;
     }
 
