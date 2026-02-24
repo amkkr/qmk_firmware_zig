@@ -325,7 +325,8 @@ test "processKeycode ends sequence when buffer full" {
         _ = processKeycode(@intCast(KC.A + i), true);
     }
     // バッファ満杯: 次のキーで leaderEnd() が呼ばれアクティブでなくなる
-    _ = processKeycode(KC.Z, true);
+    // overflow キーは消費されず action pipeline に渡る（C版互換: return false）
+    try testing.expect(!processKeycode(KC.Z, true));
     try testing.expect(!leaderSequenceActive());
     reset();
     timer.mockReset();
