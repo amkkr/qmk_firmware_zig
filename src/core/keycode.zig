@@ -343,6 +343,10 @@ pub const QK_SWAP_HANDS_MAX: Keycode = 0x56FF;
 pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
 pub const QK_LEAD: Keycode = 0x7C58;
+pub const QK_TRI_LAYER_LOWER: Keycode = 0x7C77;
+pub const QK_TRI_LAYER_UPPER: Keycode = 0x7C78;
+pub const TL_LOWR: Keycode = QK_TRI_LAYER_LOWER;
+pub const TL_UPPR: Keycode = QK_TRI_LAYER_UPPER;
 
 // ============================================================
 // Modifier bit constants
