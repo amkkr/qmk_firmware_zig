@@ -186,14 +186,19 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
             return true;
         },
         action_code.ACTION_REPEAT_KEY => {
+            // C版同様: Repeat Key は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
             repeat_key.processRepeatKey(ev.pressed);
             return true;
         },
         action_code.ACTION_ALT_REPEAT_KEY => {
             // Alt Repeat Key は未実装（将来拡張用）
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
             return true;
         },
         action_code.ACTION_LAYER_LOCK => {
+            // C版同様: Layer Lock は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
             layer_lock.processLayerLock(ev.pressed);
             return true;
         },
