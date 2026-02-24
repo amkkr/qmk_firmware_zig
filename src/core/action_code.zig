@@ -227,6 +227,12 @@ pub inline fn ACTION_MODS_ONESHOT(mods: u5) u16 {
     return ACTION(@intFromEnum(ActionKind.mods_tap), @as(u12, mods) << 8 | @as(u12, MODS_ONESHOT));
 }
 
+/// ACTION_MODS_TAP_TOGGLE(mods) - tap toggle modifier
+/// タップ TAPPING_TOGGLE 回でモッド固定
+pub inline fn ACTION_MODS_TAP_TOGGLE(mods: u5) u16 {
+    return ACTION(@intFromEnum(ActionKind.mods_tap), @as(u12, mods) << 8 | @as(u12, MODS_TAP_TOGGLE));
+}
+
 /// ACTION_MOUSEKEY(key) - mouse key action
 pub inline fn ACTION_MOUSEKEY(key: u8) u16 {
     return ACTION(@intFromEnum(ActionKind.mousekey), @as(u12, key));
