@@ -87,6 +87,12 @@ var current_driver: ?HostDriver = null;
 var keyboard_report: KeyboardReport = .{};
 var real_mods: u8 = 0;
 var weak_mods: u8 = 0;
+/// Key Override 用: 置換キーに付与する弱い修飾キー
+/// C版 action_util.c の weak_override_mods に相当
+var weak_override_mods: u8 = 0;
+/// Key Override 用: アクティブなオーバーライドで抑制する修飾キー
+/// C版 action_util.c の suppressed_override_mods に相当
+var suppressed_override_mods: u8 = 0;
 /// One-Shot Mods: 次の1回のキー入力にのみ適用される修飾キー
 /// C版 action_util.c の oneshot_mods に相当
 var oneshot_mods: u8 = 0;
@@ -174,6 +180,32 @@ pub fn clearWeakMods() void {
 }
 
 // ============================================================
+// Weak Override Mods (Key Override 用)
+// C版 action_util.c の weak_override_mods に相当
+// ============================================================
+
+pub fn setWeakOverrideMods(mods: u8) void {
+    weak_override_mods = mods;
+}
+
+pub fn clearWeakOverrideMods() void {
+    weak_override_mods = 0;
+}
+
+// ============================================================
+// Suppressed Override Mods (Key Override 用)
+// C版 action_util.c の suppressed_override_mods に相当
+// ============================================================
+
+pub fn setSuppressedOverrideMods(mods: u8) void {
+    suppressed_override_mods = mods;
+}
+
+pub fn clearSuppressedOverrideMods() void {
+    suppressed_override_mods = 0;
+}
+
+// ============================================================
 // Keyboard report operations
 // ============================================================
 
@@ -214,7 +246,7 @@ pub fn unregisterMods(mods: u8) void {
 /// C版 send_keyboard_report() に相当。
 /// oneshot_mods は一時的にレポートに含め、キーが送信されていたらクリアする。
 pub fn sendKeyboardReport() void {
-    keyboard_report.mods = real_mods | weak_mods | oneshot_mods;
+    keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods) & ~suppressed_override_mods;
     // oneshot_mods が設定されており、かつキーが登録されていればクリアする
     // C版 get_mods_for_report() の has_anykey() チェックに相当
     if (oneshot_mods != 0 and keyboard_report.hasAnyKey()) {
@@ -230,6 +262,8 @@ pub fn clearKeyboard() void {
     keyboard_report.clear();
     real_mods = 0;
     weak_mods = 0;
+    weak_override_mods = 0;
+    suppressed_override_mods = 0;
     sendKeyboardReport();
 }
 
@@ -237,6 +271,8 @@ pub fn hostReset() void {
     keyboard_report.clear();
     real_mods = 0;
     weak_mods = 0;
+    weak_override_mods = 0;
+    suppressed_override_mods = 0;
     oneshot_mods = 0;
     oneshot_layer_data = 0;
 }

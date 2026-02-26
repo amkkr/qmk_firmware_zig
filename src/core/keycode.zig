@@ -392,6 +392,14 @@ pub const DM_RSTP: Keycode = QK_DYNAMIC_MACRO_RECORD_STOP;
 pub const DM_PLY1: Keycode = QK_DYNAMIC_MACRO_PLAY_1;
 pub const DM_PLY2: Keycode = QK_DYNAMIC_MACRO_PLAY_2;
 
+// Key Override (0x7C5D-0x7C5F)
+pub const QK_KEY_OVERRIDE_TOGGLE: Keycode = 0x7C5D;
+pub const QK_KEY_OVERRIDE_ON: Keycode = 0x7C5E;
+pub const QK_KEY_OVERRIDE_OFF: Keycode = 0x7C5F;
+pub const KO_TOGG: Keycode = QK_KEY_OVERRIDE_TOGGLE;
+pub const KO_ON: Keycode = QK_KEY_OVERRIDE_ON;
+pub const KO_OFF: Keycode = QK_KEY_OVERRIDE_OFF;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================

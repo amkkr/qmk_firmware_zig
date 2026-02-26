@@ -129,6 +129,9 @@ pub const ACTION_REPEAT_KEY: u16 = 0xF002;
 pub const ACTION_ALT_REPEAT_KEY: u16 = 0xF003;
 pub const ACTION_LAYER_LOCK: u16 = 0xF004;
 pub const ACTION_GRAVE_ESCAPE: u16 = 0xF005;
+pub const ACTION_KEY_OVERRIDE_TOGGLE: u16 = 0xF006;
+pub const ACTION_KEY_OVERRIDE_ON: u16 = 0xF007;
+pub const ACTION_KEY_OVERRIDE_OFF: u16 = 0xF008;
 
 // ============================================================
 // Action constructor functions (comptime equivalents of C macros)
@@ -420,6 +423,17 @@ pub fn keycodeToAction(kc: Keycode) Action {
     // Grave Escape
     if (kc == keycode.QK_GRAVE_ESCAPE) {
         return .{ .code = ACTION_GRAVE_ESCAPE };
+    }
+
+    // Key Override
+    if (kc == keycode.QK_KEY_OVERRIDE_TOGGLE) {
+        return .{ .code = ACTION_KEY_OVERRIDE_TOGGLE };
+    }
+    if (kc == keycode.QK_KEY_OVERRIDE_ON) {
+        return .{ .code = ACTION_KEY_OVERRIDE_ON };
+    }
+    if (kc == keycode.QK_KEY_OVERRIDE_OFF) {
+        return .{ .code = ACTION_KEY_OVERRIDE_OFF };
     }
 
     // Swap Hands (0x5600-0x56FF)

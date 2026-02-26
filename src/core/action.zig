@@ -23,6 +23,7 @@ const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
 const key_lock = @import("key_lock.zig");
+const key_override = @import("key_override.zig");
 const grave_esc = @import("grave_esc.zig");
 
 const Action = action_code.Action;
@@ -259,6 +260,18 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
         },
         action_code.ACTION_GRAVE_ESCAPE => {
             grave_esc.processGraveEsc(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_KEY_OVERRIDE_TOGGLE => {
+            if (ev.pressed) key_override.toggle();
+            return true;
+        },
+        action_code.ACTION_KEY_OVERRIDE_ON => {
+            if (ev.pressed) key_override.on();
+            return true;
+        },
+        action_code.ACTION_KEY_OVERRIDE_OFF => {
+            if (ev.pressed) key_override.off();
             return true;
         },
         else => return false,

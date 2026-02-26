@@ -22,6 +22,7 @@ const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
 const space_cadet = @import("space_cadet.zig");
+const key_override = @import("key_override.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -87,6 +88,7 @@ pub fn init() void {
     repeat_key.reset();
     layer_lock.reset();
     space_cadet.reset();
+    key_override.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
@@ -139,8 +141,11 @@ pub fn task() void {
                         if (pressed) {
                             _ = tap_dance.preprocess(kc, pressed);
                         }
-                        // Space Cadet プリプロセス: SC キーなら消費、通常キーなら sc_last リセット
-                        if (space_cadet.process(kc, pressed)) {
+                        // Key Override プリプロセス: オーバーライド条件に一致すれば消費
+                        if (!key_override.processKeyOverride(kc, pressed)) {
+                            // Key Override が処理した → アクションパイプラインに渡さない
+                        } else if (space_cadet.process(kc, pressed)) {
+                            // Space Cadet プリプロセス: SC キーなら消費、通常キーなら sc_last リセット
                             // Space Cadet が処理しなかった → 通常アクションパイプラインへ
                             var record = KeyRecord{ .event = ev };
                             action.actionExec(&record);
@@ -160,6 +165,9 @@ pub fn task() void {
 
     // Leader Key タイムアウト処理
     leader.leaderTask();
+
+    // Key Override 遅延登録処理
+    key_override.task();
 
     // 現在の状態を保存
     matrix_prev = matrix_state;
