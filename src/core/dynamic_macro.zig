@@ -8,6 +8,10 @@
 //!
 //! 再生はコールバック方式で行う。再生されたキーコードを受け取る関数を
 //! setPlayCallback() で登録する。
+//!
+//! 制約: キー押下イベント（キーコードのみ）を記録し、再生時は各キーコードを
+//! 個別タップ（press→release）として順に送出する。そのため、修飾キーと通常キーの
+//! 同時押し（例: Shift+A）は正確に再生されない。
 
 const std = @import("std");
 const keycode_mod = @import("keycode.zig");
