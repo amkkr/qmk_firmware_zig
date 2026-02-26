@@ -21,6 +21,7 @@ const timer = @import("../hal/timer.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
+const space_cadet = @import("space_cadet.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -85,6 +86,7 @@ pub fn init() void {
     caps_word.reset();
     repeat_key.reset();
     layer_lock.reset();
+    space_cadet.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
@@ -133,13 +135,16 @@ pub fn task() void {
                     } else if (leader.processKeycode(kc, pressed)) {
                         // Leader Key として処理済み: アクションパイプラインに渡さない
                     } else {
-                        // 通常のアクションパイプライン
-                        // 非TD キーが押されたらアクティブな TD を確定
+                        // 非TD/非Leader キー: まず TD 確定を行う
                         if (pressed) {
                             _ = tap_dance.preprocess(kc, pressed);
                         }
-                        var record = KeyRecord{ .event = ev };
-                        action.actionExec(&record);
+                        // Space Cadet プリプロセス: SC キーなら消費、通常キーなら sc_last リセット
+                        if (space_cadet.process(kc, pressed)) {
+                            // Space Cadet が処理しなかった → 通常アクションパイプラインへ
+                            var record = KeyRecord{ .event = ev };
+                            action.actionExec(&record);
+                        }
                     }
                 }
             }
