@@ -311,12 +311,12 @@ pub const KC = struct {
     pub const RIGHT_GUI: Keycode = 0x00E7;
     pub const RGUI: Keycode = RIGHT_GUI;
 
-    // Dynamic Macro keycodes
-    pub const DM_REC1: Keycode = 0x7C72; // マクロ1 録音開始
-    pub const DM_REC2: Keycode = 0x7C73; // マクロ2 録音開始
-    pub const DM_RSTP: Keycode = 0x7C74; // 録音停止
-    pub const DM_PLY1: Keycode = 0x7C75; // マクロ1 再生
-    pub const DM_PLY2: Keycode = 0x7C76; // マクロ2 再生
+    // Dynamic Macro keycodes (upstream QK_DYNAMIC_MACRO_* 準拠)
+    pub const DM_REC1: Keycode = 0x7C53; // マクロ1 録音開始
+    pub const DM_REC2: Keycode = 0x7C54; // マクロ2 録音開始
+    pub const DM_RSTP: Keycode = 0x7C55; // 録音停止
+    pub const DM_PLY1: Keycode = 0x7C56; // マクロ1 再生
+    pub const DM_PLY2: Keycode = 0x7C57; // マクロ2 再生
 };
 
 // ============================================================
@@ -350,6 +350,12 @@ pub const QK_SWAP_HANDS_MAX: Keycode = 0x56FF;
 pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
 pub const QK_LEAD: Keycode = 0x7C58;
+pub const QK_GRAVE_ESCAPE: Keycode = 0x7C16;
+pub const QK_GESC: Keycode = QK_GRAVE_ESCAPE;
+pub const QK_TRI_LAYER_LOWER: Keycode = 0x7C77;
+pub const QK_TRI_LAYER_UPPER: Keycode = 0x7C78;
+pub const TL_LOWR: Keycode = QK_TRI_LAYER_LOWER;
+pub const TL_UPPR: Keycode = QK_TRI_LAYER_UPPER;
 
 // Caps Word (0x7C73)
 pub const QK_CAPS_WORD_TOGGLE: Keycode = 0x7C73;

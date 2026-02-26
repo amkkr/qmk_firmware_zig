@@ -121,11 +121,11 @@ pub fn process(kc: u16, pressed: bool) bool {
             return true;
         },
         KC.DM_PLY1 => {
-            playMacro(&macro1, macro1_len);
+            playMacro(macro1[0..macro1_len]);
             return true;
         },
         KC.DM_PLY2 => {
-            playMacro(&macro2, macro2_len);
+            playMacro(macro2[0..macro2_len]);
             return true;
         },
         else => {},
@@ -153,9 +153,9 @@ pub fn process(kc: u16, pressed: bool) bool {
 }
 
 /// マクロを再生する（コールバック経由）
-fn playMacro(buf: []const u16, len: usize) void {
+fn playMacro(buf: []const u16) void {
     if (play_callback) |cb| {
-        for (buf[0..len]) |kc| {
+        for (buf) |kc| {
             cb(kc, true);
             cb(kc, false);
         }
