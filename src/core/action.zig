@@ -22,6 +22,8 @@ pub const swap_hands = @import("swap_hands.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
+const key_lock = @import("key_lock.zig");
+const grave_esc = @import("grave_esc.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -34,12 +36,21 @@ pub const ActionResolver = *const fn (event: KeyEvent) Action;
 
 var action_resolver: ?ActionResolver = null;
 
+/// 直前に解決されたキーコード（Key Lock 用）
+/// keyboard.zig の keymapActionResolver から設定され、processRecord で参照される。
+var last_resolved_keycode: keycode_mod.Keycode = 0;
+
 pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
 
 pub fn getActionResolver() ?ActionResolver {
     return action_resolver;
+}
+
+/// キーコード解決時に呼ばれるセッター（keyboard.zig から使用）
+pub fn setLastResolvedKeycode(kc: keycode_mod.Keycode) void {
+    last_resolved_keycode = kc;
 }
 
 fn resolveAction(event: KeyEvent) Action {
@@ -65,8 +76,17 @@ pub fn actionExec(record: *KeyRecord) void {
 }
 
 /// Process a record through action resolution and execution
+/// C版 process_record_quantum() と同様に、Key Lock をアクション実行前にチェックする。
 pub fn processRecord(keyp: *KeyRecord) void {
     const act = resolveAction(keyp.event);
+
+    // Key Lock: アクション実行前にキーコードを検査
+    // C版 quantum.c の process_key_lock(&keycode, record) に相当
+    var kc = last_resolved_keycode;
+    if (!key_lock.processKeyLock(&kc, keyp.event.pressed)) {
+        return;
+    }
+
     processAction(keyp, act);
 }
 
@@ -111,7 +131,7 @@ pub fn isTapAction(act: Action) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
-    // 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
     if (processSpecialAction(keyp.event, act)) return;
 
     const ev = keyp.event;
@@ -194,7 +214,7 @@ fn processMousekeyAction(ev: KeyEvent, act: Action) void {
     mousekey.send();
 }
 
-/// 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+/// 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
 /// 処理した場合は true を返す
 fn processSpecialAction(ev: KeyEvent, act: Action) bool {
     switch (act.code) {
@@ -219,6 +239,10 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
             // C版同様: Layer Lock は Caps Word の許可リストに含まれないため解除
             if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
             layer_lock.processLayerLock(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_GRAVE_ESCAPE => {
+            grave_esc.processGraveEsc(ev.pressed);
             return true;
         },
         else => return false,
@@ -600,6 +624,7 @@ pub fn reset() void {
     auto_shift.reset();
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
+    key_lock.reset();
 }
 
 // ============================================================

@@ -343,6 +343,12 @@ pub const QK_SWAP_HANDS_MAX: Keycode = 0x56FF;
 pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
 pub const QK_LEAD: Keycode = 0x7C58;
+pub const QK_GRAVE_ESCAPE: Keycode = 0x7C16;
+pub const QK_GESC: Keycode = QK_GRAVE_ESCAPE;
+pub const QK_TRI_LAYER_LOWER: Keycode = 0x7C77;
+pub const QK_TRI_LAYER_UPPER: Keycode = 0x7C78;
+pub const TL_LOWR: Keycode = QK_TRI_LAYER_LOWER;
+pub const TL_UPPR: Keycode = QK_TRI_LAYER_UPPER;
 
 // Caps Word (0x7C73)
 pub const QK_CAPS_WORD_TOGGLE: Keycode = 0x7C73;
@@ -364,6 +370,7 @@ pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C54;
 pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C55;
 pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C56;
 pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C57;
+pub const QK_LOCK: Keycode = 0x7C59;
 
 // ============================================================
 // Modifier bit constants

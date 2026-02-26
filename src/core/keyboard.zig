@@ -16,6 +16,7 @@ const keymap_mod = @import("keymap.zig");
 const keycode = @import("keycode.zig");
 const tap_dance = @import("tap_dance.zig");
 const leader = @import("leader.zig");
+const tri_layer = @import("tri_layer.zig");
 const timer = @import("../hal/timer.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
@@ -81,6 +82,7 @@ pub fn init() void {
     layer.resetState();
     tap_dance.reset();
     leader.reset();
+    tri_layer.reset();
     caps_word.reset();
     repeat_key.reset();
     layer_lock.reset();
@@ -128,6 +130,8 @@ pub fn task() void {
                         _ = tap_dance.preprocess(kc, pressed);
                         // Tap Dance 処理
                         _ = tap_dance.process(kc, pressed);
+                    } else if (tri_layer.processTriLayer(kc, pressed)) {
+                        // Tri Layer として処理済み: アクションパイプラインに渡さない
                     } else if (leader.processKeycode(kc, pressed)) {
                         // Leader Key として処理済み: アクションパイプラインに渡さない
                     } else {
@@ -198,6 +202,7 @@ pub fn keymapActionResolver(ev: KeyEvent) Action {
 
     const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
     const kc = keymap_mod.keymapKeyToKeycode(km, use_layer, ev.key.row, ev.key.col);
+    action.setLastResolvedKeycode(kc);
     return action_code.keycodeToAction(kc);
 }
 
@@ -454,4 +459,43 @@ test "keyboard_task: Layer Lock がレイヤーをロックする" {
     // Layer Lock がロック中のレイヤーの layerOff をスキップする
     try testing.expect(layer_lock.isLayerLocked(1));
     try testing.expect(layer.layerStateIs(1)); // レイヤー1はまだアクティブ
+}
+
+test "keyboard_task: Tri Layer — Lower+Upper で Adjust が有効になる" {
+    _ = setup();
+    defer teardown();
+
+    // (0,0) = TL_LOWR, (0,1) = TL_UPPR（layer 0）
+    test_keymap[0][0][0] = keycode.TL_LOWR;
+    test_keymap[0][0][1] = keycode.TL_UPPR;
+    // 上位レイヤーはフォールスルーさせる
+    for (1..keymap_mod.MAX_LAYERS) |l| {
+        test_keymap[l][0][0] = keycode.KC.TRNS;
+        test_keymap[l][0][1] = keycode.KC.TRNS;
+    }
+
+    // Lower を押す -> レイヤー1のみ
+    pressKey(0, 0);
+    task();
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expect(!layer.layerStateIs(3));
+
+    // Upper を押す -> レイヤー1+2+3(adjust)
+    pressKey(0, 1);
+    task();
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expect(layer.layerStateIs(2));
+    try testing.expect(layer.layerStateIs(3));
+
+    // Lower を離す -> adjust が OFF
+    releaseKey(0, 0);
+    task();
+    try testing.expect(!layer.layerStateIs(1));
+    try testing.expect(!layer.layerStateIs(3));
+    try testing.expect(layer.layerStateIs(2));
+
+    // Upper を離す
+    releaseKey(0, 1);
+    task();
+    try testing.expect(!layer.layerStateIs(2));
 }
