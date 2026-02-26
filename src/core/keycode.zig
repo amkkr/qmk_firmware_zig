@@ -408,6 +408,16 @@ pub const KO_TOGG: Keycode = QK_KEY_OVERRIDE_TOGGLE;
 pub const KO_ON: Keycode = QK_KEY_OVERRIDE_ON;
 pub const KO_OFF: Keycode = QK_KEY_OVERRIDE_OFF;
 
+// Secure (0x7C60-0x7C63)
+pub const QK_SECURE_LOCK: Keycode = 0x7C60;
+pub const QK_SECURE_UNLOCK: Keycode = 0x7C61;
+pub const QK_SECURE_TOGGLE: Keycode = 0x7C62;
+pub const QK_SECURE_REQUEST: Keycode = 0x7C63;
+pub const SE_LOCK: Keycode = QK_SECURE_LOCK;
+pub const SE_UNLK: Keycode = QK_SECURE_UNLOCK;
+pub const SE_TOGG: Keycode = QK_SECURE_TOGGLE;
+pub const SE_REQ: Keycode = QK_SECURE_REQUEST;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================

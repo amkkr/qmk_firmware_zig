@@ -24,6 +24,7 @@ const layer_lock = @import("layer_lock.zig");
 const space_cadet = @import("space_cadet.zig");
 const key_override = @import("key_override.zig");
 const autocorrect = @import("autocorrect.zig");
+const secure = @import("secure.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -36,6 +37,10 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// マトリックス状態: 各行のビットマスク（テスト時は外部から設定可能）
 var matrix_state: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
 var matrix_prev: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
+
+/// Secure アンロック中に消費されたキーの追跡ビットマスク
+/// PENDING 中にプレスされたキーのリリースを抑制するために使用
+var secure_consumed: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
 
 /// テスト用キーマップ
 var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
@@ -91,8 +96,10 @@ pub fn init() void {
     space_cadet.reset();
     key_override.reset();
     autocorrect.reset();
+    secure.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
+    secure_consumed = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
 }
 
@@ -127,6 +134,27 @@ pub fn task() void {
                     else
                         KeyEvent.keyRelease(@intCast(row), @intCast(col), time);
 
+                    // Secure プリプロセス: アンロック中はキー入力をシーケンス照合に使用
+                    // C版 preprocess_secure() 互換:
+                    //   press イベントはシーケンス照合に渡す（離しイベントはスキップ、
+                    //   ホールド中のキーのリリースで誤って照合が失敗しないように）
+                    //   シーケンス完了で内部状態が変化しても、そのイベントは通常処理しない
+                    if (secure.isUnlocking()) {
+                        if (pressed) {
+                            secure.keypressEvent(@intCast(row), @intCast(col));
+                            secure_consumed[row] |= bit;
+                        }
+                        continue;
+                    }
+
+                    // PENDING 中に消費されたキーのリリースを抑制
+                    // （シーケンス完了で UNLOCKED に遷移した後、最終キーのリリースが
+                    //  通常処理に漏れてレポート送信されるのを防ぐ）
+                    if (!pressed and (secure_consumed[row] & bit != 0)) {
+                        secure_consumed[row] &= ~bit;
+                        continue;
+                    }
+
                     // キーコードを解決し、Tap Dance / Leader Key ならインターセプト
                     const kc = resolveKeycode(ev);
                     if (keycode.isTapDance(kc)) {
@@ -153,8 +181,11 @@ pub fn task() void {
                             // ホールド時は filterKeycode で skip されず基本キーコードが抽出される
                             // が、ホールド中は actionExec 側でキーが処理されるため実害はない。
                             if (autocorrect.process(kc, pressed, 1)) {
-                                var record = KeyRecord{ .event = ev };
-                                action.actionExec(&record);
+                                // Secure キーコード処理（SE_LOCK/SE_UNLK/SE_TOGG/SE_REQ）
+                                if (secure.processKeycode(kc, pressed)) {
+                                    var record = KeyRecord{ .event = ev };
+                                    action.actionExec(&record);
+                                }
                             }
                         }
                     }
@@ -175,6 +206,9 @@ pub fn task() void {
 
     // Key Override 遅延登録処理
     key_override.task();
+
+    // Secure タイムアウト処理
+    secure.task();
 
     // 現在の状態を保存
     matrix_prev = matrix_state;
