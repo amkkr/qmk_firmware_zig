@@ -25,6 +25,7 @@ pub const swap_hands = @import("swap_hands.zig");
 pub const keyboard = @import("keyboard.zig");
 pub const auto_shift = @import("auto_shift.zig");
 pub const grave_esc = @import("grave_esc.zig");
+pub const tri_layer = @import("tri_layer.zig");
 pub const caps_word = @import("caps_word.zig");
 pub const repeat_key = @import("repeat_key.zig");
 pub const layer_lock = @import("layer_lock.zig");
