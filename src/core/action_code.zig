@@ -116,6 +116,18 @@ pub const OP_ONESHOT: u8 = 0xF4;
 pub const MODS_ONESHOT: u8 = 0x00;
 pub const MODS_TAP_TOGGLE: u8 = 0x01;
 
+/// Internal action codes for special keycodes (Caps Word, Repeat Key, Layer Lock)
+/// These use a reserved kind value (0b1111) to avoid collision with real action types.
+/// param encodes which feature:
+///   0x01 = Caps Word Toggle
+///   0x02 = Repeat Key
+///   0x03 = Alt Repeat Key
+///   0x04 = Layer Lock
+pub const ACTION_CAPS_WORD_TOGGLE: u16 = 0xF001;
+pub const ACTION_REPEAT_KEY: u16 = 0xF002;
+pub const ACTION_ALT_REPEAT_KEY: u16 = 0xF003;
+pub const ACTION_LAYER_LOCK: u16 = 0xF004;
+
 // ============================================================
 // Action constructor functions (comptime equivalents of C macros)
 // ============================================================
@@ -381,6 +393,26 @@ pub fn keycodeToAction(kc: Keycode) Action {
     if (kc >= keycode.QK_LAYER_TAP_TOGGLE and kc <= keycode.QK_LAYER_TAP_TOGGLE_MAX) {
         const layer: u5 = @truncate(kc);
         return .{ .code = ACTION_LAYER_TAP_TOGGLE(layer) };
+    }
+
+    // Caps Word Toggle
+    if (kc == keycode.QK_CAPS_WORD_TOGGLE) {
+        return .{ .code = ACTION_CAPS_WORD_TOGGLE };
+    }
+
+    // Repeat Key
+    if (kc == keycode.QK_REP) {
+        return .{ .code = ACTION_REPEAT_KEY };
+    }
+
+    // Alt Repeat Key
+    if (kc == keycode.QK_AREP) {
+        return .{ .code = ACTION_ALT_REPEAT_KEY };
+    }
+
+    // Layer Lock
+    if (kc == keycode.QK_LAYER_LOCK) {
+        return .{ .code = ACTION_LAYER_LOCK };
     }
 
     // Swap Hands (0x5600-0x56FF)

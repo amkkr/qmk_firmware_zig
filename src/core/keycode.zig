@@ -344,6 +344,18 @@ pub const QK_TAP_DANCE: Keycode = 0x5700;
 pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
 pub const QK_LEAD: Keycode = 0x7C58;
 
+// Caps Word (0x7C73)
+pub const QK_CAPS_WORD_TOGGLE: Keycode = 0x7C73;
+pub const CW_TOGG: Keycode = QK_CAPS_WORD_TOGGLE;
+
+// Repeat Key (0x7C79-0x7C7A)
+pub const QK_REP: Keycode = 0x7C79;
+pub const QK_AREP: Keycode = 0x7C7A;
+
+// Layer Lock (0x7C8A)
+pub const QK_LAYER_LOCK: Keycode = 0x7C8A;
+pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================

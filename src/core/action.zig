@@ -19,6 +19,9 @@ const auto_shift = @import("auto_shift.zig");
 const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
 pub const swap_hands = @import("swap_hands.zig");
+const caps_word = @import("caps_word.zig");
+const repeat_key = @import("repeat_key.zig");
+const layer_lock = @import("layer_lock.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -108,6 +111,9 @@ pub fn isTapAction(act: Action) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+    if (processSpecialAction(keyp.event, act)) return;
+
     const ev = keyp.event;
     const kind = act.kind.id;
 
@@ -130,6 +136,15 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         if (kind == .usage or !is_modifier_action) {
             host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
             do_release_oneshot = !host.isOneshotLayerActive();
+        }
+    }
+
+    // Caps Word 処理: 基本キーアクション（mods/rmods）の場合、
+    // キー押下時に Caps Word のフィルタリングを適用
+    if (caps_word.isActive()) {
+        if (kind == .mods or kind == .rmods) {
+            const kc = act.key.code;
+            _ = caps_word.process(kc, ev.pressed);
         }
     }
 
@@ -179,6 +194,37 @@ fn processMousekeyAction(ev: KeyEvent, act: Action) void {
     mousekey.send();
 }
 
+/// 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+/// 処理した場合は true を返す
+fn processSpecialAction(ev: KeyEvent, act: Action) bool {
+    switch (act.code) {
+        action_code.ACTION_CAPS_WORD_TOGGLE => {
+            if (ev.pressed) {
+                caps_word.toggle();
+            }
+            return true;
+        },
+        action_code.ACTION_REPEAT_KEY => {
+            // C版同様: Repeat Key は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            repeat_key.processRepeatKey(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_ALT_REPEAT_KEY => {
+            // Alt Repeat Key は未実装（将来拡張用）
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            return true;
+        },
+        action_code.ACTION_LAYER_LOCK => {
+            // C版同様: Layer Lock は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            layer_lock.processLayerLock(ev.pressed);
+            return true;
+        },
+        else => return false,
+    }
+}
+
 /// Process basic modifier actions (hold for mod, with optional key)
 /// keycodeConfig / modConfig を適用してスワップ設定を反映する。
 /// C版 keymap_common.c では ACTION_MODS_KEY 生成時に mod_config() / keycode_config() の両方が適用される。
@@ -197,7 +243,11 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
 
     if (ev.pressed) {
         if (mods_hid != 0) host.addMods(mods_hid);
-        if (kc != 0) host.registerCode(kc);
+        if (kc != 0) {
+            host.registerCode(kc);
+            // Repeat Key 用に直前のキーを記録（weak_mods も含める：Caps Word の LSHIFT 等）
+            repeat_key.setLastKeycode(kc, host.getMods() | host.getWeakMods());
+        }
         host.sendKeyboardReport();
     } else {
         if (kc != 0) host.unregisterCode(kc);
@@ -245,7 +295,13 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                 if (keyp.tap.count > 0) {
                     // Tapped: register the tap keycode
                     if (configured_kc != 0) {
+                        // Caps Word: タップキーにも Shift を適用
+                        if (caps_word.isActive()) {
+                            _ = caps_word.process(kc, true);
+                        }
                         host.registerCode(configured_kc);
+                        // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
+                        repeat_key.setLastKeycode(configured_kc, host.getMods() | host.getWeakMods());
                         host.sendKeyboardReport();
                     }
                 } else {
@@ -259,6 +315,9 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                 if (keyp.tap.count > 0) {
                     // Release tap
                     if (configured_kc != 0) {
+                        if (caps_word.isActive()) {
+                            _ = caps_word.process(kc, false);
+                        }
                         host.unregisterCode(configured_kc);
                         host.sendKeyboardReport();
                     }
@@ -378,8 +437,11 @@ fn processLayerModsAction(ev: KeyEvent, act: Action) void {
         host.addMods(mods);
         host.sendKeyboardReport();
     } else {
-        host.delMods(mods);
-        layer.layerOff(l);
+        // Layer Lock でロック中のレイヤーは layerOff/delMods をスキップ
+        if (!layer_lock.isLayerLocked(l)) {
+            host.delMods(mods);
+            layer.layerOff(l);
+        }
         host.sendKeyboardReport();
     }
 }
@@ -404,7 +466,13 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Tapped: register the tap keycode
             if (configured_code != 0) {
+                // Caps Word: タップキーにも Shift を適用
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, true);
+                }
                 host.registerCode(configured_code);
+                // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
+                repeat_key.setLastKeycode(configured_code, host.getMods() | host.getWeakMods());
                 host.sendKeyboardReport();
             }
         } else {
@@ -415,12 +483,18 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
         if (keyp.tap.count > 0) {
             // Release tap
             if (configured_code != 0) {
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, false);
+                }
                 host.unregisterCode(configured_code);
                 host.sendKeyboardReport();
             }
         } else {
             // Release hold
-            layer.layerOff(l);
+            // Layer Lock でロック中のレイヤーは layerOff をスキップ
+            if (!layer_lock.isLayerLocked(l)) {
+                layer.layerOff(l);
+            }
         }
     }
 }
@@ -452,7 +526,10 @@ fn processLayerTapSpecial(keyp: *KeyRecord, l: u5, code: u8) void {
             if (ev.pressed) {
                 layer.layerOn(l);
             } else {
-                layer.layerOff(l);
+                // Layer Lock でロック中のレイヤーは layerOff をスキップ
+                if (!layer_lock.isLayerLocked(l)) {
+                    layer.layerOff(l);
+                }
             }
         },
         OP_OFF_ON => {
