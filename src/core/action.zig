@@ -22,6 +22,7 @@ pub const swap_hands = @import("swap_hands.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
+const grave_esc = @import("grave_esc.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -111,7 +112,7 @@ pub fn isTapAction(act: Action) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
-    // 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
     if (processSpecialAction(keyp.event, act)) return;
 
     const ev = keyp.event;
@@ -194,7 +195,7 @@ fn processMousekeyAction(ev: KeyEvent, act: Action) void {
     mousekey.send();
 }
 
-/// 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+/// 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
 /// 処理した場合は true を返す
 fn processSpecialAction(ev: KeyEvent, act: Action) bool {
     switch (act.code) {
@@ -219,6 +220,10 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
             // C版同様: Layer Lock は Caps Word の許可リストに含まれないため解除
             if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
             layer_lock.processLayerLock(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_GRAVE_ESCAPE => {
+            grave_esc.processGraveEsc(ev.pressed);
             return true;
         },
         else => return false,
