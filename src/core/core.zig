@@ -35,6 +35,7 @@ pub const key_override = @import("key_override.zig");
 pub const dynamic_macro = @import("dynamic_macro.zig");
 pub const autocorrect = @import("autocorrect.zig");
 pub const secure = @import("secure.zig");
+pub const magic = @import("magic.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
