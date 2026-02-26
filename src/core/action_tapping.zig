@@ -17,6 +17,21 @@ pub const TAPPING_TERM: u16 = 200;
 pub const QUICK_TAP_TERM: u16 = 200;
 pub const WAITING_BUFFER_SIZE: u8 = 8;
 
+/// PERMISSIVE_HOLD: 他キーの press+release が TAPPING_TERM 以内に完結した場合、
+/// タップ/ホールドキーをホールドとして判定する。
+/// C版 #define PERMISSIVE_HOLD に相当。
+pub var permissive_hold: bool = false;
+
+/// HOLD_ON_OTHER_KEY_PRESS: 他キーが TAPPING_TERM 以内に押下された時点で
+/// タップ/ホールドキーをホールドとして即座に判定する。
+/// C版 #define HOLD_ON_OTHER_KEY_PRESS に相当。
+pub var hold_on_other_key_press: bool = false;
+
+/// RETRO_TAPPING: TAPPING_TERM 超過後に他キーの割り込みなしでリリースされた場合、
+/// ホールドアクション実行後にタップキーも送信する。
+/// C版 #define RETRO_TAPPING に相当。
+pub var retro_tapping: bool = false;
+
 var tapping_key: KeyRecord = .{ .event = KeyEvent.tick(0) };
 var waiting_buffer: [WAITING_BUFFER_SIZE]KeyRecord = initWaitingBuffer();
 var waiting_buffer_head: u8 = 0;
@@ -85,12 +100,23 @@ fn processTapping(keyp: *KeyRecord) bool {
                     action.processRecord(&tapping_key);
                     keyp.tap = tapping_key.tap;
                     return false;
+                } else if (!ev.pressed and waitingBufferTyped(ev) and permissive_hold) {
+                    // PERMISSIVE_HOLD: 他キーの press+release が TAPPING_TERM 以内に完結
+                    // → ホールドとして確定させる
+                    action.processRecord(&tapping_key);
+                    tapping_key = .{ .event = KeyEvent.tick(0) };
+                    return false;
                 } else if (!ev.pressed and !waitingBufferTyped(ev)) {
                     action.processRecord(keyp);
                     return true;
                 } else {
                     if (ev.pressed) {
                         tapping_key.tap.interrupted = true;
+                        if (hold_on_other_key_press) {
+                            // HOLD_ON_OTHER_KEY_PRESS: 他キー押下時点でホールドとして即座に確定
+                            action.processRecord(&tapping_key);
+                            tapping_key = .{ .event = KeyEvent.tick(0) };
+                        }
                     }
                     return false;
                 }
