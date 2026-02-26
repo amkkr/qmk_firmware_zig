@@ -8,8 +8,8 @@
 const keycode_mod = @import("keycode.zig");
 const Keycode = keycode_mod.Keycode;
 
-/// QK_LOCK キーコード（quantum/keycodes.h 互換）
-pub const QK_LOCK: Keycode = 0x7C04;
+/// QK_LOCK キーコード（keycode.zig から参照）
+pub const QK_LOCK: Keycode = keycode_mod.QK_LOCK;
 
 /// ロック状態のビットマップ（256ビット = 4 x u64）
 /// 各ビットがキーコード（0x00-0xFF）に対応する
@@ -132,9 +132,11 @@ pub fn reset() void {
     watching = false;
 }
 
-/// Key Lock 監視状態をキャンセルする（ロック済みキーは保持）
+/// Key Lock 監視状態をキャンセルする
+/// C版 cancel_key_lock() 互換: watching=false + UNSET_KEY_STATE(0x0) 相当
 pub fn cancelKeyLock() void {
     watching = false;
+    clearKeyState(0x0);
 }
 
 // ============================================================

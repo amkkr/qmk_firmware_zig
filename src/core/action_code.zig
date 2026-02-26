@@ -116,6 +116,20 @@ pub const OP_ONESHOT: u8 = 0xF4;
 pub const MODS_ONESHOT: u8 = 0x00;
 pub const MODS_TAP_TOGGLE: u8 = 0x01;
 
+/// Internal action codes for special keycodes (Caps Word, Repeat Key, Layer Lock)
+/// These use a reserved kind value (0b1111) to avoid collision with real action types.
+/// param encodes which feature:
+///   0x01 = Caps Word Toggle
+///   0x02 = Repeat Key
+///   0x03 = Alt Repeat Key
+///   0x04 = Layer Lock
+///   0x05 = Grave Escape
+pub const ACTION_CAPS_WORD_TOGGLE: u16 = 0xF001;
+pub const ACTION_REPEAT_KEY: u16 = 0xF002;
+pub const ACTION_ALT_REPEAT_KEY: u16 = 0xF003;
+pub const ACTION_LAYER_LOCK: u16 = 0xF004;
+pub const ACTION_GRAVE_ESCAPE: u16 = 0xF005;
+
 // ============================================================
 // Action constructor functions (comptime equivalents of C macros)
 // ============================================================
@@ -215,9 +229,68 @@ pub inline fn ACTION_MODS_ONESHOT(mods: u5) u16 {
     return ACTION(@intFromEnum(ActionKind.mods_tap), @as(u12, mods) << 8 | @as(u12, MODS_ONESHOT));
 }
 
+/// ACTION_MODS_TAP_TOGGLE(mods) - tap toggle modifier
+/// タップ TAPPING_TOGGLE 回でモッド固定
+pub inline fn ACTION_MODS_TAP_TOGGLE(mods: u5) u16 {
+    return ACTION(@intFromEnum(ActionKind.mods_tap), @as(u12, mods) << 8 | @as(u12, MODS_TAP_TOGGLE));
+}
+
 /// ACTION_MOUSEKEY(key) - mouse key action
 pub inline fn ACTION_MOUSEKEY(key: u8) u16 {
     return ACTION(@intFromEnum(ActionKind.mousekey), @as(u12, key));
+}
+
+// ============================================================
+// Swap Hands action constructors
+// C版 quantum/action_code.h の ACTION_SWAP_HANDS_* に相当
+// ACT_SWAP_HANDS = 0b0110, param = u8 操作コード
+// ============================================================
+
+/// ACTION_SWAP_HANDS_TOGGLE() - Swap Hands をトグル (SH_TOGG)
+pub inline fn ACTION_SWAP_HANDS_TOGGLE() u16 {
+    // OP_SH_TOGGLE = 0xF0
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF0);
+}
+
+/// ACTION_SWAP_HANDS_TAP_TOGGLE() - Swap Hands タップトグル (SH_TT)
+pub inline fn ACTION_SWAP_HANDS_TAP_TOGGLE() u16 {
+    // OP_SH_TAP_TOGGLE = 0xF1
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF1);
+}
+
+/// ACTION_SWAP_HANDS_ON_OFF() - モメンタリー Swap Hands (SH_MON)
+pub inline fn ACTION_SWAP_HANDS_ON_OFF() u16 {
+    // OP_SH_ON_OFF = 0xF2
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF2);
+}
+
+/// ACTION_SWAP_HANDS_OFF_ON() - モメンタリー Swap Hands 無効 (SH_MOFF)
+pub inline fn ACTION_SWAP_HANDS_OFF_ON() u16 {
+    // OP_SH_OFF_ON = 0xF3
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF3);
+}
+
+/// ACTION_SWAP_HANDS_OFF() - Swap Hands を無効化 (SH_OFF)
+pub inline fn ACTION_SWAP_HANDS_OFF() u16 {
+    // OP_SH_OFF = 0xF4
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF4);
+}
+
+/// ACTION_SWAP_HANDS_ON() - Swap Hands を有効化 (SH_ON)
+pub inline fn ACTION_SWAP_HANDS_ON() u16 {
+    // OP_SH_ON = 0xF5
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF5);
+}
+
+/// ACTION_SWAP_HANDS_ONESHOT() - One-shot Swap Hands (SH_OS)
+pub inline fn ACTION_SWAP_HANDS_ONESHOT() u16 {
+    // OP_SH_ONESHOT = 0xF6
+    return ACTION(@intFromEnum(ActionKind.swap_hands), 0xF6);
+}
+
+/// ACTION_SWAP_HANDS_TAP_KEY(key) - タップでキー、ホールドで Swap Hands (SH_T(kc))
+pub inline fn ACTION_SWAP_HANDS_TAP_KEY(key: u8) u16 {
+    return ACTION(@intFromEnum(ActionKind.swap_hands), @as(u12, key));
 }
 
 /// Internal helper: construct layer_tap action using u16 arithmetic
@@ -322,6 +395,37 @@ pub fn keycodeToAction(kc: Keycode) Action {
     if (kc >= keycode.QK_LAYER_TAP_TOGGLE and kc <= keycode.QK_LAYER_TAP_TOGGLE_MAX) {
         const layer: u5 = @truncate(kc);
         return .{ .code = ACTION_LAYER_TAP_TOGGLE(layer) };
+    }
+
+    // Caps Word Toggle
+    if (kc == keycode.QK_CAPS_WORD_TOGGLE) {
+        return .{ .code = ACTION_CAPS_WORD_TOGGLE };
+    }
+
+    // Repeat Key
+    if (kc == keycode.QK_REP) {
+        return .{ .code = ACTION_REPEAT_KEY };
+    }
+
+    // Alt Repeat Key
+    if (kc == keycode.QK_AREP) {
+        return .{ .code = ACTION_ALT_REPEAT_KEY };
+    }
+
+    // Layer Lock
+    if (kc == keycode.QK_LAYER_LOCK) {
+        return .{ .code = ACTION_LAYER_LOCK };
+    }
+
+    // Grave Escape
+    if (kc == keycode.QK_GRAVE_ESCAPE) {
+        return .{ .code = ACTION_GRAVE_ESCAPE };
+    }
+
+    // Swap Hands (0x5600-0x56FF)
+    if (kc >= keycode.QK_SWAP_HANDS and kc <= keycode.QK_SWAP_HANDS_MAX) {
+        const sh_code: u8 = @truncate(kc);
+        return .{ .code = ACTION_SWAP_HANDS_TAP_KEY(sh_code) };
     }
 
     // Unknown keycode
@@ -470,6 +574,15 @@ test "keycodeToAction LM() keycodes" {
     // layer=1, mod=0x02 → ACTION_LAYER_MODS(1, 0x02) = 0x9102
     const action = keycodeToAction(keycode.LM(1, keycode.Mod.LSFT));
     try testing.expectEqual(@as(u16, 0x9102), action.code);
+}
+
+test "keycodeToAction swap hands keycodes" {
+    // SH_TG = 0x56F0 → ACTION_SWAP_HANDS_TAP_KEY(0xF0) = 0x60F0
+    const sh_tg = keycodeToAction(keycode.KC.SH_TG);
+    try testing.expectEqual(@as(u16, 0x60F0), sh_tg.code);
+    // SH_T(KC_A=0x04) = 0x5604 → ACTION_SWAP_HANDS_TAP_KEY(0x04) = 0x6004
+    const sh_t_a = keycodeToAction(keycode.SH_T(0x04));
+    try testing.expectEqual(@as(u16, 0x6004), sh_t_a.code);
 }
 
 test "keycodeToAction mouse keys" {
