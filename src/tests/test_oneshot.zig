@@ -3,11 +3,6 @@
 //! OSM の動作を tapping パイプライン経由で検証する。
 //!
 //! テストケース:
-//! 1. OsmTapAppliesModToNextKey      — OSM タップ → 次キーに修飾適用 → その後は不適用
-//! 2. OsmHoldActsAsNormalModifier    — OSM ホールド → 通常の修飾キーと同様
-//! C版 tests/basic/test_one_shot_keys.cpp の主要テストを移植。
-//!
-//! テストケース:
 //! 1. OsmTapAppliesModToNextKey           — OSM タップ → 次キーに修飾適用 → その後は不適用
 //! 2. OsmHoldActsAsNormalModifier         — OSM ホールド → 通常の修飾キーと同様
 //! 3. OsmWithoutAdditionalKeypressDoesNothing — OSM タップのみ → キーレポートなし
@@ -116,9 +111,6 @@ fn tick(time: u16) void {
     action.actionExec(&record);
 }
 
-// ============================================================
-// 1. OsmTapAppliesModToNextKey
-//    OSM(LSFT) をタップ → 次の KC_A にシフトが適用 → その後は不適用
 /// レポート内でキー+modsが見つかるか検索
 fn findReportWithKeyAndMods(mock: *const MockDriver, start: usize, key: u8, mods_mask: u8, mods_expected: bool) bool {
     var i: usize = start;
@@ -168,17 +160,6 @@ test "OsmTapAppliesModToNextKey" {
 
     // KC_A + LSHIFT が含まれるレポートが送信される
     try testing.expect(mock.keyboard_count > count_before_a);
-    var found_shifted_a = false;
-    var i: usize = count_before_a;
-    while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x04) and
-            mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0)
-        {
-            found_shifted_a = true;
-            break;
-        }
-    }
-    try testing.expect(found_shifted_a);
     try testing.expect(findReportWithKeyAndMods(mock, count_before_a, 0x04, report_mod.ModBit.LSHIFT, true));
 
     // oneshot_mods がクリアされている
@@ -194,17 +175,6 @@ test "OsmTapAppliesModToNextKey" {
     try testing.expect(mock.keyboard_count > count_before_a2);
 
     // 最新レポートに LSHIFT が含まれないことを確認
-    var found_unshifted_a = false;
-    i = count_before_a2;
-    while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x04) and
-            mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT == 0)
-        {
-            found_unshifted_a = true;
-            break;
-        }
-    }
-    try testing.expect(found_unshifted_a);
     try testing.expect(findReportWithKeyAndMods(mock, count_before_a2, 0x04, report_mod.ModBit.LSHIFT, false));
 
     release(0, 1, 350);
@@ -229,15 +199,6 @@ test "OsmHoldActsAsNormalModifier" {
 
     // LSHIFT がレポートされる（ホールド動作）
     try testing.expect(mock.keyboard_count >= 1);
-    var found_shift = false;
-    var i: usize = 0;
-    while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
-            found_shift = true;
-            break;
-        }
-    }
-    try testing.expect(found_shift);
     try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
 
     // oneshot_mods は設定されない（ホールド動作）
