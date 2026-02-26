@@ -67,7 +67,7 @@ pub const SpaceCadetKey = struct {
 
 /// デフォルトの Space Cadet キー設定テーブル
 /// C版の perform_space_cadet() 呼び出し引数に対応する
-var sc_keys: [7]SpaceCadetKey = .{
+const sc_keys: [7]SpaceCadetKey = .{
     // SC_LSPO: LSHIFT hold, LSHIFT tap-mod, KC_9 tap-key → (
     .{
         .sc_keycode = SC_LSPO,
@@ -231,7 +231,7 @@ pub fn reset() void {
 // ============================================================
 
 /// キーコードに対応する SpaceCadetKey エントリを検索する
-fn findEntry(kc: Keycode) ?*SpaceCadetKey {
+fn findEntry(kc: Keycode) ?*const SpaceCadetKey {
     for (&sc_keys) |*entry| {
         if (entry.sc_keycode == kc) {
             return entry;
@@ -400,6 +400,4 @@ test "process: 通常キーは true を返す" {
     try testing.expect(process(KC.A, true));
     try testing.expect(process(KC.A, false));
     try testing.expect(process(KC.LEFT_SHIFT, true));
-    // mock はドライバとして登録されているので keyboard_count でアクセス済み扱いにする
-    try testing.expect(mock.keyboard_count >= 0);
 }
