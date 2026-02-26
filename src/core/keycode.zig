@@ -311,12 +311,6 @@ pub const KC = struct {
     pub const RIGHT_GUI: Keycode = 0x00E7;
     pub const RGUI: Keycode = RIGHT_GUI;
 
-    // Dynamic Macro keycodes (upstream QK_DYNAMIC_MACRO_* 準拠)
-    pub const DM_REC1: Keycode = 0x7C53; // マクロ1 録音開始
-    pub const DM_REC2: Keycode = 0x7C54; // マクロ2 録音開始
-    pub const DM_RSTP: Keycode = 0x7C55; // 録音停止
-    pub const DM_PLY1: Keycode = 0x7C56; // マクロ1 再生
-    pub const DM_PLY2: Keycode = 0x7C57; // マクロ2 再生
 };
 
 // ============================================================
@@ -371,6 +365,18 @@ pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
 
 // QMK special feature keycodes
 pub const QK_LOCK: Keycode = 0x7C59;
+
+// Dynamic Macro (0x7C53-0x7C57)
+pub const QK_DYNAMIC_MACRO_RECORD_START_1: Keycode = 0x7C53;
+pub const QK_DYNAMIC_MACRO_RECORD_START_2: Keycode = 0x7C54;
+pub const QK_DYNAMIC_MACRO_RECORD_STOP: Keycode = 0x7C55;
+pub const QK_DYNAMIC_MACRO_PLAY_1: Keycode = 0x7C56;
+pub const QK_DYNAMIC_MACRO_PLAY_2: Keycode = 0x7C57;
+pub const DM_REC1: Keycode = QK_DYNAMIC_MACRO_RECORD_START_1;
+pub const DM_REC2: Keycode = QK_DYNAMIC_MACRO_RECORD_START_2;
+pub const DM_RSTP: Keycode = QK_DYNAMIC_MACRO_RECORD_STOP;
+pub const DM_PLY1: Keycode = QK_DYNAMIC_MACRO_PLAY_1;
+pub const DM_PLY2: Keycode = QK_DYNAMIC_MACRO_PLAY_2;
 
 // ============================================================
 // Modifier bit constants

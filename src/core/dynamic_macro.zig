@@ -40,21 +40,21 @@ pub const MacroState = enum {
 // ============================================================
 
 var state: MacroState = .idle;
-var macro1: [DYNAMIC_MACRO_SIZE]u16 = undefined;
-var macro2: [DYNAMIC_MACRO_SIZE]u16 = undefined;
+var macro1: [DYNAMIC_MACRO_SIZE]Keycode = undefined;
+var macro2: [DYNAMIC_MACRO_SIZE]Keycode = undefined;
 var macro1_len: usize = 0;
 var macro2_len: usize = 0;
 
 /// 再生コールバック: 再生されたキーコードを受け取る関数
 /// pressed=true でキー押下、pressed=false でキー解放
-var play_callback: ?*const fn (kc: u16, pressed: bool) void = null;
+var play_callback: ?*const fn (kc: Keycode, pressed: bool) void = null;
 
 // ============================================================
 // パブリックAPI
 // ============================================================
 
 /// 再生コールバックを登録する
-pub fn setPlayCallback(cb: *const fn (kc: u16, pressed: bool) void) void {
+pub fn setPlayCallback(cb: *const fn (kc: Keycode, pressed: bool) void) void {
     play_callback = cb;
 }
 
@@ -93,11 +93,11 @@ pub fn reset() void {
 /// - 録音中: 通常キーをバッファに追加
 ///
 /// 返り値が true の場合はこのキーコードを消費済み（通常処理をスキップする）
-pub fn process(kc: u16, pressed: bool) bool {
+pub fn process(kc: Keycode, pressed: bool) bool {
     if (!pressed) {
         // DM系キーはキー離し時には何もしない
-        if (kc == KC.DM_REC1 or kc == KC.DM_REC2 or
-            kc == KC.DM_RSTP or kc == KC.DM_PLY1 or kc == KC.DM_PLY2)
+        if (kc == keycode_mod.DM_REC1 or kc == keycode_mod.DM_REC2 or
+            kc == keycode_mod.DM_RSTP or kc == keycode_mod.DM_PLY1 or kc == keycode_mod.DM_PLY2)
         {
             return true;
         }
@@ -106,25 +106,25 @@ pub fn process(kc: u16, pressed: bool) bool {
     }
 
     switch (kc) {
-        KC.DM_REC1 => {
+        keycode_mod.DM_REC1 => {
             state = .recording1;
             macro1_len = 0;
             return true;
         },
-        KC.DM_REC2 => {
+        keycode_mod.DM_REC2 => {
             state = .recording2;
             macro2_len = 0;
             return true;
         },
-        KC.DM_RSTP => {
+        keycode_mod.DM_RSTP => {
             state = .idle;
             return true;
         },
-        KC.DM_PLY1 => {
+        keycode_mod.DM_PLY1 => {
             playMacro(macro1[0..macro1_len]);
             return true;
         },
-        KC.DM_PLY2 => {
+        keycode_mod.DM_PLY2 => {
             playMacro(macro2[0..macro2_len]);
             return true;
         },
@@ -153,7 +153,7 @@ pub fn process(kc: u16, pressed: bool) bool {
 }
 
 /// マクロを再生する（コールバック経由）
-fn playMacro(buf: []const u16) void {
+fn playMacro(buf: []const Keycode) void {
     if (play_callback) |cb| {
         for (buf) |kc| {
             cb(kc, true);
@@ -178,7 +178,7 @@ test "dynamic_macro: 初期状態は idle" {
 test "dynamic_macro: DM_REC1 で録音開始" {
     reset();
 
-    const consumed = process(KC.DM_REC1, true);
+    const consumed = process(keycode_mod.DM_REC1, true);
     try testing.expect(consumed);
     try testing.expectEqual(MacroState.recording1, getState());
 }
@@ -186,7 +186,7 @@ test "dynamic_macro: DM_REC1 で録音開始" {
 test "dynamic_macro: DM_REC2 で録音開始" {
     reset();
 
-    const consumed = process(KC.DM_REC2, true);
+    const consumed = process(keycode_mod.DM_REC2, true);
     try testing.expect(consumed);
     try testing.expectEqual(MacroState.recording2, getState());
 }
@@ -194,10 +194,10 @@ test "dynamic_macro: DM_REC2 で録音開始" {
 test "dynamic_macro: DM_RSTP で録音停止" {
     reset();
 
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     try testing.expectEqual(MacroState.recording1, getState());
 
-    const consumed = process(KC.DM_RSTP, true);
+    const consumed = process(keycode_mod.DM_RSTP, true);
     try testing.expect(consumed);
     try testing.expectEqual(MacroState.idle, getState());
 }
@@ -205,11 +205,11 @@ test "dynamic_macro: DM_RSTP で録音停止" {
 test "dynamic_macro: 録音中にキーが記録される" {
     reset();
 
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     _ = process(KC.A, true);
     _ = process(KC.B, true);
     _ = process(KC.C, true);
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 
     try testing.expectEqual(@as(usize, 3), getMacro1Len());
     try testing.expectEqual(MacroState.idle, getState());
@@ -220,10 +220,10 @@ test "dynamic_macro: マクロ1の録音と再生" {
 
     // 再生されたキーコードを記録するコールバック
     const S = struct {
-        var played: [DYNAMIC_MACRO_SIZE]u16 = undefined;
+        var played: [DYNAMIC_MACRO_SIZE]Keycode = undefined;
         var played_count: usize = 0;
 
-        fn cb(kc: u16, pressed: bool) void {
+        fn cb(kc: Keycode, pressed: bool) void {
             if (pressed) {
                 played[played_count] = kc;
                 played_count += 1;
@@ -235,13 +235,13 @@ test "dynamic_macro: マクロ1の録音と再生" {
     defer clearPlayCallback();
 
     // 録音: A, B
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     _ = process(KC.A, true);
     _ = process(KC.B, true);
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 
     // 再生
-    const consumed = process(KC.DM_PLY1, true);
+    const consumed = process(keycode_mod.DM_PLY1, true);
     try testing.expect(consumed);
     try testing.expectEqual(@as(usize, 2), S.played_count);
     try testing.expectEqual(KC.A, S.played[0]);
@@ -252,10 +252,10 @@ test "dynamic_macro: マクロ2の録音と再生" {
     reset();
 
     const S = struct {
-        var played: [DYNAMIC_MACRO_SIZE]u16 = undefined;
+        var played: [DYNAMIC_MACRO_SIZE]Keycode = undefined;
         var played_count: usize = 0;
 
-        fn cb(kc: u16, pressed: bool) void {
+        fn cb(kc: Keycode, pressed: bool) void {
             if (pressed) {
                 played[played_count] = kc;
                 played_count += 1;
@@ -267,13 +267,13 @@ test "dynamic_macro: マクロ2の録音と再生" {
     defer clearPlayCallback();
 
     // マクロ2に録音: C, D
-    _ = process(KC.DM_REC2, true);
+    _ = process(keycode_mod.DM_REC2, true);
     _ = process(KC.C, true);
     _ = process(KC.D, true);
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 
     // マクロ2再生
-    _ = process(KC.DM_PLY2, true);
+    _ = process(keycode_mod.DM_PLY2, true);
     try testing.expectEqual(@as(usize, 2), S.played_count);
     try testing.expectEqual(KC.C, S.played[0]);
     try testing.expectEqual(KC.D, S.played[1]);
@@ -282,12 +282,12 @@ test "dynamic_macro: マクロ2の録音と再生" {
 test "dynamic_macro: バッファサイズ上限を超えても安全" {
     reset();
 
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     // DYNAMIC_MACRO_SIZE + 5 個のキーを録音しようとする
     for (0..DYNAMIC_MACRO_SIZE + 5) |_| {
         _ = process(KC.A, true);
     }
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 
     // 上限を超えた分は無視される
     try testing.expectEqual(DYNAMIC_MACRO_SIZE, getMacro1Len());
@@ -296,30 +296,30 @@ test "dynamic_macro: バッファサイズ上限を超えても安全" {
 test "dynamic_macro: DM_REC1録音中に別マクロ(DM_REC2)を開始すると切り替わる" {
     reset();
 
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     try testing.expectEqual(MacroState.recording1, getState());
 
     _ = process(KC.A, true);
 
     // マクロ2の録音開始
-    _ = process(KC.DM_REC2, true);
+    _ = process(keycode_mod.DM_REC2, true);
     try testing.expectEqual(MacroState.recording2, getState());
     // マクロ1は1つ録音されたまま
     try testing.expectEqual(@as(usize, 1), getMacro1Len());
 
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 }
 
 test "dynamic_macro: コールバック未設定でも再生はパニックしない" {
     reset();
     clearPlayCallback();
 
-    _ = process(KC.DM_REC1, true);
+    _ = process(keycode_mod.DM_REC1, true);
     _ = process(KC.A, true);
-    _ = process(KC.DM_RSTP, true);
+    _ = process(keycode_mod.DM_RSTP, true);
 
     // コールバックなしで再生しても問題ない
-    const consumed = process(KC.DM_PLY1, true);
+    const consumed = process(keycode_mod.DM_PLY1, true);
     try testing.expect(consumed);
 }
 
@@ -327,13 +327,13 @@ test "dynamic_macro: DM系キーのキー離しイベントは消費される" {
     reset();
 
     // DM_REC1のキー離し
-    const consumed1 = process(KC.DM_REC1, false);
+    const consumed1 = process(keycode_mod.DM_REC1, false);
     try testing.expect(consumed1);
 
-    const consumed2 = process(KC.DM_PLY1, false);
+    const consumed2 = process(keycode_mod.DM_PLY1, false);
     try testing.expect(consumed2);
 
-    const consumed3 = process(KC.DM_RSTP, false);
+    const consumed3 = process(keycode_mod.DM_RSTP, false);
     try testing.expect(consumed3);
 }
 
