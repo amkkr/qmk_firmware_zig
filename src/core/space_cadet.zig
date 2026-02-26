@@ -6,8 +6,8 @@
 //! デフォルトマッピング:
 //! - QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN  (SC_LSPO): LSHIFT タップ → ( (KC_9 with LSHIFT)
 //! - QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE (SC_RSPC): RSHIFT タップ → ) (KC_0 with RSHIFT)
-//! - QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN   (SC_LCPO): LCTRL タップ → [ (KC_LBRC)
-//! - QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE  (SC_RCPC): RCTRL タップ → ] (KC_RBRC)
+//! - QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN   (SC_LCPO): LCTRL タップ → ( (KC_9 with LSHIFT)
+//! - QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE  (SC_RCPC): RCTRL タップ → ) (KC_0 with RSHIFT)
 //! - QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN    (SC_LAPO): LALT タップ → ( (KC_9 with LSHIFT)
 //! - QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE   (SC_RAPC): RALT タップ → ) (KC_0 with RSHIFT)
 //! - QK_SPACE_CADET_RIGHT_SHIFT_ENTER            (SC_SENT): RSHIFT タップ → Enter
@@ -20,23 +20,25 @@ const Keycode = keycode_mod.Keycode;
 const KC = keycode_mod.KC;
 
 // ============================================================
-// Space Cadet キーコード定義
+// Space Cadet キーコード定義（keycode.zig から参照）
 // ============================================================
 
-/// Space Cadet キーコード（quantum/keycodes.h 互換）
-pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C51;
-pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = 0x7C52;
-pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = 0x7C53;
-pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C54;
-pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C55;
-pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C56;
-pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C57;
+pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = keycode_mod.QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = keycode_mod.QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE;
+pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = keycode_mod.QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN;
+pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = keycode_mod.QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE;
+pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = keycode_mod.QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN;
+pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = keycode_mod.QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = keycode_mod.QK_SPACE_CADET_RIGHT_SHIFT_ENTER;
 
 /// 短縮エイリアス
 pub const SC_LSPO: Keycode = QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN;
 pub const SC_RSPC: Keycode = QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE;
 pub const SC_LCPO: Keycode = QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN;
 pub const SC_RCPC: Keycode = QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE;
+pub const SC_LAPO: Keycode = QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN;
+pub const SC_RAPC: Keycode = QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE;
+pub const SC_SENT: Keycode = QK_SPACE_CADET_RIGHT_SHIFT_ENTER;
 pub const QK_SPACE_CADET_MIN: Keycode = QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN;
 pub const QK_SPACE_CADET_MAX: Keycode = QK_SPACE_CADET_RIGHT_SHIFT_ENTER;
 
@@ -61,10 +63,6 @@ pub const SpaceCadetKey = struct {
     tap_mod: u8,
     /// タップ時に送信するキーコード（基本キー、0x00-0xFF）
     tap_key: u8,
-    /// 押下中フラグ（ホールド追跡用）
-    held: bool = false,
-    /// 押下開始時刻（ミリ秒）
-    press_time: u16 = 0,
 };
 
 /// デフォルトの Space Cadet キー設定テーブル
@@ -103,7 +101,7 @@ var sc_keys: [7]SpaceCadetKey = .{
     // SC_LAPO: LALT hold, LSHIFT tap-mod, KC_9 tap-key → (
     // C版デフォルト: LAPO_KEYS = KC_LEFT_ALT, KC_LEFT_SHIFT, KC_9
     .{
-        .sc_keycode = QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN,
+        .sc_keycode = SC_LAPO,
         .hold_mod = report_mod.ModBit.LALT,
         .tap_mod = report_mod.ModBit.LSHIFT,
         .tap_key = KC.@"9",
@@ -111,7 +109,7 @@ var sc_keys: [7]SpaceCadetKey = .{
     // SC_RAPC: RALT hold, RSHIFT tap-mod, KC_0 tap-key → )
     // C版デフォルト: RAPC_KEYS = KC_RIGHT_ALT, KC_RIGHT_SHIFT, KC_0
     .{
-        .sc_keycode = QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE,
+        .sc_keycode = SC_RAPC,
         .hold_mod = report_mod.ModBit.RALT,
         .tap_mod = report_mod.ModBit.RSHIFT,
         .tap_key = KC.@"0",
@@ -119,7 +117,7 @@ var sc_keys: [7]SpaceCadetKey = .{
     // SC_SENT: RSHIFT hold, TRANSPARENT tap-mod, KC_ENT tap-key → Enter
     // C版デフォルト: SFTENT_KEYS = KC_RIGHT_SHIFT, KC_TRANSPARENT, SFTENT_KEY
     .{
-        .sc_keycode = QK_SPACE_CADET_RIGHT_SHIFT_ENTER,
+        .sc_keycode = SC_SENT,
         .hold_mod = report_mod.ModBit.RSHIFT,
         .tap_mod = 0, // KC_TRANSPARENT → 追加mod不要
         .tap_key = KC.ENTER,
@@ -347,12 +345,12 @@ test "SC_SENT: 短時間タップで Enter が送信される" {
     defer host.clearDriver();
 
     // SC_SENT を押す（RSHIFT が登録される）
-    _ = process(QK_SPACE_CADET_RIGHT_SHIFT_ENTER, true);
+    _ = process(SC_SENT, true);
     try testing.expectEqual(report_mod.ModBit.RSHIFT, mock.lastKeyboardReport().mods & report_mod.ModBit.RSHIFT);
 
     // タッピング時間内にリリース → KC_ENTER（tap_mod=0なのでShiftなし）
     timer.mockAdvance(50);
-    _ = process(QK_SPACE_CADET_RIGHT_SHIFT_ENTER, false);
+    _ = process(SC_SENT, false);
 
     // Enter が送信された後、モッドがクリアされている
     // tap_mod=0 なので hold_mod(RSHIFT) はそのままリリースで解除
@@ -365,9 +363,9 @@ test "isSpaceCadetKeycode: 範囲チェック" {
     try testing.expect(isSpaceCadetKeycode(SC_RSPC));
     try testing.expect(isSpaceCadetKeycode(SC_LCPO));
     try testing.expect(isSpaceCadetKeycode(SC_RCPC));
-    try testing.expect(isSpaceCadetKeycode(QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN));
-    try testing.expect(isSpaceCadetKeycode(QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE));
-    try testing.expect(isSpaceCadetKeycode(QK_SPACE_CADET_RIGHT_SHIFT_ENTER));
+    try testing.expect(isSpaceCadetKeycode(SC_LAPO));
+    try testing.expect(isSpaceCadetKeycode(SC_RAPC));
+    try testing.expect(isSpaceCadetKeycode(SC_SENT));
     try testing.expect(!isSpaceCadetKeycode(KC.A));
     try testing.expect(!isSpaceCadetKeycode(KC.LEFT_SHIFT));
     try testing.expect(!isSpaceCadetKeycode(0x0000));
