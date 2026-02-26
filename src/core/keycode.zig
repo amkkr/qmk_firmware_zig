@@ -310,6 +310,7 @@ pub const KC = struct {
     pub const RALT: Keycode = RIGHT_ALT;
     pub const RIGHT_GUI: Keycode = 0x00E7;
     pub const RGUI: Keycode = RIGHT_GUI;
+
 };
 
 // ============================================================
@@ -362,15 +363,34 @@ pub const QK_AREP: Keycode = 0x7C7A;
 pub const QK_LAYER_LOCK: Keycode = 0x7C8A;
 pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
 
-// QMK special feature keycodes
-pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C51;
-pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = 0x7C52;
-pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = 0x7C53;
-pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C54;
-pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C55;
-pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C56;
-pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C57;
+// Space Cadet (upstream QK_SPACE_CADET_* 準拠: 0x7C18-0x7C1E)
+pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = 0x7C18;
+pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C19;
+pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C1A;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = 0x7C1B;
+pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C1C;
+pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C1D;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C1E;
+pub const SC_LCPO: Keycode = QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN;
+pub const SC_RCPC: Keycode = QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE;
+pub const SC_LSPO: Keycode = QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN;
+pub const SC_RSPC: Keycode = QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE;
+pub const SC_LAPO: Keycode = QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN;
+pub const SC_RAPC: Keycode = QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE;
+pub const SC_SENT: Keycode = QK_SPACE_CADET_RIGHT_SHIFT_ENTER;
 pub const QK_LOCK: Keycode = 0x7C59;
+
+// Dynamic Macro (0x7C53-0x7C57)
+pub const QK_DYNAMIC_MACRO_RECORD_START_1: Keycode = 0x7C53;
+pub const QK_DYNAMIC_MACRO_RECORD_START_2: Keycode = 0x7C54;
+pub const QK_DYNAMIC_MACRO_RECORD_STOP: Keycode = 0x7C55;
+pub const QK_DYNAMIC_MACRO_PLAY_1: Keycode = 0x7C56;
+pub const QK_DYNAMIC_MACRO_PLAY_2: Keycode = 0x7C57;
+pub const DM_REC1: Keycode = QK_DYNAMIC_MACRO_RECORD_START_1;
+pub const DM_REC2: Keycode = QK_DYNAMIC_MACRO_RECORD_START_2;
+pub const DM_RSTP: Keycode = QK_DYNAMIC_MACRO_RECORD_STOP;
+pub const DM_PLY1: Keycode = QK_DYNAMIC_MACRO_PLAY_1;
+pub const DM_PLY2: Keycode = QK_DYNAMIC_MACRO_PLAY_2;
 
 // ============================================================
 // Modifier bit constants
