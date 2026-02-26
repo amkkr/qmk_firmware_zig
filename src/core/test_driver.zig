@@ -12,11 +12,13 @@ const ExtraReport = report.ExtraReport;
 /// Fixed-size buffer mock driver for testing.
 /// Replaces per-file MockDriver definitions with a single reusable type.
 pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacity: usize) type {
+    const mouse_capacity = 8;
     return struct {
         keyboard_count: usize = 0,
         mouse_count: usize = 0,
         extra_count: usize = 0,
         keyboard_reports: [keyboard_capacity]KeyboardReport = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity,
+        mouse_reports: [mouse_capacity]MouseReport = [_]MouseReport{MouseReport{}} ** mouse_capacity,
         extra_reports: [extra_capacity]ExtraReport = [_]ExtraReport{ExtraReport{}} ** extra_capacity,
         leds: u8 = 0,
 
@@ -33,7 +35,10 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             self.keyboard_count += 1;
         }
 
-        pub fn sendMouse(self: *Self, _: MouseReport) void {
+        pub fn sendMouse(self: *Self, r: MouseReport) void {
+            if (self.mouse_count < mouse_capacity) {
+                self.mouse_reports[self.mouse_count] = r;
+            }
             self.mouse_count += 1;
         }
 
@@ -50,6 +55,12 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             return self.keyboard_reports[idx];
         }
 
+        pub fn lastMouseReport(self: *const Self) MouseReport {
+            if (self.mouse_count == 0) return MouseReport{};
+            const idx = if (self.mouse_count > mouse_capacity) mouse_capacity - 1 else self.mouse_count - 1;
+            return self.mouse_reports[idx];
+        }
+
         pub fn lastExtraReport(self: *const Self) ExtraReport {
             if (self.extra_count == 0) return ExtraReport{};
             const idx = if (self.extra_count > extra_capacity) extra_capacity - 1 else self.extra_count - 1;
@@ -61,6 +72,7 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             self.mouse_count = 0;
             self.extra_count = 0;
             self.keyboard_reports = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity;
+            self.mouse_reports = [_]MouseReport{MouseReport{}} ** mouse_capacity;
             self.extra_reports = [_]ExtraReport{ExtraReport{}} ** extra_capacity;
             self.leds = 0;
         }
