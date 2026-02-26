@@ -14,8 +14,14 @@ const layer = @import("layer.zig");
 pub const host = @import("host.zig");
 const tapping = @import("action_tapping.zig");
 const extrakey = @import("extrakey.zig");
+const mousekey = @import("mousekey.zig");
+const auto_shift = @import("auto_shift.zig");
 const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
+pub const swap_hands = @import("swap_hands.zig");
+const caps_word = @import("caps_word.zig");
+const repeat_key = @import("repeat_key.zig");
+const layer_lock = @import("layer_lock.zig");
 
 const Action = action_code.Action;
 const ActionKind = action_code.ActionKind;
@@ -50,6 +56,9 @@ const OP_OFF_ON: u8 = 0xF2;
 const OP_SET_CLEAR: u8 = 0xF3;
 const OP_ONESHOT: u8 = 0xF4;
 
+/// Tap Toggle のトグルに必要なタップ回数（C版 TAPPING_TOGGLE=5 に対応）
+pub const TAPPING_TOGGLE: u8 = 5;
+
 /// Main entry point: execute action for a key event
 pub fn actionExec(record: *KeyRecord) void {
     tapping.actionTappingProcess(record);
@@ -75,13 +84,24 @@ pub fn isTapAction(act: Action) bool {
             const code = act.key.code;
             // MODS_ONESHOT (0x00) はタップアクション（C版 is_tap_action 互換）
             if (code == action_code.MODS_ONESHOT) return true;
+            // MODS_TAP_TOGGLE (0x01) もタップアクション
+            if (code == action_code.MODS_TAP_TOGGLE) return true;
             // Tap action if there's a tap keycode
             return code != 0;
         },
         .layer_tap, .layer_tap_ext => {
             const code = act.key.code;
+            // OSL (OP_ONESHOT) はタップアクション（C版 is_tap_action 互換）
+            if (code == OP_ONESHOT) return true;
             // Regular layer-tap key (not special operation)
             return code != 0 and code < OP_TAP_TOGGLE;
+        },
+        .swap_hands => {
+            const code = act.key.code;
+            // SH_T(kc): C版と同様 KC_NO(0x00)〜KC_RIGHT_GUI(0xE7) がタップアクション
+            // C版では OP_SH_TAP_TOGGLE(0xF1) は default フォールスルーで code <= 0xE7 評価され false
+            // 特殊操作コード (0xF0-0xF6) はタップアクションではない
+            return code != 0 and code <= 0xE7;
         },
         else => return false,
     }
@@ -91,37 +111,147 @@ pub fn isTapAction(act: Action) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+    if (processSpecialAction(keyp.event, act)) return;
+
     const ev = keyp.event;
     const kind = act.kind.id;
+
+    // ---- do_release_oneshot 前処理（C版 process_action の先頭ロジック） ----
+    // OSL がアクティブで、修飾キー以外のキーが押された場合、
+    // OTHER_KEY_PRESSED フラグをクリアして OSL 解除準備をする
+    var do_release_oneshot = false;
+    if (host.isOneshotLayerActive() and ev.pressed and keymap_mod.keymap_config.oneshot_enable) {
+        const is_modifier_action = blk: {
+            if (kind == .mods or kind == .rmods) {
+                // C版 IS_MODIFIER_KEYCODE(action.key.code) と等価
+                break :blk report_mod.isModifierKeycode(act.key.code);
+            }
+            if (kind == .mods_tap or kind == .rmods_tap) {
+                // mod-tap のホールド状態（tap.count==0）またはOSM/TAP_TOGGLE
+                break :blk act.layer_tap.code <= action_code.MODS_TAP_TOGGLE or keyp.tap.count == 0;
+            }
+            break :blk false;
+        };
+        if (kind == .usage or !is_modifier_action) {
+            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+            do_release_oneshot = !host.isOneshotLayerActive();
+        }
+    }
+
+    // Caps Word 処理: 基本キーアクション（mods/rmods）の場合、
+    // キー押下時に Caps Word のフィルタリングを適用
+    if (caps_word.isActive()) {
+        if (kind == .mods or kind == .rmods) {
+            const kc = act.key.code;
+            _ = caps_word.process(kc, ev.pressed);
+        }
+    }
 
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
         .mods_tap, .rmods_tap => processModsTapAction(keyp, act),
         .usage => extrakey.processUsageAction(ev, act.code),
+        .mousekey => processMousekeyAction(ev, act),
         .layer => processLayerAction(ev, act),
         .layer_mods => processLayerModsAction(ev, act),
         .layer_tap, .layer_tap_ext => processLayerTapAction(keyp, act),
+        .swap_hands => swap_hands.processSwapHandsAction(keyp, act),
         else => {
             if (@import("builtin").is_test) {
                 @import("std").log.warn("unhandled action kind: {}", .{@intFromEnum(kind)});
             }
         },
     }
+
+    // C版 action.c:830-847: layer アクション後は do_release_oneshot をクリア
+    // layer_tap/layer_tap_ext の処理中に OSL 解除が起きないようにする
+    switch (kind) {
+        .layer, .layer_mods, .layer_tap, .layer_tap_ext => do_release_oneshot = false,
+        else => {},
+    }
+
+    // ---- do_release_oneshot 後処理（C版 process_action の末尾ロジック） ----
+    // OSL が解除されるべき場合、キーを一時的にリリースしてからレイヤーをオフにする
+    if (do_release_oneshot and (host.getOneshotLayerState() & host.OneshotState.PRESSED) == 0) {
+        const osl_layer = host.getOneshotLayer();
+        keyp.event.pressed = false;
+        layer.layerOn(osl_layer);
+        processRecord(keyp);
+        layer.layerOff(osl_layer);
+    }
+}
+
+/// Process mousekey actions (ACT_MOUSEKEY)
+/// C版 register_mouse() に相当。
+fn processMousekeyAction(ev: KeyEvent, act: Action) void {
+    const code: keycode_mod.Keycode = act.key.code;
+    if (ev.pressed) {
+        mousekey.on(code);
+    } else {
+        mousekey.off(code);
+    }
+    mousekey.send();
+}
+
+/// 特殊アクション（Caps Word, Repeat Key, Layer Lock）の処理
+/// 処理した場合は true を返す
+fn processSpecialAction(ev: KeyEvent, act: Action) bool {
+    switch (act.code) {
+        action_code.ACTION_CAPS_WORD_TOGGLE => {
+            if (ev.pressed) {
+                caps_word.toggle();
+            }
+            return true;
+        },
+        action_code.ACTION_REPEAT_KEY => {
+            // C版同様: Repeat Key は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            repeat_key.processRepeatKey(ev.pressed);
+            return true;
+        },
+        action_code.ACTION_ALT_REPEAT_KEY => {
+            // Alt Repeat Key は未実装（将来拡張用）
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            return true;
+        },
+        action_code.ACTION_LAYER_LOCK => {
+            // C版同様: Layer Lock は Caps Word の許可リストに含まれないため解除
+            if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            layer_lock.processLayerLock(ev.pressed);
+            return true;
+        },
+        else => return false,
+    }
 }
 
 /// Process basic modifier actions (hold for mod, with optional key)
+/// keycodeConfig / modConfig を適用してスワップ設定を反映する。
+/// C版 keymap_common.c では ACTION_MODS_KEY 生成時に mod_config() / keycode_config() の両方が適用される。
 fn processModsAction(ev: KeyEvent, act: Action) void {
     const mods = act.key.mods;
-    const kc = act.key.code;
-    const mods8 = modFourBitToFiveBit(mods, act.kind.id == .rmods);
+    const kc = keymap_mod.keycodeConfig(act.key.code);
+    const mods5 = modFourBitToFiveBit(mods, act.kind.id == .rmods);
+    const mods_hid = keymap_mod.modConfig(host.modFiveBitToEightBit(mods5));
+
+    // Auto Shift: 修飾なしの基本キーで、Auto Shift 対象の場合は委譲
+    if (mods_hid == 0 and kc != 0) {
+        if (auto_shift.processAutoShift(@as(u16, kc), ev.pressed, ev.time)) {
+            return;
+        }
+    }
 
     if (ev.pressed) {
-        if (mods8 != 0) host.registerMods(mods8);
-        if (kc != 0) host.registerCode(kc);
+        if (mods_hid != 0) host.addMods(mods_hid);
+        if (kc != 0) {
+            host.registerCode(kc);
+            // Repeat Key 用に直前のキーを記録（weak_mods も含める：Caps Word の LSHIFT 等）
+            repeat_key.setLastKeycode(kc, host.getMods() | host.getWeakMods());
+        }
         host.sendKeyboardReport();
     } else {
         if (kc != 0) host.unregisterCode(kc);
-        if (mods8 != 0) host.unregisterMods(mods8);
+        if (mods_hid != 0) host.delMods(mods_hid);
         host.sendKeyboardReport();
     }
 }
@@ -132,7 +262,99 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
     const mods = act.key.mods;
     const kc = act.key.code;
     const is_right = act.kind.id == .rmods_tap;
-    const mods8 = modFourBitToFiveBit(mods, is_right);
+    const mods5 = modFourBitToFiveBit(mods, is_right);
+    // C版 mod_config() に相当: modConfig を全ケースに適用（processModsAction と対称）
+    const mods_hid = keymap_mod.modConfig(host.modFiveBitToEightBit(mods5));
+
+    switch (kc) {
+        action_code.MODS_ONESHOT => {
+            // One-Shot Modifier (OSM) の場合は専用処理
+            // C版と同様に modConfig 適用済みの8ビットHID形式を渡す
+            processOneShotModsAction(keyp, mods_hid);
+            return;
+        },
+        action_code.MODS_TAP_TOGGLE => {
+            // MODS_TAP_TOGGLE: タップ TAPPING_TOGGLE 回でモッド固定
+            // C版 quantum/action.c の MODS_TAP_TOGGLE 処理に相当
+            if (ev.pressed) {
+                if (keyp.tap.count <= TAPPING_TOGGLE) {
+                    host.addMods(mods_hid);
+                    host.sendKeyboardReport();
+                }
+            } else {
+                if (keyp.tap.count < TAPPING_TOGGLE) {
+                    host.delMods(mods_hid);
+                    host.sendKeyboardReport();
+                }
+            }
+        },
+        else => {
+            // 通常のmod-tap: ホールドでmod、タップでキー
+            const configured_kc = keymap_mod.keycodeConfig(kc);
+            if (ev.pressed) {
+                if (keyp.tap.count > 0) {
+                    // Tapped: register the tap keycode
+                    if (configured_kc != 0) {
+                        // Caps Word: タップキーにも Shift を適用
+                        if (caps_word.isActive()) {
+                            _ = caps_word.process(kc, true);
+                        }
+                        host.registerCode(configured_kc);
+                        // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
+                        repeat_key.setLastKeycode(configured_kc, host.getMods() | host.getWeakMods());
+                        host.sendKeyboardReport();
+                    }
+                } else {
+                    // Held: register modifier
+                    if (mods_hid != 0) {
+                        host.addMods(mods_hid);
+                        host.sendKeyboardReport();
+                    }
+                }
+            } else {
+                if (keyp.tap.count > 0) {
+                    // Release tap
+                    if (configured_kc != 0) {
+                        if (caps_word.isActive()) {
+                            _ = caps_word.process(kc, false);
+                        }
+                        host.unregisterCode(configured_kc);
+                        host.sendKeyboardReport();
+                    }
+                } else {
+                    // Release hold
+                    if (mods_hid != 0) {
+                        host.delMods(mods_hid);
+                        host.sendKeyboardReport();
+                    }
+                }
+            }
+        },
+    }
+}
+
+/// One-Shot Modifier (OSM) のアクション処理
+/// C版 quantum/action.c の ACT_MODS_TAP/MODS_ONESHOT 処理に相当
+///
+/// タップ時: addOneshotMods(mods_hid) で OSM を設定
+///   → 次のキー入力時に sendKeyboardReport() で一時的に適用されクリアされる
+/// ホールド時: 通常の修飾キーとして動作（addMods/delMods）
+///
+/// 注意: mods_hid は modConfig 適用済みの8ビットHID形式。
+/// 呼び出し元（processModsTapAction）で modFiveBitToEightBit + modConfig を適用済み。
+fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
+    const ev = keyp.event;
+
+    // C版互換: oneshot_enable が false の場合、通常の修飾キーとして動作
+    if (!keymap_mod.keymap_config.oneshot_enable) {
+        if (ev.pressed) {
+            host.addMods(mods_hid);
+        } else {
+            host.delMods(mods_hid);
+        }
+        host.sendKeyboardReport();
+        return;
+    }
 
     // One-Shot Modifier (OSM) の場合は専用処理
     if (kc == action_code.MODS_ONESHOT) {
@@ -142,31 +364,31 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
 
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
-            // Tapped: register the tap keycode
-            if (kc != 0) {
-                host.registerCode(kc);
+            if (keyp.tap.count == 1) {
+                // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
+                // C版互換: OSM設定時はレポートを送信しない（次キー押下時に適用）
+                host.addOneshotMods(mods_hid);
+            } else {
+                // 複数タップ: 通常のmod toggle として扱う（C版互換）
+                host.addMods(mods_hid);
                 host.sendKeyboardReport();
             }
         } else {
-            // Held: register modifier
-            if (mods8 != 0) {
-                host.registerMods(mods8);
-                host.sendKeyboardReport();
-            }
+            // ホールド: 通常の修飾キーとして登録
+            host.addMods(mods_hid);
+            host.sendKeyboardReport();
         }
     } else {
         if (keyp.tap.count > 0) {
-            // Release tap
-            if (kc != 0) {
-                host.unregisterCode(kc);
+            // タップリリース: OSMは次キーまで保持（レポート送信不要）
+            if (keyp.tap.count > 1) {
+                host.delMods(mods_hid);
                 host.sendKeyboardReport();
             }
         } else {
-            // Release hold
-            if (mods8 != 0) {
-                host.unregisterMods(mods8);
-                host.sendKeyboardReport();
-            }
+            // ホールドリリース: 修飾キーを解除
+            host.delMods(mods_hid);
+            host.sendKeyboardReport();
         }
     }
 }
@@ -278,8 +500,11 @@ fn processLayerModsAction(ev: KeyEvent, act: Action) void {
         host.addMods(mods);
         host.sendKeyboardReport();
     } else {
-        host.delMods(mods);
-        layer.layerOff(l);
+        // Layer Lock でロック中のレイヤーは layerOff/delMods をスキップ
+        if (!layer_lock.isLayerLocked(l)) {
+            host.delMods(mods);
+            layer.layerOff(l);
+        }
         host.sendKeyboardReport();
     }
 }
@@ -294,16 +519,23 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
 
     if (code >= OP_TAP_TOGGLE) {
         // Special layer operations
-        processLayerTapSpecial(ev, l, code);
+        processLayerTapSpecial(keyp, l, code);
         return;
     }
 
     // Regular layer-tap: hold=layer, tap=keycode
+    const configured_code = keymap_mod.keycodeConfig(code);
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
             // Tapped: register the tap keycode
-            if (code != 0) {
-                host.registerCode(code);
+            if (configured_code != 0) {
+                // Caps Word: タップキーにも Shift を適用
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, true);
+                }
+                host.registerCode(configured_code);
+                // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
+                repeat_key.setLastKeycode(configured_code, host.getMods() | host.getWeakMods());
                 host.sendKeyboardReport();
             }
         } else {
@@ -313,24 +545,43 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
     } else {
         if (keyp.tap.count > 0) {
             // Release tap
-            if (code != 0) {
-                host.unregisterCode(code);
+            if (configured_code != 0) {
+                if (caps_word.isActive()) {
+                    _ = caps_word.process(code, false);
+                }
+                host.unregisterCode(configured_code);
                 host.sendKeyboardReport();
             }
         } else {
             // Release hold
-            layer.layerOff(l);
+            // Layer Lock でロック中のレイヤーは layerOff をスキップ
+            if (!layer_lock.isLayerLocked(l)) {
+                layer.layerOff(l);
+            }
         }
     }
 }
 
-/// Process special layer tap operations (MO, TG, TO, etc.)
-fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
+/// Process special layer tap operations (MO, TG, TO, TT, OSL, etc.)
+/// C版 quantum/action.c の ACT_LAYER_TAP switch 処理に相当。
+fn processLayerTapSpecial(keyp: *KeyRecord, l: u5, code: u8) void {
+    const ev = keyp.event;
+    const tap_count = keyp.tap.count;
     switch (code) {
         OP_TAP_TOGGLE => {
             // Layer tap toggle (TT)
+            // C版: press 時 tap_count < TAPPING_TOGGLE なら layer_invert
+            //       release 時 tap_count <= TAPPING_TOGGLE なら layer_invert
+            // → tap_count == TAPPING_TOGGLE: pressでinvertなし、releaseでinvertあり（ラッチON）
+            // → tap_count > TAPPING_TOGGLE: press/releaseともinvertなし（固定）
             if (ev.pressed) {
-                layer.layerInvert(l);
+                if (tap_count < TAPPING_TOGGLE) {
+                    layer.layerInvert(l);
+                }
+            } else {
+                if (tap_count <= TAPPING_TOGGLE) {
+                    layer.layerInvert(l);
+                }
             }
         },
         OP_ON_OFF => {
@@ -338,7 +589,10 @@ fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
             if (ev.pressed) {
                 layer.layerOn(l);
             } else {
-                layer.layerOff(l);
+                // Layer Lock でロック中のレイヤーは layerOff をスキップ
+                if (!layer_lock.isLayerLocked(l)) {
+                    layer.layerOff(l);
+                }
             }
         },
         OP_OFF_ON => {
@@ -354,7 +608,44 @@ fn processLayerTapSpecial(ev: KeyEvent, l: u5, code: u8) void {
                 layer.layerMove(l);
             }
         },
+        OP_ONESHOT => {
+            // One-Shot Layer (OSL)
+            processOneShotLayerAction(keyp, l);
+        },
         else => {},
+    }
+}
+
+/// One-Shot Layer (OSL) のアクション処理
+/// C版 quantum/action.c の ACT_LAYER_TAP/OP_ONESHOT 処理に相当
+///
+/// C版互換: tap_count に関わらず常に oneshot 挙動を行う。
+/// 押下時: setOneshotLayer(l, START) でレイヤーを有効化
+///   → 次のキー入力時に do_release_oneshot ロジックでレイヤーが解除される
+/// リリース時: clearOneshotLayerState(PRESSED) でフラグをクリア
+///   → tap_count > 1 の場合は OTHER_KEY_PRESSED もクリア（即時解除）
+fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
+    const ev = keyp.event;
+
+    // oneshot_enable が false の場合、通常の MO() として動作
+    if (!keymap_mod.keymap_config.oneshot_enable) {
+        if (ev.pressed) {
+            layer.layerOn(l);
+        } else {
+            layer.layerOff(l);
+        }
+        return;
+    }
+
+    // C版互換: tap_count をチェックせず、常に oneshot 挙動
+    // （ONESHOT_TAP_TOGGLE 未定義時の C版ロジックと等価）
+    if (ev.pressed) {
+        host.setOneshotLayer(l, host.OneshotState.START);
+    } else {
+        host.clearOneshotLayerState(host.OneshotState.PRESSED);
+        if (keyp.tap.count > 1) {
+            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+        }
     }
 }
 
@@ -369,7 +660,9 @@ pub fn reset() void {
     host.hostReset();
     layer.resetState();
     tapping.reset();
+    auto_shift.reset();
     keymap_mod.keymap_config = .{};
+    swap_hands.reset();
 }
 
 // ============================================================
@@ -524,6 +817,8 @@ test "isTapAction" {
     try testing.expect(!isTapAction(.{ .code = action_code.ACTION_LAYER_MOMENTARY(1) }));
     // OSM (MODS_ONESHOT) はタップアクション
     try testing.expect(isTapAction(.{ .code = action_code.ACTION_MODS_ONESHOT(0x01) }));
+    // MODS_TAP_TOGGLE もタップアクション
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_MODS_TAP_TOGGLE(0x02) }));
 }
 
 test "layer bitwise OP_BIT_OR on press" {
@@ -731,6 +1026,165 @@ test "OSM hold acts as normal modifier" {
     try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }
 
+test "isTapAction: OSL is tap action" {
+    // OSL(1): layer_tap with OP_ONESHOT
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_LAYER_ONESHOT(1) }));
+    // OSL(3)
+    try testing.expect(isTapAction(.{ .code = action_code.ACTION_LAYER_ONESHOT(3) }));
+}
+
+test "OSL tap activates layer for next key then deactivates" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // OSL(1): ACTION_LAYER_ONESHOT(1)
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // タップ（tap.count=1）→ OSL が START 状態で設定される
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expectEqual(@as(u5, 1), host.getOneshotLayer());
+    try testing.expect(layer.layerStateIs(1));
+
+    // タップリリース → PRESSED フラグがクリアされる
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, osl_act);
+    // OTHER_KEY_PRESSED がまだ残っているのでレイヤーはアクティブ
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+
+    // 次のキーを押す → do_release_oneshot でレイヤーが解除される
+    const key_act = Action{ .code = action_code.ACTION_KEY(0x04) }; // KC_A
+    var key_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 200) };
+    processAction(&key_press, key_act);
+    // キーが登録された後、do_release_oneshot によりリリースも実行される
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
+}
+
+test "OSL hold also uses oneshot behavior (C-compat)" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // ホールド（tap.count=0）→ C版互換: tap_count に関わらず oneshot 挙動
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, osl_act);
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expect(host.isOneshotLayerActive()); // OSL状態でもある
+
+    // リリース（tap.count=0）→ PRESSED クリア。OTHER_KEY_PRESSED が残るのでレイヤー維持
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
+    processAction(&release, osl_act);
+    // OTHER_KEY_PRESSED が残っているのでレイヤーはまだアクティブ
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+
+    // 次のキーを押す → do_release_oneshot でレイヤーが解除される
+    const key_act = Action{ .code = action_code.ACTION_KEY(0x04) };
+    var key_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 500) };
+    processAction(&key_press, key_act);
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
+}
+
+test "OSL disabled: acts as plain MO" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = false;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(2) };
+
+    // タップでも MO として動作
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(layer.layerStateIs(2));
+    try testing.expect(!host.isOneshotLayerActive());
+
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, osl_act);
+    try testing.expect(!layer.layerStateIs(2));
+}
+
+test "OSL modifier key does not trigger release" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // OSL(1) をタップ
+    var osl_press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&osl_press, osl_act);
+    var osl_release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&osl_release, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+
+    // 修飾キーを押す → OSL は解除されない
+    const mod_act = Action{ .code = action_code.ACTION_KEY(0xE1) }; // KC_LSHIFT (0xE1)
+    var mod_press = KeyRecord{ .event = KeyEvent.keyPress(1, 0, 200) };
+    processAction(&mod_press, mod_act);
+    try testing.expect(host.isOneshotLayerActive());
+    try testing.expect(layer.layerStateIs(1));
+}
+
+test "OSL double tap deactivates immediately" {
+    reset();
+    keymap_mod.keymap_config.oneshot_enable = true;
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const osl_act = Action{ .code = action_code.ACTION_LAYER_ONESHOT(1) };
+
+    // ダブルタップ（tap.count=2）
+    var press = KeyRecord{
+        .event = KeyEvent.keyPress(0, 0, 100),
+        .tap = .{ .count = 2 },
+    };
+    processAction(&press, osl_act);
+    try testing.expect(host.isOneshotLayerActive());
+
+    // リリース（tap.count=2）→ PRESSED と OTHER_KEY_PRESSED の両方がクリアされる
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 2 },
+    };
+    processAction(&release, osl_act);
+    try testing.expect(!host.isOneshotLayerActive());
+    try testing.expect(!layer.layerStateIs(1));
+}
+
 test "OSM right modifier tap sets correct HID bits" {
     reset();
     keymap_mod.keymap_config.oneshot_enable = true;
@@ -738,14 +1192,11 @@ test "OSM right modifier tap sets correct HID bits" {
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
-    // OSM(RSFT) のC版互換アクションコード
-    // C版: ACTION(ACT_MODS_TAP=2, 0x12<<8 | 0x00) = (2<<12) | 0x1200 = 0x3200
-    // → kind=3 (rmods_tap), mods=2, code=0
-    // 注: ACTION_MODS_ONESHOT(0x12) は u12 param 制限のためC版と非互換。
-    //     直接C版互換値を使用する。
-    const act = Action{ .code = 0x3200 };
+    // RSFT OSM: rmods_tap kind, mods=0x02 (SHIFT), code=MODS_ONESHOT(0x00)
+    // ActionKind.rmods_tap=0x03, param = 0x02<<8 | 0x00 = 0x0200
+    const act = Action{ .code = action_code.ACTION(@intFromEnum(action_code.ActionKind.rmods_tap), @as(u12, 0x02) << 8 | @as(u12, action_code.MODS_ONESHOT)) };
 
-    // タップ（tap.count=1）→ oneshot_mods に RSHIFT(0x20) が設定される
+    // タップ（tap.count=1）→ oneshot_mods が設定される（8ビットHID形式 RSHIFT=0x20）
     var press = KeyRecord{
         .event = KeyEvent.keyPress(0, 0, 100),
         .tap = .{ .count = 1 },
@@ -753,9 +1204,195 @@ test "OSM right modifier tap sets correct HID bits" {
     processAction(&press, act);
     try testing.expectEqual(@as(u8, 0x20), host.getOneshotMods()); // RSHIFT HID bit
 
-    // 次のキーを押す → RSHIFT がレポートに含まれクリアされる
+    // リリース
+    var release = KeyRecord{
+        .event = KeyEvent.keyRelease(0, 0, 150),
+        .tap = .{ .count = 1 },
+    };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x20), host.getOneshotMods()); // 保持される
+
+    // 次のキー入力で OSM が適用されてクリアされることを確認
     host.registerCode(0x04); // KC_A
     host.sendKeyboardReport();
-    try testing.expectEqual(@as(u8, 0x20), mock.lastKeyboardReport().mods);
-    try testing.expectEqual(@as(u8, 0), host.getOneshotMods());
+    try testing.expectEqual(@as(u8, 0x20), mock.lastKeyboardReport().mods); // OSM適用済みレポート
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods()); // OSMクリア
+}
+
+test "ACT_MOUSEKEY dispatch" {
+    reset();
+    const timer = @import("../hal/timer.zig");
+    timer.mockReset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // ACTION_MOUSEKEY(KC_MS_BTN1=0xD1)
+    const act = Action{ .code = action_code.ACTION_MOUSEKEY(0xD1) };
+
+    // Press -> mousekey.on + send
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(mock.mouse_count > 0);
+    try testing.expectEqual(@as(u8, 0x01), mock.lastMouseReport().buttons);
+
+    // Release -> mousekey.off + send
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastMouseReport().buttons);
+
+    mousekey.clear();
+}
+
+test "TT layer tap toggle - tap count based" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const act = Action{ .code = action_code.ACTION_LAYER_TAP_TOGGLE(1) };
+
+    // 1回目のタップ (tap_count=1): press→invert(on), release→invert(off)
+    var press1 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100), .tap = .{ .count = 1 } };
+    processAction(&press1, act);
+    try testing.expect(layer.layerStateIs(1));
+
+    var release1 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 150), .tap = .{ .count = 1 } };
+    processAction(&release1, act);
+    try testing.expect(!layer.layerStateIs(1));
+
+    // TAPPING_TOGGLE(5) 回目のタップ:
+    // press時: tap_count(5) < TAPPING_TOGGLE(5) = false → invertされない
+    // release時: tap_count(5) <= TAPPING_TOGGLE(5) = true → invert → on
+    var press5 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 500), .tap = .{ .count = TAPPING_TOGGLE } };
+    processAction(&press5, act);
+    try testing.expect(!layer.layerStateIs(1)); // invertされない → offのまま
+
+    var release5 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 550), .tap = .{ .count = TAPPING_TOGGLE } };
+    processAction(&release5, act);
+    try testing.expect(layer.layerStateIs(1)); // invert → on
+
+    // TAPPING_TOGGLE+1 回目のタップ: press→invertされない, release→invertされない → 固定
+    // 現在 layer 1 は on 状態
+    var press6 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 600), .tap = .{ .count = TAPPING_TOGGLE + 1 } };
+    processAction(&press6, act);
+    try testing.expect(layer.layerStateIs(1)); // tap_count >= TAPPING_TOGGLE → invertされない
+
+    var release6 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 650), .tap = .{ .count = TAPPING_TOGGLE + 1 } };
+    processAction(&release6, act);
+    try testing.expect(layer.layerStateIs(1)); // tap_count > TAPPING_TOGGLE → invertされない → 固定
+}
+
+test "MODS_TAP_TOGGLE - tap count based" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // MODS_TAP_TOGGLE(LSFT=0x02)
+    const act = Action{ .code = action_code.ACTION_MODS_TAP_TOGGLE(0x02) };
+
+    // 1回目のタップ: press→register, release→unregister
+    var press1 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100), .tap = .{ .count = 1 } };
+    processAction(&press1, act);
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+
+    var release1 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 150), .tap = .{ .count = 1 } };
+    processAction(&release1, act);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+
+    // TAPPING_TOGGLE 回目のタップ: press→register, release→unregisterされない → 固定
+    var press5 = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 500), .tap = .{ .count = TAPPING_TOGGLE } };
+    processAction(&press5, act);
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+
+    var release5 = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 550), .tap = .{ .count = TAPPING_TOGGLE } };
+    processAction(&release5, act);
+    // tap_count == TAPPING_TOGGLE → !(tap_count < TAPPING_TOGGLE) → unregisterされない → 固定
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+}
+
+test "keycodeConfig swap_grave_esc" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    keymap_mod.keymap_config.swap_grave_esc = true;
+
+    // KC_GRAVE(0x35) をプレス → keycodeConfig により KC_ESCAPE(0x29) に変換される
+    const act = Action{ .code = action_code.ACTION_KEY(0x35) };
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x29)); // KC_ESCAPE
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x35));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x29));
+}
+
+test "keycodeConfig swap_backslash_backspace" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    keymap_mod.keymap_config.swap_backslash_backspace = true;
+
+    // KC_BACKSLASH(0x31) → KC_BACKSPACE(0x2A)
+    const act = Action{ .code = action_code.ACTION_KEY(0x31) };
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x2A)); // KC_BACKSPACE
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(0x2A));
+}
+
+test "modConfig swap_lalt_lgui for mods action" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    keymap_mod.keymap_config.swap_lalt_lgui = true;
+
+    // ACTION_MODS_KEY(LALT=0x04, KC_A=0x04): modConfig で LGUI に変換される
+    // 5ビットmods: 0x04 (LALT) → modFourBitToFiveBit(0x4, false) = 0x04
+    // modFiveBitToEightBit(0x04) = 0x04 (LALT HID)
+    // modConfig(0x04) = 0x08 (LGUI HID) ← swap適用
+    const act = Action{ .code = action_code.ACTION_MODS_KEY(0x04, 0x04) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LGUI), mock.lastKeyboardReport().mods);
+    try testing.expect(mock.lastKeyboardReport().hasKey(0x04));
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "modConfig swap_lalt_lgui for layer_mods" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    keymap_mod.keymap_config.swap_lalt_lgui = true;
+
+    // ACTION_LAYER_MODS(1, LALT=0x04): modConfig で LGUI(0x08) に変換される
+    const act = Action{ .code = action_code.ACTION_LAYER_MODS(1, report_mod.ModBit.LALT) };
+
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processAction(&press, act);
+    try testing.expect(layer.layerStateIs(1));
+    try testing.expectEqual(@as(u8, report_mod.ModBit.LGUI), mock.lastKeyboardReport().mods);
+
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processAction(&release, act);
+    try testing.expect(!layer.layerStateIs(1));
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
 }

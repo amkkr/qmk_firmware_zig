@@ -14,7 +14,6 @@ on:
     - 'platforms/**'
     - 'tmk_core/**'
     - 'tests/**'
-    - 'lib/googletest/**'
     - '*.mk'
     - 'Makefile'
     - '.github/workflows/unit_test.yml'
@@ -30,8 +29,11 @@ jobs:
       run: git config --global --add safe.directory '*'
 
     - uses: actions/checkout@v6
-      with:
-        submodules: recursive
+
+    - name: Fetch C test libraries
+      run: |
+        git clone --depth=1 https://github.com/qmk/googletest lib/googletest
+        git clone --depth=1 https://github.com/qmk/printf lib/printf
 
     - name: Install dependencies
       run: pip3 install -r requirements-dev.txt
