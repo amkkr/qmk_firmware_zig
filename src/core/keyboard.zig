@@ -142,9 +142,8 @@ pub fn task() void {
                             _ = tap_dance.preprocess(kc, pressed);
                         }
                         // Key Override プリプロセス: オーバーライド条件に一致すれば消費
-                        if (!key_override.processKeyOverride(kc, pressed)) {
-                            // Key Override が処理した → アクションパイプラインに渡さない
-                        } else if (space_cadet.process(kc, pressed)) {
+                        const ko_pass = key_override.processKeyOverride(kc, pressed);
+                        if (ko_pass and space_cadet.process(kc, pressed)) {
                             // Space Cadet プリプロセス: SC キーなら消費、通常キーなら sc_last リセット
                             // Space Cadet が処理しなかった → 通常アクションパイプラインへ
                             var record = KeyRecord{ .event = ev };

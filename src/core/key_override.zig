@@ -205,7 +205,8 @@ pub fn processKeyOverride(kc: Keycode, pressed: bool) bool {
     if (!enabled) return true;
 
     // 実効修飾キーの計算
-    var effective_mods = host.getMods();
+    // C版同様: oneshot_mods も含める（oneshot Shift + Backspace → Delete 等に必要）
+    var effective_mods = host.getMods() | host.getOneshotMods();
 
     if (is_mod) {
         // get_mods() はこのイベント処理後に更新されるので、手動で反映
@@ -491,9 +492,8 @@ fn tryActivatingOverride(kc: Keycode, layer_state: u32, key_down: bool, is_mod: 
                 scheduleDeferredRegister(mod_free_replacement);
                 host.sendKeyboardReport();
             } else {
-                if (mod_free_replacement <= 0x00FF) {
-                    _ = host.getReport().addKey(@truncate(mod_free_replacement));
-                }
+                // register_replacement が true の時点で mod_free_replacement <= 0x00FF は保証済み
+                _ = host.getReport().addKey(@truncate(mod_free_replacement));
             }
         } else {
             host.sendKeyboardReport();
