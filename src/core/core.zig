@@ -23,6 +23,7 @@ pub const tap_dance = @import("tap_dance.zig");
 pub const leader = @import("leader.zig");
 pub const swap_hands = @import("swap_hands.zig");
 pub const keyboard = @import("keyboard.zig");
+pub const space_cadet = @import("space_cadet.zig");
 pub const auto_shift = @import("auto_shift.zig");
 pub const grave_esc = @import("grave_esc.zig");
 pub const tri_layer = @import("tri_layer.zig");

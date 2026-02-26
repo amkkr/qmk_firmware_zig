@@ -1,7 +1,6 @@
 //! One-Shot Mods (OSM) テスト
 //!
 //! OSM の動作を tapping パイプライン経由で検証する。
-//! C版 tests/basic/test_one_shot_keys.cpp の主要テストを移植。
 //!
 //! テストケース:
 //! 1. OsmTapAppliesModToNextKey           — OSM タップ → 次キーに修飾適用 → その後は不適用

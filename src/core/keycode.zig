@@ -363,6 +363,13 @@ pub const QK_LAYER_LOCK: Keycode = 0x7C8A;
 pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
 
 // QMK special feature keycodes
+pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C51;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_PARENTHESIS_CLOSE: Keycode = 0x7C52;
+pub const QK_SPACE_CADET_LEFT_CTRL_PARENTHESIS_OPEN: Keycode = 0x7C53;
+pub const QK_SPACE_CADET_RIGHT_CTRL_PARENTHESIS_CLOSE: Keycode = 0x7C54;
+pub const QK_SPACE_CADET_LEFT_ALT_PARENTHESIS_OPEN: Keycode = 0x7C55;
+pub const QK_SPACE_CADET_RIGHT_ALT_PARENTHESIS_CLOSE: Keycode = 0x7C56;
+pub const QK_SPACE_CADET_RIGHT_SHIFT_ENTER: Keycode = 0x7C57;
 pub const QK_LOCK: Keycode = 0x7C59;
 
 // ============================================================
