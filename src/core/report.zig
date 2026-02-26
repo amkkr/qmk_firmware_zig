@@ -175,6 +175,12 @@ pub const ExtraReport = extern struct {
 /// Matrix row type (one bit per column)
 pub const MatrixRow = u32;
 
+/// Check if a keycode is a modifier keycode (0xE0-0xE7)
+/// C版 IS_MOD(kc) に相当。
+pub inline fn isModifierKeycode(kc: u8) bool {
+    return kc >= 0xE0 and kc <= 0xE7;
+}
+
 /// Convert a modifier keycode (0xE0-0xE7) to its corresponding modifier bit
 pub inline fn keycodeToModBit(kc: u8) u8 {
     if (kc >= 0xE0 and kc <= 0xE7) {
@@ -259,6 +265,14 @@ test "ExtraReport" {
     const sys = ExtraReport.system(0x0081); // System Power Down
     try testing.expectEqual(@as(u8, 3), sys.report_id);
     try testing.expectEqual(@as(u16, 0x0081), sys.usage);
+}
+
+test "isModifierKeycode" {
+    try testing.expect(isModifierKeycode(0xE0)); // LCTRL
+    try testing.expect(isModifierKeycode(0xE7)); // RGUI
+    try testing.expect(!isModifierKeycode(0x04)); // KC_A
+    try testing.expect(!isModifierKeycode(0xDF)); // below range
+    try testing.expect(!isModifierKeycode(0xE8)); // above range
 }
 
 test "keycodeToModBit" {

@@ -21,9 +21,13 @@ pub const mousekey = @import("mousekey.zig");
 pub const combo = @import("combo.zig");
 pub const tap_dance = @import("tap_dance.zig");
 pub const leader = @import("leader.zig");
+pub const swap_hands = @import("swap_hands.zig");
 pub const keyboard = @import("keyboard.zig");
 pub const auto_shift = @import("auto_shift.zig");
 pub const grave_esc = @import("grave_esc.zig");
+pub const caps_word = @import("caps_word.zig");
+pub const repeat_key = @import("repeat_key.zig");
+pub const layer_lock = @import("layer_lock.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
