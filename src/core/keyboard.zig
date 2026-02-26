@@ -197,6 +197,7 @@ pub fn keymapActionResolver(ev: KeyEvent) Action {
 
     const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
     const kc = keymap_mod.keymapKeyToKeycode(km, use_layer, ev.key.row, ev.key.col);
+    action.setLastResolvedKeycode(kc);
     return action_code.keycodeToAction(kc);
 }
 

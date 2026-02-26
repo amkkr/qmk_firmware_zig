@@ -22,6 +22,7 @@ pub const swap_hands = @import("swap_hands.zig");
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
+const key_lock = @import("key_lock.zig");
 const grave_esc = @import("grave_esc.zig");
 
 const Action = action_code.Action;
@@ -35,12 +36,21 @@ pub const ActionResolver = *const fn (event: KeyEvent) Action;
 
 var action_resolver: ?ActionResolver = null;
 
+/// 直前に解決されたキーコード（Key Lock 用）
+/// keyboard.zig の keymapActionResolver から設定され、processRecord で参照される。
+var last_resolved_keycode: keycode_mod.Keycode = 0;
+
 pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
 
 pub fn getActionResolver() ?ActionResolver {
     return action_resolver;
+}
+
+/// キーコード解決時に呼ばれるセッター（keyboard.zig から使用）
+pub fn setLastResolvedKeycode(kc: keycode_mod.Keycode) void {
+    last_resolved_keycode = kc;
 }
 
 fn resolveAction(event: KeyEvent) Action {
@@ -66,8 +76,17 @@ pub fn actionExec(record: *KeyRecord) void {
 }
 
 /// Process a record through action resolution and execution
+/// C版 process_record_quantum() と同様に、Key Lock をアクション実行前にチェックする。
 pub fn processRecord(keyp: *KeyRecord) void {
     const act = resolveAction(keyp.event);
+
+    // Key Lock: アクション実行前にキーコードを検査
+    // C版 quantum.c の process_key_lock(&keycode, record) に相当
+    var kc = last_resolved_keycode;
+    if (!key_lock.processKeyLock(&kc, keyp.event.pressed)) {
+        return;
+    }
+
     processAction(keyp, act);
 }
 
@@ -605,6 +624,7 @@ pub fn reset() void {
     auto_shift.reset();
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
+    key_lock.reset();
 }
 
 // ============================================================

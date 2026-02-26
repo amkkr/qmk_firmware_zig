@@ -362,6 +362,9 @@ pub const QK_AREP: Keycode = 0x7C7A;
 pub const QK_LAYER_LOCK: Keycode = 0x7C8A;
 pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
 
+// QMK special feature keycodes
+pub const QK_LOCK: Keycode = 0x7C59;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================
