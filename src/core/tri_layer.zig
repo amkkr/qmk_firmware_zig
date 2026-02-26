@@ -10,12 +10,11 @@
 const layer = @import("layer.zig");
 const keycode = @import("keycode.zig");
 
-/// キーコード値
-pub const QK_TRI_LAYER_LOWER: keycode.Keycode = 0x7C77;
-pub const QK_TRI_LAYER_UPPER: keycode.Keycode = 0x7C78;
-/// 短縮名
-pub const TL_LOWR = QK_TRI_LAYER_LOWER;
-pub const TL_UPPR = QK_TRI_LAYER_UPPER;
+/// キーコード値（keycode.zig から参照）
+pub const QK_TRI_LAYER_LOWER = keycode.QK_TRI_LAYER_LOWER;
+pub const QK_TRI_LAYER_UPPER = keycode.QK_TRI_LAYER_UPPER;
+pub const TL_LOWR = keycode.TL_LOWR;
+pub const TL_UPPR = keycode.TL_UPPR;
 
 /// デフォルトのレイヤー番号
 const DEFAULT_LOWER_LAYER: u5 = 1;
@@ -69,11 +68,7 @@ pub fn setTriLayerLayers(lower: u5, upper: u5, adjust: u5) void {
 /// Lower/Upper の状態に基づいて Adjust レイヤーを更新する
 /// Lower と Upper が両方 ON のとき Adjust を ON、それ以外では OFF にする
 pub fn updateTriLayer(lower: u5, upper: u5, adjust: u5) void {
-    if (layer.layerStateIs(lower) and layer.layerStateIs(upper)) {
-        layer.layerOn(adjust);
-    } else {
-        layer.layerOff(adjust);
-    }
+    layer.updateTriLayer(lower, upper, adjust);
 }
 
 /// QK_TRI_LAYER_LOWER/UPPER キーイベントを処理する
