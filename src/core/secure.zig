@@ -17,6 +17,8 @@
 const timer = @import("../hal/timer.zig");
 const keycode_mod = @import("keycode.zig");
 const Keycode = keycode_mod.Keycode;
+const host = @import("host.zig");
+const layer = @import("layer.zig");
 
 /// セキュア状態
 pub const SecureStatus = enum {
@@ -98,11 +100,15 @@ pub fn unlock() void {
 
 /// アンロックシーケンスの受付を開始する
 /// LOCKED 状態のときのみ PENDING に遷移する。
+/// C版と同様に、押下中のキー・修飾キー・レイヤーをクリアして
+/// PENDING 中にスタックするのを防ぐ。
 pub fn requestUnlock() void {
     if (status == .locked) {
         status = .pending;
         unlock_time = timer.read32();
         sequence_offset = 0;
+        host.clearKeyboard();
+        layer.layerClear();
     }
 }
 
@@ -229,7 +235,6 @@ pub fn reset() void {
 
 const std = @import("std");
 const testing = std.testing;
-const host = @import("host.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
 const TestMockDriver = FixedTestDriver(128, 16);
 

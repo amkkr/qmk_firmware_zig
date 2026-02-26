@@ -85,9 +85,6 @@ pub const HostDriver = struct {
 
 var current_driver: ?HostDriver = null;
 var keyboard_report: KeyboardReport = .{};
-/// 直前に送信したキーボードレポート（重複排除用）
-/// C版 host.c の last_keyboard_report に相当
-var last_keyboard_report: KeyboardReport = .{};
 var real_mods: u8 = 0;
 var weak_mods: u8 = 0;
 /// Key Override 用: 置換キーに付与する弱い修飾キー
@@ -272,7 +269,6 @@ pub fn clearKeyboard() void {
 
 pub fn hostReset() void {
     keyboard_report.clear();
-    last_keyboard_report.clear();
     real_mods = 0;
     weak_mods = 0;
     weak_override_mods = 0;
