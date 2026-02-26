@@ -10,16 +10,9 @@ const host = @import("host.zig");
 const keycode = @import("keycode.zig");
 const KC = keycode.KC;
 
-/// QK_GRAVE_ESCAPE キーコード値
-pub const QK_GRAVE_ESCAPE: keycode.Keycode = 0x7C16;
-/// 略称
-pub const QK_GESC = QK_GRAVE_ESCAPE;
-
 // 8ビット HID mod ビットマスク（modifiers.h 準拠）
 const MOD_MASK_SHIFT: u8 = 0x22; // LSHIFT(0x02) | RSHIFT(0x20)
 const MOD_MASK_GUI: u8 = 0x88; // LGUI(0x08) | RGUI(0x80)
-const MOD_MASK_ALT: u8 = 0x44; // LALT(0x04) | RALT(0x40)
-const MOD_MASK_CTRL: u8 = 0x11; // LCTRL(0x01) | RCTRL(0x10)
 const MOD_MASK_SG: u8 = MOD_MASK_SHIFT | MOD_MASK_GUI;
 
 /// 最後の QK_GESC プレス時にシフト状態だったか記録する
@@ -29,8 +22,6 @@ var grave_esc_was_shifted: bool = false;
 /// QK_GRAVE_ESCAPE キーイベントを処理する
 ///
 /// `pressed`: true = プレス、false = リリース
-///
-/// 戻り値: false（処理済み、通常の処理を継続しない）
 pub fn processGraveEsc(pressed: bool) void {
     if (pressed) {
         const mods = host.getMods();
