@@ -261,6 +261,17 @@ pub const KC = struct {
     pub const LAUNCHPAD: Keycode = 0x00C2;
     pub const LPAD: Keycode = LAUNCHPAD;
 
+    // Swap Hands keycodes
+    pub const SH_T: Keycode = 0x5600; // SH_T(kc) ベース（実際は SH_T(kc) 関数を使用）
+    pub const SH_ON: Keycode = 0x56F5; // Swap Hands を有効化
+    pub const SH_OFF: Keycode = 0x56F4; // Swap Hands を無効化
+    pub const SH_TG: Keycode = 0x56F0; // Swap Hands をトグル
+    pub const SH_TOGG: Keycode = 0x56F0; // Swap Hands をトグル（エイリアス）
+    pub const SH_TT: Keycode = 0x56F1; // Swap Hands タップトグル
+    pub const SH_MON: Keycode = 0x56F2; // モメンタリー Swap Hands ON
+    pub const SH_MOFF: Keycode = 0x56F3; // モメンタリー Swap Hands OFF
+    pub const SH_OS: Keycode = 0x56F6; // One-shot Swap Hands
+
     // Mouse keycodes
     pub const MS_UP: Keycode = 0x00CD;
     pub const MS_DOWN: Keycode = 0x00CE;
@@ -271,6 +282,9 @@ pub const KC = struct {
     pub const MS_BTN3: Keycode = 0x00D3;
     pub const MS_BTN4: Keycode = 0x00D4;
     pub const MS_BTN5: Keycode = 0x00D5;
+    pub const MS_BTN6: Keycode = 0x00D6;
+    pub const MS_BTN7: Keycode = 0x00D7;
+    pub const MS_BTN8: Keycode = 0x00D8;
     pub const MS_WH_UP: Keycode = 0x00D9;
     pub const MS_WH_DOWN: Keycode = 0x00DA;
     pub const MS_WH_LEFT: Keycode = 0x00DB;
@@ -324,6 +338,23 @@ pub const QK_ONE_SHOT_MOD: Keycode = 0x52A0;
 pub const QK_ONE_SHOT_MOD_MAX: Keycode = 0x52BF;
 pub const QK_LAYER_TAP_TOGGLE: Keycode = 0x52C0;
 pub const QK_LAYER_TAP_TOGGLE_MAX: Keycode = 0x52DF;
+pub const QK_SWAP_HANDS: Keycode = 0x5600;
+pub const QK_SWAP_HANDS_MAX: Keycode = 0x56FF;
+pub const QK_TAP_DANCE: Keycode = 0x5700;
+pub const QK_TAP_DANCE_MAX: Keycode = 0x57FF;
+pub const QK_LEAD: Keycode = 0x7C58;
+
+// Caps Word (0x7C73)
+pub const QK_CAPS_WORD_TOGGLE: Keycode = 0x7C73;
+pub const CW_TOGG: Keycode = QK_CAPS_WORD_TOGGLE;
+
+// Repeat Key (0x7C79-0x7C7A)
+pub const QK_REP: Keycode = 0x7C79;
+pub const QK_AREP: Keycode = 0x7C7A;
+
+// Layer Lock (0x7C8A)
+pub const QK_LAYER_LOCK: Keycode = 0x7C8A;
+pub const QK_LLCK: Keycode = QK_LAYER_LOCK;
 
 // QMK special feature keycodes
 pub const QK_SPACE_CADET_LEFT_SHIFT_PARENTHESIS_OPEN: Keycode = 0x7C51;
@@ -449,6 +480,16 @@ pub inline fn OSM(mod: u5) Keycode {
     return QK_ONE_SHOT_MOD | @as(Keycode, mod);
 }
 
+/// Swap Hands Tap: タップでキーコード送信、ホールドでSwap Hands (SH_T(kc))
+pub inline fn SH_T(kc: u8) Keycode {
+    return QK_SWAP_HANDS | @as(Keycode, kc);
+}
+
+/// Tap Dance: TD(n) - n はタップダンステーブルのインデックス
+pub inline fn TD(index: u8) Keycode {
+    return QK_TAP_DANCE | @as(Keycode, index);
+}
+
 /// Convenience Mod-Tap constructors
 pub inline fn LCTL_T(kc: u8) Keycode {
     return MT(Mod.LCTL, kc);
@@ -519,6 +560,21 @@ pub inline fn isExtrakeyKeycode(kc: Keycode) bool {
     return isSystemKeycode(kc) or isConsumerKeycode(kc);
 }
 
+/// Swap Hands キーコード範囲かどうか（SH_T(kc) や SH_ON/SH_OFF など）
+pub inline fn isSwapHandsKey(kc: Keycode) bool {
+    return kc >= QK_SWAP_HANDS and kc <= QK_SWAP_HANDS_MAX;
+}
+
+/// Swap Hands 特殊操作キーコード（SH_ON/SH_OFF/SH_TG など）かどうか
+/// C版 IS_SWAP_HANDS_KEYCODE() に相当
+pub inline fn isSwapHandsSpecialKey(kc: Keycode) bool {
+    return kc >= KC.SH_TG and kc <= KC.SH_OS;
+}
+
+pub inline fn isTapDance(kc: Keycode) bool {
+    return kc >= QK_TAP_DANCE and kc <= QK_TAP_DANCE_MAX;
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -581,4 +637,18 @@ test "keycode classification" {
     try testing.expect(isModifier(KC.LEFT_CTRL));
     try testing.expect(isModifier(KC.RIGHT_GUI));
     try testing.expect(!isModifier(KC.A));
+}
+
+test "tap dance keycodes" {
+    // TD(0) = 0x5700
+    try testing.expectEqual(@as(Keycode, 0x5700), TD(0));
+    // TD(1) = 0x5701
+    try testing.expectEqual(@as(Keycode, 0x5701), TD(1));
+    // TD(255) = 0x57FF
+    try testing.expectEqual(@as(Keycode, 0x57FF), TD(255));
+    // Classification
+    try testing.expect(isTapDance(TD(0)));
+    try testing.expect(isTapDance(TD(255)));
+    try testing.expect(!isTapDance(KC.A));
+    try testing.expect(!isTapDance(MO(1)));
 }

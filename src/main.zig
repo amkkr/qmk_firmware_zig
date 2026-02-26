@@ -76,12 +76,45 @@ pub const startup = if (is_freestanding) struct {
         }
     }
 
+    const usb = @import("hal/usb.zig");
+    const matrix_mod = @import("core/matrix.zig");
+    const keyboard = @import("core/keyboard.zig");
+    const action_mod = @import("core/action.zig");
+    const host_mod = @import("core/host.zig");
+    const kb = @import("keyboards/madbd34.zig");
+
+    const MatrixType = matrix_mod.Matrix(kb.rows, kb.cols);
+
+    var usb_driver: usb.UsbDriver = .{};
+    var matrix: MatrixType = undefined;
+
     fn main() !void {
         // クロックツリー初期化（XOSC, PLL, システムクロック設定）
         clock.init();
-        // TODO: Initialize keyboard matrix (Issue #5)
-        // TODO: Initialize USB HID (Issue #6)
-        // TODO: Main loop - keyboard_task() (Issue #8)
+
+        // キーボードマトリックス初期化
+        matrix = MatrixType.init(kb.matrixConfig());
+
+        // USB HID 初期化
+        usb_driver.init();
+        host_mod.setDriver(usb_driver.hostDriver());
+
+        // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
+        keyboard.init();
+        keyboard.getTestKeymap().* = kb.default_keymap;
+        action_mod.setActionResolver(keyboard.keymapActionResolver);
+
+        // メインループ
+        while (true) {
+            // マトリックススキャン → 状態を keyboard モジュールに反映
+            _ = matrix.scan();
+            for (0..kb.rows) |row| {
+                keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
+            }
+
+            // キーボードタスク実行（差分検出 → イベント生成 → アクション実行）
+            keyboard.task();
+        }
     }
 } else struct {};
 
@@ -121,6 +154,8 @@ test {
     _ = @import("tests/test_action_layer.zig");
     _ = @import("tests/test_tapping.zig");
     _ = @import("tests/test_oneshot.zig");
+    _ = @import("tests/test_mousekey.zig");
+    _ = @import("tests/test_tap_hold_config.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");
     _ = @import("compat/qmk_abi.zig");

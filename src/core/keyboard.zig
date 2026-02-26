@@ -14,7 +14,12 @@ pub const host = @import("host.zig");
 const layer = @import("layer.zig");
 const keymap_mod = @import("keymap.zig");
 const keycode = @import("keycode.zig");
+const tap_dance = @import("tap_dance.zig");
+const leader = @import("leader.zig");
 const timer = @import("../hal/timer.zig");
+const caps_word = @import("caps_word.zig");
+const repeat_key = @import("repeat_key.zig");
+const layer_lock = @import("layer_lock.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -73,6 +78,11 @@ pub fn setTestKey(l: u5, row: u8, col: u8, kc: Keycode) void {
 pub fn init() void {
     action.reset();
     layer.resetState();
+    tap_dance.reset();
+    leader.reset();
+    caps_word.reset();
+    repeat_key.reset();
+    layer_lock.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
@@ -109,8 +119,24 @@ pub fn task() void {
                     else
                         KeyEvent.keyRelease(@intCast(row), @intCast(col), time);
 
-                    var record = KeyRecord{ .event = ev };
-                    action.actionExec(&record);
+                    // キーコードを解決し、Tap Dance / Leader Key ならインターセプト
+                    const kc = resolveKeycode(ev);
+                    if (keycode.isTapDance(kc)) {
+                        // Tap Dance プリプロセス: 別キー押下でアクティブな TD を確定
+                        _ = tap_dance.preprocess(kc, pressed);
+                        // Tap Dance 処理
+                        _ = tap_dance.process(kc, pressed);
+                    } else if (leader.processKeycode(kc, pressed)) {
+                        // Leader Key として処理済み: アクションパイプラインに渡さない
+                    } else {
+                        // 通常のアクションパイプライン
+                        // 非TD キーが押されたらアクティブな TD を確定
+                        if (pressed) {
+                            _ = tap_dance.preprocess(kc, pressed);
+                        }
+                        var record = KeyRecord{ .event = ev };
+                        action.actionExec(&record);
+                    }
                 }
             }
         }
@@ -120,8 +146,33 @@ pub fn task() void {
     var tick_record = KeyRecord{ .event = KeyEvent.tick(time) };
     action.actionExec(&tick_record);
 
+    // Tap Dance タイムアウト処理
+    tap_dance.task();
+
+    // Leader Key タイムアウト処理
+    leader.leaderTask();
+
     // 現在の状態を保存
     matrix_prev = matrix_state;
+}
+
+/// キーコードをキーマップから解決する（Tap Dance 判定用）
+/// pressed 時はソースレイヤーキャッシュも更新する（TD ブランチでも正しいレイヤーが使われるように）
+fn resolveKeycode(ev: KeyEvent) Keycode {
+    const keymapFn = struct {
+        fn f(l: u5, row: u8, col: u8) Keycode {
+            return keymap_mod.keymapKeyToKeycode(&test_keymap, l, row, col);
+        }
+    }.f;
+
+    const resolved_layer = layer.layerSwitchGetLayer(keymapFn, ev.key.row, ev.key.col);
+
+    if (ev.pressed) {
+        layer.updateSourceLayersCache(ev.key.row, ev.key.col, resolved_layer);
+    }
+
+    const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
+    return keymap_mod.keymapKeyToKeycode(&test_keymap, use_layer, ev.key.row, ev.key.col);
 }
 
 /// キーマップベースのアクションリゾルバ（test_fixture からも使用）
@@ -239,4 +290,163 @@ test "keyboard_task: MO()レイヤー切替が動作する" {
     task();
 
     try testing.expect(!layer.layerStateIs(1));
+}
+
+test "keyboard_task: TD()タップダンスがパイプライン経由で動作する" {
+    const mock = setup();
+    defer teardown();
+
+    // Tap Dance テーブルを設定
+    const td_actions = [_]tap_dance.TapDanceAction{
+        .{ .on_tap = keycode.KC.A, .on_double_tap = keycode.KC.B, .on_hold = keycode.KC.LEFT_SHIFT },
+    };
+    tap_dance.setActions(&td_actions);
+    defer tap_dance.reset();
+
+    // (0,0) に TD(0) を配置
+    test_keymap[0][0][0] = keycode.TD(0);
+
+    // TD キーをプレス→リリース（1タップ）
+    pressKey(0, 0);
+    task();
+    releaseKey(0, 0);
+    task();
+
+    // TAPPING_TERM 経過でダンス確定
+    timer.mockAdvance(tap_dance.TAPPING_TERM + 1);
+    task();
+
+    // KC_A (0x04) が送信されているはず
+    try testing.expect(mock.keyboard_count >= 1);
+    var found_a = false;
+    for (0..@min(mock.keyboard_count, 64)) |i| {
+        if (mock.keyboard_reports[i].hasKey(0x04)) {
+            found_a = true;
+            break;
+        }
+    }
+    try testing.expect(found_a);
+}
+
+test "keyboard_task: Caps Word トグルが動作する" {
+    _ = setup();
+    defer teardown();
+
+    // (0,0) = CW_TOGG, (0,1) = KC_A
+    test_keymap[0][0][0] = keycode.CW_TOGG;
+    test_keymap[0][0][1] = keycode.KC.A;
+
+    try testing.expect(!caps_word.isActive());
+
+    // CW_TOGG を押す -> Caps Word が有効化される
+    pressKey(0, 0);
+    task();
+    try testing.expect(caps_word.isActive());
+
+    // CW_TOGG を離す
+    releaseKey(0, 0);
+    task();
+    try testing.expect(caps_word.isActive()); // 有効のまま
+
+    // もう一度 CW_TOGG を押す -> 無効化
+    pressKey(0, 0);
+    task();
+    try testing.expect(!caps_word.isActive());
+
+    releaseKey(0, 0);
+    task();
+}
+
+test "keyboard_task: Caps Word で英字キーに LSHIFT が適用される" {
+    const mock = setup();
+    defer teardown();
+
+    // (0,0) = CW_TOGG, (0,1) = KC_A
+    test_keymap[0][0][0] = keycode.CW_TOGG;
+    test_keymap[0][0][1] = keycode.KC.A;
+
+    // Caps Word を有効化
+    pressKey(0, 0);
+    task();
+    releaseKey(0, 0);
+    task();
+    try testing.expect(caps_word.isActive());
+
+    // KC_A を押す -> LSHIFT が weak mods に追加されレポートに反映される
+    pressKey(0, 1);
+    task();
+
+    try testing.expect(mock.lastKeyboardReport().hasKey(keycode.KC.A));
+    try testing.expectEqual(
+        report_mod.ModBit.LSHIFT,
+        mock.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT,
+    );
+
+    releaseKey(0, 1);
+    task();
+}
+
+test "keyboard_task: Repeat Key が直前のキーを再送する" {
+    const mock = setup();
+    defer teardown();
+
+    // (0,0) = KC_A, (0,1) = QK_REP
+    test_keymap[0][0][0] = keycode.KC.A;
+    test_keymap[0][0][1] = keycode.QK_REP;
+
+    // KC_A を押す
+    pressKey(0, 0);
+    task();
+    try testing.expect(mock.lastKeyboardReport().hasKey(keycode.KC.A));
+
+    // KC_A を離す
+    releaseKey(0, 0);
+    task();
+
+    // QK_REP を押す -> KC_A が再送される
+    pressKey(0, 1);
+    task();
+    try testing.expect(mock.lastKeyboardReport().hasKey(keycode.KC.A));
+
+    // QK_REP を離す
+    releaseKey(0, 1);
+    task();
+    try testing.expect(!mock.lastKeyboardReport().hasKey(keycode.KC.A));
+}
+
+test "keyboard_task: Layer Lock がレイヤーをロックする" {
+    _ = setup();
+    defer teardown();
+
+    const TAPPING_TERM = tapping.TAPPING_TERM;
+
+    // Layer 0: (0,0) = MO(1), (0,1) = KC_A
+    // Layer 1: (0,1) = QK_LLCK
+    test_keymap[0][0][0] = keycode.MO(1);
+    test_keymap[0][0][1] = keycode.KC.A;
+    test_keymap[1][0][1] = keycode.QK_LLCK;
+
+    // MO(1) を押してホールド
+    pressKey(0, 0);
+    task();
+    timer.mockAdvance(TAPPING_TERM + 1);
+    task();
+    try testing.expect(layer.layerStateIs(1));
+
+    // Layer Lock を押す -> レイヤー1がロックされる
+    pressKey(0, 1);
+    task();
+    try testing.expect(layer_lock.isLayerLocked(1));
+    try testing.expect(layer.layerStateIs(1));
+
+    // Layer Lock を離す
+    releaseKey(0, 1);
+    task();
+
+    // MO(1) を離す -> ロックされているのでレイヤー1は維持される
+    releaseKey(0, 0);
+    task();
+    // Layer Lock がロック中のレイヤーの layerOff をスキップする
+    try testing.expect(layer_lock.isLayerLocked(1));
+    try testing.expect(layer.layerStateIs(1)); // レイヤー1はまだアクティブ
 }
