@@ -167,7 +167,10 @@ pub fn task() void {
 
 /// プリプロセス: PENDING 中はキー押下をシーケンス検証に使い、通常処理を抑制する。
 /// 戻り値: true = 通常処理続行, false = キーを消費
-pub fn preprocess(row: u8, col: u8, pressed: bool) bool {
+/// 注意: keyboard.zig パイプラインは isUnlocking()/keypressEvent() を直接使用しており、
+///       このファイルの tests からのみ参照される。keyboard.zig 経由の通常使用では
+///       secure_consumed ビットマスクを使った実装が適切。
+fn preprocess(row: u8, col: u8, pressed: bool) bool {
     if (isUnlocking()) {
         // リリースイベントは無視（ホールド中のレイヤーキーのリリース等で
         // 誤ってシーケンス失敗にならないようにする）
