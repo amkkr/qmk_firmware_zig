@@ -510,6 +510,7 @@ test "RetroTapping: interrupted_hold_does_not_fire_retro_tap" {
     // KC_P はレトロタップとして送信されない（他キー割り込みがあったため）
     // 注: retro_tap_primed は他キーの press イベントで false にリセットされる
     // KC_A が押されているので retro_tap_curr_key != SFT_T の状態になる
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
     // 最終レポートは空
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }

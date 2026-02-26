@@ -368,7 +368,10 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                         host.sendKeyboardReport();
                     }
                     // RETRO_TAPPING: ホールド後リリース時に他キー割り込みがなければタップキーも送信
-                    if (tapping.retro_tapping and retro_tap_primed) {
+                    if (tapping.retro_tapping and retro_tap_primed and
+                        retro_tap_curr_key.row == keyp.event.key.row and
+                        retro_tap_curr_key.col == keyp.event.key.col)
+                    {
                         retro_tap_primed = false;
                         const retro_kc = keymap_mod.keycodeConfig(kc);
                         if (retro_kc != 0) {
@@ -547,7 +550,10 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
                 layer.layerOff(l);
             }
             // RETRO_TAPPING: ホールド後リリース時に他キー割り込みがなければタップキーも送信
-            if (tapping.retro_tapping and retro_tap_primed) {
+            if (tapping.retro_tapping and retro_tap_primed and
+                retro_tap_curr_key.row == keyp.event.key.row and
+                retro_tap_curr_key.col == keyp.event.key.col)
+            {
                 retro_tap_primed = false;
                 const retro_code = keymap_mod.keycodeConfig(code);
                 if (retro_code != 0) {
