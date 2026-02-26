@@ -383,7 +383,8 @@ fn clearActiveOverride(allow_reregister: bool) ?usize {
             // C版同様: 修飾キー replacement は先にレポートを送信してから unregister する
             host.sendKeyboardReport();
             host.unregisterCode(@truncate(mod_free_replacement));
-        } else if (mod_free_replacement <= 0x00FF) {
+        } else {
+            // unregister_replacement が true の時点で mod_free_replacement <= 0x00FF は保証済み
             host.getReport().removeKey(@truncate(mod_free_replacement));
         }
     }
