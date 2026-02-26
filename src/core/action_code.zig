@@ -123,10 +123,12 @@ pub const MODS_TAP_TOGGLE: u8 = 0x01;
 ///   0x02 = Repeat Key
 ///   0x03 = Alt Repeat Key
 ///   0x04 = Layer Lock
+///   0x05 = Grave Escape
 pub const ACTION_CAPS_WORD_TOGGLE: u16 = 0xF001;
 pub const ACTION_REPEAT_KEY: u16 = 0xF002;
 pub const ACTION_ALT_REPEAT_KEY: u16 = 0xF003;
 pub const ACTION_LAYER_LOCK: u16 = 0xF004;
+pub const ACTION_GRAVE_ESCAPE: u16 = 0xF005;
 
 // ============================================================
 // Action constructor functions (comptime equivalents of C macros)
@@ -413,6 +415,11 @@ pub fn keycodeToAction(kc: Keycode) Action {
     // Layer Lock
     if (kc == keycode.QK_LAYER_LOCK) {
         return .{ .code = ACTION_LAYER_LOCK };
+    }
+
+    // Grave Escape
+    if (kc == keycode.QK_GRAVE_ESCAPE) {
+        return .{ .code = ACTION_GRAVE_ESCAPE };
     }
 
     // Swap Hands (0x5600-0x56FF)
