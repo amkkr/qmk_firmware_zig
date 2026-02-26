@@ -409,8 +409,6 @@ pub const KO_ON: Keycode = QK_KEY_OVERRIDE_ON;
 pub const KO_OFF: Keycode = QK_KEY_OVERRIDE_OFF;
 
 // Magic Keycodes (0x7000-0x7022)
-pub const QK_MAGIC: Keycode = 0x7000;
-pub const QK_MAGIC_MAX: Keycode = 0x70FF;
 pub const QK_MAGIC_SWAP_CONTROL_CAPS_LOCK: Keycode = 0x7000;
 pub const QK_MAGIC_UNSWAP_CONTROL_CAPS_LOCK: Keycode = 0x7001;
 pub const QK_MAGIC_TOGGLE_CONTROL_CAPS_LOCK: Keycode = 0x7002;
