@@ -33,7 +33,6 @@ const default_autocorrect_data = [_]u8{
 
 const AUTOCORRECT_MIN_LENGTH: u8 = 5;
 const AUTOCORRECT_MAX_LENGTH: u8 = 10;
-const DICTIONARY_SIZE: u16 = 1104;
 
 /// MOD_MASK_SHIFT: 左Shift | 右Shift (HID 8ビット)
 const MOD_MASK_SHIFT: u8 = report_mod.ModBit.LSHIFT | report_mod.ModBit.RSHIFT;
@@ -132,6 +131,16 @@ fn filterKeycode(kc: Keycode, mods_in: u8, tap_count: u8) FilterResult {
         return .{ .process = .{ .keycode = result_kc, .mods = mods } };
     }
 
+    // Swap Hands: 特殊操作キー（SH_TG, SH_ON 等）またはホールドは除外、
+    // タップ時は基本キーコードを抽出。C版 QK_SWAP_HANDS ... QK_SWAP_HANDS_MAX に相当。
+    if (result_kc >= keycode_mod.QK_SWAP_HANDS and result_kc <= keycode_mod.QK_SWAP_HANDS_MAX) {
+        if (keycode_mod.isSwapHandsSpecialKey(result_kc) or tap_count == 0) {
+            return .skip;
+        }
+        result_kc = result_kc & 0x00FF;
+        return .{ .process = .{ .keycode = result_kc, .mods = mods } };
+    }
+
     // Shift 以外のモッドがアクティブなら処理しない
     if ((mods & ~MOD_MASK_SHIFT) != 0) {
         typo_buffer_size = 0;
@@ -155,13 +164,13 @@ pub fn process(kc: Keycode, pressed: bool, tap_count: u8) bool {
     var mods = host.getMods() | host.getOneshotMods();
 
     // Autocorrect ON/OFF/Toggle キーコード処理
-    if (kc >= keycode_mod.QK_AUTOCORRECT_ON and kc <= keycode_mod.QK_AUTOCORRECT_TOGGLE) {
+    if (kc >= keycode_mod.AC_ON and kc <= keycode_mod.AC_TOGG) {
         if (pressed) {
-            if (kc == keycode_mod.QK_AUTOCORRECT_ON) {
+            if (kc == keycode_mod.AC_ON) {
                 enable();
-            } else if (kc == keycode_mod.QK_AUTOCORRECT_OFF) {
+            } else if (kc == keycode_mod.AC_OFF) {
                 disable();
-            } else if (kc == keycode_mod.QK_AUTOCORRECT_TOGGLE) {
+            } else if (kc == keycode_mod.AC_TOGG) {
                 toggle();
             }
             return false;
@@ -262,7 +271,7 @@ fn searchTrie() bool {
             while (code != key_i) {
                 if (code == 0) return true;
                 state += 3;
-                if (state >= DICTIONARY_SIZE) return true;
+                if (state >= autocorrect_data.len) return true;
                 code = autocorrect_data[state];
             }
             // 子ノードへのリンクを取得
@@ -282,7 +291,7 @@ fn searchTrie() bool {
         }
 
         // 範囲チェック
-        if (state >= DICTIONARY_SIZE) {
+        if (state >= autocorrect_data.len) {
             return true;
         }
 
