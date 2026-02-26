@@ -269,6 +269,18 @@ test "SC_LSPO: 短時間タップで '(' が送信される" {
     const result_release = process(SC_LSPO, false);
     try testing.expect(!result_release); // Space Cadet が消費
 
+    // タップ中に KC_9 + LSHIFT が含まれるレポートが送信された
+    var found_tap = false;
+    for (0..mock.keyboard_count) |j| {
+        if (mock.keyboard_reports[j].hasKey(KC.@"9") and
+            mock.keyboard_reports[j].mods & report_mod.ModBit.LSHIFT != 0)
+        {
+            found_tap = true;
+            break;
+        }
+    }
+    try testing.expect(found_tap);
+
     // タップ後はモッドがクリアされている
     const last = mock.lastKeyboardReport();
     try testing.expectEqual(@as(u8, 0), last.mods); // tap_mod がクリアされた
@@ -290,6 +302,17 @@ test "SC_RSPC: 短時間タップで ')' が送信される" {
     try testing.expect(!result_release);
 
     // ')'（KC_0 + RSHIFT）が送信された
+    var found_tap = false;
+    for (0..mock.keyboard_count) |j| {
+        if (mock.keyboard_reports[j].hasKey(KC.@"0") and
+            mock.keyboard_reports[j].mods & report_mod.ModBit.RSHIFT != 0)
+        {
+            found_tap = true;
+            break;
+        }
+    }
+    try testing.expect(found_tap);
+
     // 最終レポートはモッドがクリアされている
     const last = mock.lastKeyboardReport();
     try testing.expectEqual(@as(u8, 0), last.mods);
@@ -332,6 +355,18 @@ test "SC_LCPO: 短時間タップで LSHIFT+KC_9 が送信される" {
     timer.mockAdvance(50);
     _ = process(SC_LCPO, false);
 
+    // KC_9 + LSHIFT が含まれるレポートが送信された
+    var found_tap = false;
+    for (0..mock.keyboard_count) |j| {
+        if (mock.keyboard_reports[j].hasKey(KC.@"9") and
+            mock.keyboard_reports[j].mods & report_mod.ModBit.LSHIFT != 0)
+        {
+            found_tap = true;
+            break;
+        }
+    }
+    try testing.expect(found_tap);
+
     // 最終状態: モッドがクリア
     try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
 }
@@ -352,8 +387,17 @@ test "SC_SENT: 短時間タップで Enter が送信される" {
     timer.mockAdvance(50);
     _ = process(SC_SENT, false);
 
+    // KC_ENTER がレポートに含まれること（tap_mod=0 なのでモッドなし）
+    var found_enter = false;
+    for (0..mock.keyboard_count) |j| {
+        if (mock.keyboard_reports[j].hasKey(KC.ENTER)) {
+            found_enter = true;
+            break;
+        }
+    }
+    try testing.expect(found_enter);
+
     // Enter が送信された後、モッドがクリアされている
-    // tap_mod=0 なので hold_mod(RSHIFT) はそのままリリースで解除
     const last = mock.lastKeyboardReport();
     try testing.expectEqual(@as(u8, 0), last.mods);
 }
