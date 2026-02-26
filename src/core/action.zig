@@ -40,6 +40,11 @@ var action_resolver: ?ActionResolver = null;
 /// keyboard.zig の keymapActionResolver から設定され、processRecord で参照される。
 var last_resolved_keycode: keycode_mod.Keycode = 0;
 
+/// RETRO_TAPPING: 最後に押されたキーの位置
+var retro_tap_curr_key: event_mod.KeyPos = .{ .row = 0, .col = 0 };
+/// RETRO_TAPPING: 最後に押されたキーがそのまま離されたか（他キー割り込みなし）
+var retro_tap_primed: bool = false;
+
 pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
@@ -72,6 +77,17 @@ pub const TAPPING_TOGGLE: u8 = 5;
 
 /// Main entry point: execute action for a key event
 pub fn actionExec(record: *KeyRecord) void {
+    // RETRO_TAPPING: 生のキーイベントに基づいて retro_tap_primed を追跡する。
+    // C版 action_exec() 冒頭の retro_tap_curr_key / retro_tap_primed 更新に相当。
+    if (tapping.retro_tapping and !record.event.isTick()) {
+        const ev = record.event;
+        if (ev.pressed) {
+            retro_tap_primed = false;
+            retro_tap_curr_key = ev.key;
+        } else if (ev.key.row == retro_tap_curr_key.row and ev.key.col == retro_tap_curr_key.col) {
+            retro_tap_primed = true;
+        }
+    }
     tapping.actionTappingProcess(record);
 }
 
@@ -351,6 +367,20 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                         host.delMods(mods_hid);
                         host.sendKeyboardReport();
                     }
+                    // RETRO_TAPPING: ホールド後リリース時に他キー割り込みがなければタップキーも送信
+                    if (tapping.retro_tapping and retro_tap_primed and
+                        retro_tap_curr_key.row == keyp.event.key.row and
+                        retro_tap_curr_key.col == keyp.event.key.col)
+                    {
+                        retro_tap_primed = false;
+                        const retro_kc = keymap_mod.keycodeConfig(kc);
+                        if (retro_kc != 0) {
+                            host.registerCode(retro_kc);
+                            host.sendKeyboardReport();
+                            host.unregisterCode(retro_kc);
+                            host.sendKeyboardReport();
+                        }
+                    }
                 }
             }
         },
@@ -519,6 +549,20 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
             if (!layer_lock.isLayerLocked(l)) {
                 layer.layerOff(l);
             }
+            // RETRO_TAPPING: ホールド後リリース時に他キー割り込みがなければタップキーも送信
+            if (tapping.retro_tapping and retro_tap_primed and
+                retro_tap_curr_key.row == keyp.event.key.row and
+                retro_tap_curr_key.col == keyp.event.key.col)
+            {
+                retro_tap_primed = false;
+                const retro_code = keymap_mod.keycodeConfig(code);
+                if (retro_code != 0) {
+                    host.registerCode(retro_code);
+                    host.sendKeyboardReport();
+                    host.unregisterCode(retro_code);
+                    host.sendKeyboardReport();
+                }
+            }
         }
     }
 }
@@ -621,6 +665,11 @@ pub fn reset() void {
     host.hostReset();
     layer.resetState();
     tapping.reset();
+    tapping.permissive_hold = false;
+    tapping.hold_on_other_key_press = false;
+    tapping.retro_tapping = false;
+    retro_tap_primed = false;
+    retro_tap_curr_key = .{ .row = 0, .col = 0 };
     auto_shift.reset();
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
