@@ -356,12 +356,6 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
         return;
     }
 
-    // One-Shot Modifier (OSM) の場合は専用処理
-    if (kc == action_code.MODS_ONESHOT) {
-        processOneShotModsAction(keyp, mods8);
-        return;
-    }
-
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
             if (keyp.tap.count == 1) {
@@ -388,63 +382,6 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
         } else {
             // ホールドリリース: 修飾キーを解除
             host.delMods(mods_hid);
-            host.sendKeyboardReport();
-        }
-    }
-}
-
-/// One-Shot Modifier (OSM) のアクション処理
-/// C版 quantum/action.c の ACT_MODS_TAP/MODS_ONESHOT 処理に相当
-///
-/// タップ時: addOneshotMods(mods) で OSM を設定
-///   → 次のキー入力時に sendKeyboardReport() で一時的に適用されクリアされる
-/// ホールド時: 通常の修飾キーとして動作（registerMods/unregisterMods）
-///
-/// 注意: mods5 は modFourBitToFiveBit() の結果（5ビットパック形式）。
-/// registerMods/unregisterMods は内部で5ビット→8ビット変換するが、
-/// addOneshotMods は8ビットHIDmodsを直接格納するため、明示的に変換が必要。
-fn processOneShotModsAction(keyp: *KeyRecord, mods5: u8) void {
-    const ev = keyp.event;
-
-    // C版互換: oneshot_enable が false の場合、通常の修飾キーとして動作
-    if (!keymap_mod.keymap_config.oneshot_enable) {
-        if (ev.pressed) {
-            host.registerMods(mods5);
-        } else {
-            host.unregisterMods(mods5);
-        }
-        host.sendKeyboardReport();
-        return;
-    }
-
-    const mods_hid = host.modFiveBitToEightBit(mods5);
-
-    if (ev.pressed) {
-        if (keyp.tap.count > 0) {
-            if (keyp.tap.count == 1) {
-                // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
-                // C版互換: OSM設定時はレポートを送信しない（次キー押下時に適用）
-                host.addOneshotMods(mods_hid);
-            } else {
-                // 複数タップ: 通常のmod toggle として扱う（C版互換）
-                host.registerMods(mods5);
-                host.sendKeyboardReport();
-            }
-        } else {
-            // ホールド: 通常の修飾キーとして登録
-            host.registerMods(mods5);
-            host.sendKeyboardReport();
-        }
-    } else {
-        if (keyp.tap.count > 0) {
-            // タップリリース: OSMは次キーまで保持（レポート送信不要）
-            if (keyp.tap.count > 1) {
-                host.unregisterMods(mods5);
-                host.sendKeyboardReport();
-            }
-        } else {
-            // ホールドリリース: 修飾キーを解除
-            host.unregisterMods(mods5);
             host.sendKeyboardReport();
         }
     }

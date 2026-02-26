@@ -27,6 +27,7 @@ pub const auto_shift = @import("auto_shift.zig");
 pub const caps_word = @import("caps_word.zig");
 pub const repeat_key = @import("repeat_key.zig");
 pub const layer_lock = @import("layer_lock.zig");
+pub const dynamic_macro = @import("dynamic_macro.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};
