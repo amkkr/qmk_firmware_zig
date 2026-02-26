@@ -10,12 +10,6 @@
 const layer = @import("layer.zig");
 const keycode = @import("keycode.zig");
 
-/// キーコード値（keycode.zig から参照）
-pub const QK_TRI_LAYER_LOWER = keycode.QK_TRI_LAYER_LOWER;
-pub const QK_TRI_LAYER_UPPER = keycode.QK_TRI_LAYER_UPPER;
-pub const TL_LOWR = keycode.TL_LOWR;
-pub const TL_UPPR = keycode.TL_UPPR;
-
 /// デフォルトのレイヤー番号
 const DEFAULT_LOWER_LAYER: u5 = 1;
 const DEFAULT_UPPER_LAYER: u5 = 2;
@@ -78,7 +72,7 @@ pub fn updateTriLayer(lower: u5, upper: u5, adjust: u5) void {
 ///
 /// 戻り値: true = 処理済み、false = このキーではない（通常の処理を継続）
 pub fn processTriLayer(kc: keycode.Keycode, pressed: bool) bool {
-    if (kc == QK_TRI_LAYER_LOWER) {
+    if (kc == keycode.QK_TRI_LAYER_LOWER) {
         if (pressed) {
             layer.layerOn(lower_layer);
         } else {
@@ -87,7 +81,7 @@ pub fn processTriLayer(kc: keycode.Keycode, pressed: bool) bool {
         updateTriLayer(lower_layer, upper_layer, adjust_layer);
         return true;
     }
-    if (kc == QK_TRI_LAYER_UPPER) {
+    if (kc == keycode.QK_TRI_LAYER_UPPER) {
         if (pressed) {
             layer.layerOn(upper_layer);
         } else {
@@ -116,11 +110,11 @@ test "processTriLayer: lower press activates lower layer" {
     reset();
     layer.resetState();
 
-    _ = processTriLayer(QK_TRI_LAYER_LOWER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_LOWER, true);
     try testing.expect(layer.layerStateIs(1)); // lower = 1
     try testing.expect(!layer.layerStateIs(3)); // adjust = 3 (upper が OFF なのでOFFのまま)
 
-    _ = processTriLayer(QK_TRI_LAYER_LOWER, false);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_LOWER, false);
     try testing.expect(!layer.layerStateIs(1));
 }
 
@@ -128,11 +122,11 @@ test "processTriLayer: upper press activates upper layer" {
     reset();
     layer.resetState();
 
-    _ = processTriLayer(QK_TRI_LAYER_UPPER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_UPPER, true);
     try testing.expect(layer.layerStateIs(2)); // upper = 2
     try testing.expect(!layer.layerStateIs(3)); // adjust = 3 (lower が OFF なのでOFFのまま)
 
-    _ = processTriLayer(QK_TRI_LAYER_UPPER, false);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_UPPER, false);
     try testing.expect(!layer.layerStateIs(2));
 }
 
@@ -141,14 +135,14 @@ test "processTriLayer: lower+upper activates adjust layer" {
     layer.resetState();
 
     // Lower と Upper を両方押すと Adjust が ON
-    _ = processTriLayer(QK_TRI_LAYER_LOWER, true);
-    _ = processTriLayer(QK_TRI_LAYER_UPPER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_LOWER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_UPPER, true);
     try testing.expect(layer.layerStateIs(1));
     try testing.expect(layer.layerStateIs(2));
     try testing.expect(layer.layerStateIs(3)); // adjust = 3
 
     // Lower を離すと Adjust が OFF
-    _ = processTriLayer(QK_TRI_LAYER_LOWER, false);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_LOWER, false);
     try testing.expect(!layer.layerStateIs(3));
 }
 
@@ -169,8 +163,8 @@ test "setTriLayerLayers: カスタムレイヤー設定" {
     try testing.expectEqual(@as(u5, 5), getUpperLayer());
     try testing.expectEqual(@as(u5, 6), getAdjustLayer());
 
-    _ = processTriLayer(QK_TRI_LAYER_LOWER, true);
-    _ = processTriLayer(QK_TRI_LAYER_UPPER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_LOWER, true);
+    _ = processTriLayer(keycode.QK_TRI_LAYER_UPPER, true);
     try testing.expect(layer.layerStateIs(4));
     try testing.expect(layer.layerStateIs(5));
     try testing.expect(layer.layerStateIs(6));
