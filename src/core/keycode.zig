@@ -392,6 +392,14 @@ pub const DM_RSTP: Keycode = QK_DYNAMIC_MACRO_RECORD_STOP;
 pub const DM_PLY1: Keycode = QK_DYNAMIC_MACRO_PLAY_1;
 pub const DM_PLY2: Keycode = QK_DYNAMIC_MACRO_PLAY_2;
 
+// Autocorrect (0x7C74-0x7C76)
+pub const QK_AUTOCORRECT_ON: Keycode = 0x7C74;
+pub const QK_AUTOCORRECT_OFF: Keycode = 0x7C75;
+pub const QK_AUTOCORRECT_TOGGLE: Keycode = 0x7C76;
+pub const AC_ON: Keycode = QK_AUTOCORRECT_ON;
+pub const AC_OFF: Keycode = QK_AUTOCORRECT_OFF;
+pub const AC_TOGG: Keycode = QK_AUTOCORRECT_TOGGLE;
+
 // Key Override (0x7C5D-0x7C5F)
 pub const QK_KEY_OVERRIDE_TOGGLE: Keycode = 0x7C5D;
 pub const QK_KEY_OVERRIDE_ON: Keycode = 0x7C5E;

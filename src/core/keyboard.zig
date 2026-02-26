@@ -23,6 +23,7 @@ const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
 const space_cadet = @import("space_cadet.zig");
 const key_override = @import("key_override.zig");
+const autocorrect = @import("autocorrect.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -89,6 +90,7 @@ pub fn init() void {
     layer_lock.reset();
     space_cadet.reset();
     key_override.reset();
+    autocorrect.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     test_keymap = keymap_mod.emptyKeymap();
@@ -145,9 +147,15 @@ pub fn task() void {
                         const ko_pass = key_override.processKeyOverride(kc, pressed);
                         if (ko_pass and space_cadet.process(kc, pressed)) {
                             // Space Cadet プリプロセス: SC キーなら消費、通常キーなら sc_last リセット
-                            // Space Cadet が処理しなかった → 通常アクションパイプラインへ
-                            var record = KeyRecord{ .event = ev };
-                            action.actionExec(&record);
+                            // Space Cadet が処理しなかった → Autocorrect → 通常アクションパイプラインへ
+                            // 注意: tap_count=1 は固定値。タッピング判定（actionExec）の前に
+                            // 呼ばれるため正確な tap_count は利用不可。Mod-Tap/Layer-Tap の
+                            // ホールド時は filterKeycode で skip されず基本キーコードが抽出される
+                            // が、ホールド中は actionExec 側でキーが処理されるため実害はない。
+                            if (autocorrect.process(kc, pressed, 1)) {
+                                var record = KeyRecord{ .event = ev };
+                                action.actionExec(&record);
+                            }
                         }
                     }
                 }
