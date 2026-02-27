@@ -36,6 +36,9 @@ const KeymapKey = test_fixture.KeymapKey;
 
 const LEADER_TIMEOUT = leader.LEADER_TIMEOUT;
 
+/// TestFixture の FixedTestDriver(64, 16) に対応するキーボードレポートバッファ容量
+const MAX_KEYBOARD_REPORTS = 64;
+
 // ============================================================
 // テストヘルパー
 // ============================================================
@@ -86,7 +89,7 @@ fn tapCode(kc: u8) void {
 
 /// レポート履歴中に指定キーが含まれるレポートがあるか確認
 fn hasReportWithKey(fixture: *TestFixture, key: u8) bool {
-    for (0..@min(fixture.driver.keyboard_count, 64)) |i| {
+    for (0..@min(fixture.driver.keyboard_count, MAX_KEYBOARD_REPORTS)) |i| {
         if (fixture.driver.keyboard_reports[i].hasKey(key)) {
             return true;
         }
