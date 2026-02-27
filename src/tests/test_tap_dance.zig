@@ -40,6 +40,7 @@ fn setupTest() *TestDriver {
 
 fn teardownTest() void {
     host.clearDriver();
+    tap_dance.setActions(null);
     tap_dance.reset();
 }
 
@@ -178,13 +179,19 @@ test "DoubleTapInterrupted" {
 
     try testing.expect(driver.keyboard_count >= 1);
     var found_esc2 = false;
+    var found_caps_lock = false;
     for (0..@min(driver.keyboard_count, 64)) |i| {
         if (driver.keyboard_reports[i].hasKey(KC.ESCAPE)) {
             found_esc2 = true;
-            break;
+        }
+        if (driver.keyboard_reports[i].hasKey(KC.CAPS_LOCK)) {
+            found_caps_lock = true;
         }
     }
+    // 割り込み後のタップはシングルタップ → ESC が送信される
     try testing.expect(found_esc2);
+    // ダブルタップとして確定されていない → CAPS_LOCK は送信されない
+    try testing.expect(!found_caps_lock);
 }
 
 // ============================================================
