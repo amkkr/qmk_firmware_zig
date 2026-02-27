@@ -70,18 +70,50 @@ src/
 ├── main.zig                       # エントリポイント（RP2040スタートアップ含む）
 ├── core/                          # コアロジック
 │   ├── core.zig                   # モジュール再エクスポート
+│   │
+│   │  # --- データ型定義 ---
 │   ├── keycode.zig                # キーコード定義（HID Usage Table 準拠、u16）
 │   ├── action_code.zig            # アクションコード（16bit packed union、C版 action_t 互換）
 │   ├── event.zig                  # キーイベント・キーポジション構造体
 │   ├── report.zig                 # USB HID レポート構造体（キーボード、マウス、Consumer）
+│   │
+│   │  # --- コア処理パイプライン ---
+│   ├── keyboard.zig               # メインループ（keyboard_init / keyboard_task）
 │   ├── matrix.zig                 # COL2ROW マトリックススキャン
 │   ├── debounce.zig               # 対称遅延キー単位デバウンス（sym_defer_pk）
 │   ├── keymap.zig                 # キーマップデータ構造と comptime LAYOUT 関数
 │   ├── layer.zig                  # レイヤー状態管理（ビットマスク、MO/TO/TG/DF 操作）
 │   ├── action.zig                 # アクション解決・実行（基本キー、Mod-Tap、Layer-Tap）
 │   ├── action_tapping.zig         # タップ/ホールド判定ステートマシン
-│   ├── action_tapping_test.zig    # タッピングのユニットテスト
 │   ├── host.zig                   # HostDriver インターフェース、レポート状態管理
+│   ├── extrakey.zig               # メディアキー・システムコントロール（Consumer / System）
+│   │
+│   │  # --- 設定・永続化 ---
+│   ├── eeconfig.zig               # EEPROM 設定 API（KeymapConfig 永続化）
+│   ├── bootmagic.zig              # Bootmagic Lite（起動時キー押下で EEPROM リセット＋ブートローダー）
+│   ├── magic.zig                  # Magic Keycodes（ランタイムで Ctrl/Caps スワップ等を EEPROM に永続化）
+│   │
+│   │  # --- 機能モジュール ---
+│   ├── auto_shift.zig             # Auto Shift（長押しで自動 Shift 適用）
+│   ├── autocorrect.zig            # Autocorrect（トライ木辞書によるタイプミス自動修正）
+│   ├── caps_word.zig              # Caps Word（英字キーに自動 Shift、非英字で自動解除）
+│   ├── combo.zig                  # Combo キー（複数キー同時押しで別キーコード発動）
+│   ├── dynamic_macro.zig          # Dynamic Macros（キーボード上でのマクロ録音・再生）
+│   ├── grave_esc.zig              # Grave Escape（Shift/GUI 時は Grave、それ以外は Escape）
+│   ├── key_lock.zig               # Key Lock（次に押したキーを押しっぱなしにロック）
+│   ├── key_override.zig           # Key Override（修飾キー＋キーの組み合わせを別キーに上書き）
+│   ├── layer_lock.zig             # Layer Lock（MO レイヤーをロックして維持）
+│   ├── leader.zig                 # Leader Key（キーシーケンスでアクション発動）
+│   ├── mousekey.zig               # Mousekey（キーボードによるマウスカーソル・ボタン・スクロール操作）
+│   ├── repeat_key.zig             # Repeat Key（直前に押したキーを再送信）
+│   ├── secure.zig                 # Secure（仮想パドロック、タイムアウト自動ロック＋キーシーケンスアンロック）
+│   ├── space_cadet.zig            # Space Cadet（Shift/Ctrl/Alt タップで括弧文字入力）
+│   ├── swap_hands.zig             # Swap Hands（左右の手の入れ替え）
+│   ├── tap_dance.zig              # Tap Dance（同一キー連続タップ回数で異なるアクション）
+│   ├── tri_layer.zig              # Tri Layer（Lower＋Upper 同時有効で Adjust レイヤー自動有効化）
+│   │
+│   │  # --- テストインフラ ---
+│   ├── action_tapping_test.zig    # タッピングのユニットテスト
 │   ├── test_driver.zig            # モック HID ドライバ（テスト用）
 │   └── test_fixture.zig           # キーボードシミュレーション環境（テスト用）
 ├── hal/                           # ハードウェア抽象化層（RP2040）
@@ -96,7 +128,8 @@ src/
 │   ├── bootloader.zig             # BOOTSEL モードジャンプ（Watchdog リセット）
 │   └── vector_table.zig           # ARM Cortex-M0+ 割り込みベクタテーブル
 ├── drivers/                       # ドライバ（未実装）
-└── keyboards/                     # キーボード定義（未実装）
+└── keyboards/                     # キーボード定義
+    └── madbd34.zig                # madbd34 キーボード定義（4x12 スプリット、RP2040）
 ```
 
 設計方針:
