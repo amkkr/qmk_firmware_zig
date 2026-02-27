@@ -157,6 +157,7 @@ test {
     _ = @import("tests/test_mousekey.zig");
     _ = @import("tests/test_tap_hold_config.zig");
     _ = @import("tests/test_secure.zig");
+    _ = @import("tests/test_tri_layer.zig");
     _ = @import("tests/test_combo.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");

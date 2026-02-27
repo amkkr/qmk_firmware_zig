@@ -104,7 +104,9 @@ test "combo_tapped" {
 }
 
 // C版 combo_modtest_held_longer_than_tapping_term に対応
-// コンボをホールドした場合、結果キーが押されたままになる。
+// NOTE: C版は COMBO(modtest_combo, RSFT_T(KC_SPACE)) による Mod-Tap コンボのホールド動作を
+// 検証するが、現行 ComboDefinition では Mod-Tap Combo を表現できないため、
+// 単純コンボ (KC.SPACE) のホールド動作のみ検証している。
 test "combo_held" {
     const driver = setupTest();
     defer teardownTest();
@@ -141,7 +143,9 @@ test "combo_held" {
     try testing.expect(driver.lastKeyboardReport().isEmpty());
 }
 
-// C版 combo_single_key_twice の移植
+// C版 combo_single_key_twice に対応
+// NOTE: C版は single_key_combo (KC_A のみ) による単一キーコンボを使用するが、
+// 現行 ComboDefinition では単一キーコンボを表現できないため、2キーコンボで代替。
 // 同一コンボを2回連続タップすると、2回とも正しく結果キーが送信される。
 test "combo_twice" {
     const driver = setupTest();
