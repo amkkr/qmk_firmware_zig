@@ -40,7 +40,7 @@ fn setupTest() *TestDriver {
 
 fn teardownTest() void {
     host.clearDriver();
-    tap_dance.setActions(null);
+    tap_dance.setActions(&.{});
     tap_dance.reset();
 }
 
