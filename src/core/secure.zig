@@ -165,24 +165,6 @@ pub fn task() void {
 // C版 process_secure.c の preprocess_secure() + process_secure() に相当
 // ============================================================
 
-/// プリプロセス: PENDING 中はキー押下をシーケンス検証に使い、通常処理を抑制する。
-/// 戻り値: true = 通常処理続行, false = キーを消費
-/// 注意: keyboard.zig パイプラインは isUnlocking()/keypressEvent() を直接使用しており、
-///       このファイルの tests からのみ参照される。keyboard.zig 経由の通常使用では
-///       secure_consumed ビットマスクを使った実装が適切。
-fn preprocess(row: u8, col: u8, pressed: bool) bool {
-    if (isUnlocking()) {
-        // リリースイベントは無視（ホールド中のレイヤーキーのリリース等で
-        // 誤ってシーケンス失敗にならないようにする）
-        if (pressed) {
-            keypressEvent(row, col);
-        }
-        // PENDING 中は通常キー処理を抑制
-        return false;
-    }
-    return true;
-}
-
 /// キーコード処理: SE_LOCK/SE_UNLK/SE_TOGG/SE_REQ を処理する。
 /// C版ではリリース時に処理する。
 /// 戻り値: true = 通常処理続行, false = キーを消費
@@ -362,26 +344,29 @@ test "アンロックリクエスト: 順序が不正でロック" {
     try testing.expect(!isUnlocking());
 }
 
-test "preprocess: PENDING 中はキーを消費し、リリースは無視" {
+test "PENDING 中はキー押下をシーケンス照合に使い、リリースは無視" {
     _ = setupTest();
     defer teardownTest();
 
     requestUnlock();
     try testing.expect(isUnlocking());
 
-    // press: 消費される（false）
-    try testing.expect(!preprocess(0, 1, true));
-    // release: 消費される（false）が keypressEvent は呼ばれない
-    try testing.expect(!preprocess(0, 1, false));
+    // press: isUnlocking() == true なのでシーケンス照合に渡す
+    try testing.expect(isUnlocking());
+    keypressEvent(0, 1);
+
+    // release: isUnlocking() == true だが keypressEvent は呼ばない
+    // （ホールド中のキーのリリースで誤ってシーケンス失敗にならないようにする）
+    try testing.expect(isUnlocking());
 
     // PENDING 中の press でシーケンスが進む
-    try testing.expect(!preprocess(0, 2, true));
-    try testing.expect(!preprocess(0, 3, true));
-    try testing.expect(!preprocess(0, 4, true));
+    keypressEvent(0, 2);
+    keypressEvent(0, 3);
+    keypressEvent(0, 4);
     try testing.expect(isUnlocked());
 
-    // UNLOCKED 後は通常処理（true）
-    try testing.expect(preprocess(0, 1, true));
+    // UNLOCKED 後は isUnlocking() == false → 通常処理
+    try testing.expect(!isUnlocking());
 }
 
 test "processKeycode: SE_LOCK でロック" {
