@@ -164,6 +164,7 @@ test {
     _ = @import("tests/test_leader.zig");
     _ = @import("tests/test_combo.zig");
     _ = @import("tests/test_repeat_key.zig");
+    _ = @import("tests/test_tap_dance.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");
     _ = @import("compat/qmk_abi.zig");
