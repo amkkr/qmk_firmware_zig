@@ -29,7 +29,6 @@ const keycode = @import("../core/keycode.zig");
 const report_mod = @import("../core/report.zig");
 const test_fixture = @import("../core/test_fixture.zig");
 const caps_word = @import("../core/caps_word.zig");
-const host = @import("../core/host.zig");
 const timer = @import("../hal/timer.zig");
 const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;
