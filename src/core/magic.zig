@@ -121,7 +121,11 @@ pub fn process(kc: Keycode, pressed: bool) bool {
 
         // EE_HANDS_LEFT/RIGHT は省略（スプリット判定のハンドシェイク未実装）
         // 通常アクションパイプラインに流さず、ここで消費する
-        keycode_mod.EH_LEFT, keycode_mod.EH_RGHT => return false,
+        // C版同様に clearKeyboard() でスタック防止
+        keycode_mod.EH_LEFT, keycode_mod.EH_RGHT => {
+            host.clearKeyboard();
+            return false;
+        },
 
         else => return true,
     }
