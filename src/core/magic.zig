@@ -21,7 +21,7 @@ const KeymapConfig = keymap_mod.KeymapConfig;
 /// Magic キーコード範囲判定
 pub fn isMagicKeycode(kc: Keycode) bool {
     return kc >= keycode_mod.QK_MAGIC_SWAP_CONTROL_CAPS_LOCK and
-        kc <= keycode_mod.QK_MAGIC_TOGGLE_ESCAPE_CAPS_LOCK;
+        kc <= keycode_mod.QK_MAGIC_MAX;
 }
 
 /// Magic キーコードを処理する。

@@ -444,6 +444,7 @@ pub const QK_MAGIC_EE_HANDS_RIGHT: Keycode = 0x701F;
 pub const QK_MAGIC_SWAP_ESCAPE_CAPS_LOCK: Keycode = 0x7020;
 pub const QK_MAGIC_UNSWAP_ESCAPE_CAPS_LOCK: Keycode = 0x7021;
 pub const QK_MAGIC_TOGGLE_ESCAPE_CAPS_LOCK: Keycode = 0x7022;
+pub const QK_MAGIC_MAX: Keycode = 0x70FF;
 
 // Magic short aliases
 pub const CL_SWAP: Keycode = QK_MAGIC_SWAP_CONTROL_CAPS_LOCK;
