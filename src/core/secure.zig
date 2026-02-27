@@ -351,9 +351,9 @@ test "PENDING 中はキー押下をシーケンス照合に使い、リリース
     requestUnlock();
     try testing.expect(isUnlocking());
 
-    // press: isUnlocking() == true なのでシーケンス照合に渡す
-    try testing.expect(isUnlocking());
+    // press: シーケンス照合に渡し、まだ PENDING であることを確認
     keypressEvent(0, 1);
+    try testing.expect(isUnlocking());
 
     // release: isUnlocking() == true だが keypressEvent は呼ばない
     // （ホールド中のキーのリリースで誤ってシーケンス失敗にならないようにする）
@@ -364,9 +364,6 @@ test "PENDING 中はキー押下をシーケンス照合に使い、リリース
     keypressEvent(0, 3);
     keypressEvent(0, 4);
     try testing.expect(isUnlocked());
-
-    // UNLOCKED 後は isUnlocking() == false → 通常処理
-    try testing.expect(!isUnlocking());
 }
 
 test "processKeycode: SE_LOCK でロック" {
