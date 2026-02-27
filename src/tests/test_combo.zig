@@ -1,6 +1,7 @@
 //! Combo テスト - C版 tests/combo/test_combo.cpp の移植
 //!
-//! C版テストケースを Zig の combo.zig API で論理的に等価に再現する。
+//! C版テストケースを Zig の combo.zig API で再現する。
+//! 一部テストは現行 ComboDefinition の制約により等価ではない（詳細は各テストの NOTE を参照）。
 //! keyboard.zig への Combo 統合前のため、combo.processCombo() を直接呼び出す。
 //!
 //! C版テスト対応:
