@@ -7,7 +7,7 @@
 //! C版テスト対応:
 //! 1. combo_modtest_tapped                    — コンボタップで結果キーが送信される
 //! 2. combo_modtest_held_longer_than_tapping_term — ホールドでの動作検証
-//! 3. combo_osmshift_tapped                   — OSM(MOD_LSFT) コンボのタップ動作
+//! 3. combo_osmshift_tapped                   — 未移植（OSM未実装のため）
 //! 4. combo_single_key_twice                  — 同一コンボの2回連続タップ
 
 const std = @import("std");
