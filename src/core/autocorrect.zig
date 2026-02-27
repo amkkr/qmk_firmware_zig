@@ -290,6 +290,11 @@ fn searchTrie() bool {
             }
         }
 
+        // 範囲チェック
+        if (state >= autocorrect_data.len) {
+            return true;
+        }
+
         code = autocorrect_data[state];
 
         if (code & 128 != 0) {
