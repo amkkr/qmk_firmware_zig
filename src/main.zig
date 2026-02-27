@@ -160,6 +160,7 @@ test {
     _ = @import("tests/test_caps_word.zig");
     _ = @import("tests/test_tri_layer.zig");
     _ = @import("tests/test_auto_shift.zig");
+    _ = @import("tests/test_layer_lock.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");
     _ = @import("compat/qmk_abi.zig");

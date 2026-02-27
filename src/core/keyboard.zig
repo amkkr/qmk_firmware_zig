@@ -212,6 +212,10 @@ pub fn task() void {
     // Secure タイムアウト処理
     secure.task();
 
+    // Layer Lock タイムアウト・レイヤー状態同期処理
+    layer_lock.task();
+    layer_lock.syncWithLayerState();
+
     // 現在の状態を保存
     matrix_prev = matrix_state;
 }
