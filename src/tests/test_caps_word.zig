@@ -97,18 +97,6 @@ fn hasReportWithKey(fixture: *TestFixture, key: u8) bool {
     return false;
 }
 
-/// レポート履歴中に指定キーがLSHIFTなしで含まれるレポートがあるか確認
-fn hasReportWithKeyNoShift(fixture: *TestFixture, key: u8) bool {
-    for (0..@min(fixture.driver.keyboard_count, 64)) |i| {
-        if (fixture.driver.keyboard_reports[i].hasKey(key) and
-            fixture.driver.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT == 0)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 // ============================================================
 // 1. OnOffToggleFuns: on/off/toggle 基本動作
 //    C版 TEST_F(CapsWord, OnOffToggleFuns)
