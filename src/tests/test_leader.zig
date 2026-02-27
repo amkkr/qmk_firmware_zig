@@ -36,9 +36,6 @@ const KeymapKey = test_fixture.KeymapKey;
 
 const LEADER_TIMEOUT = leader.LEADER_TIMEOUT;
 
-/// TestFixture の FixedTestDriver(64, 16) に対応するキーボードレポートバッファ容量
-const MAX_KEYBOARD_REPORTS = 64;
-
 // ============================================================
 // テストヘルパー
 // ============================================================
@@ -89,7 +86,7 @@ fn tapCode(kc: u8) void {
 
 /// レポート履歴中に指定キーが含まれるレポートがあるか確認
 fn hasReportWithKey(fixture: *TestFixture, key: u8) bool {
-    for (0..@min(fixture.driver.keyboard_count, MAX_KEYBOARD_REPORTS)) |i| {
+    for (0..@min(fixture.driver.keyboard_count, fixture.driver.keyboard_reports.len)) |i| {
         if (fixture.driver.keyboard_reports[i].hasKey(key)) {
             return true;
         }
@@ -144,6 +141,7 @@ test "triggers_one_key_sequence: Leader → A → タイムアウトで KC_1 が
     const count_before_normal = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 1);
     try testing.expect(fixture.driver.keyboard_count > count_before_normal);
+    try testing.expect(hasReportWithKey(&fixture, @truncate(KC.A)));
 }
 
 // ============================================================
@@ -186,6 +184,7 @@ test "triggers_two_key_sequence: Leader → A → B → タイムアウトで KC
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 1);
     try testing.expect(fixture.driver.keyboard_count > count_before);
+    try testing.expect(hasReportWithKey(&fixture, @truncate(KC.A)));
 }
 
 // ============================================================
@@ -224,6 +223,7 @@ test "triggers_three_key_sequence: Leader → A → B → C → タイムアウ�
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 1);
     try testing.expect(fixture.driver.keyboard_count > count_before);
+    try testing.expect(hasReportWithKey(&fixture, @truncate(KC.A)));
 }
 
 // ============================================================
@@ -264,6 +264,7 @@ test "triggers_four_key_sequence: Leader → A → B → C → D → タイム�
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 1);
     try testing.expect(fixture.driver.keyboard_count > count_before);
+    try testing.expect(hasReportWithKey(&fixture, @truncate(KC.A)));
 }
 
 // ============================================================
@@ -306,6 +307,7 @@ test "triggers_five_key_sequence: Leader → A → B → C → D → E → タ�
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 1);
     try testing.expect(fixture.driver.keyboard_count > count_before);
+    try testing.expect(hasReportWithKey(&fixture, @truncate(KC.A)));
 }
 
 // ============================================================
