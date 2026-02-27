@@ -27,9 +27,22 @@ qmk lint -kb madbd34              # キーボード定義のlint
 
 ### Zig版（移行中）
 
+Zig バージョン: **0.15.2**
+
 ```bash
-zig build                         # ビルド
-zig build test                    # テスト実行
+zig build                         # ファームウェアビルド（RP2040 クロスコンパイル）
+zig build test                    # 全テスト実行（ホストネイティブ）
+zig build verify                  # CI用: テスト + ファームウェアコンパイル検証
+zig build uf2                     # UF2 形式に変換
+zig build flash                   # UF2 ビルド → RP2040 BOOTSEL ドライブへコピー
+```
+
+ビルドオプション:
+
+```bash
+zig build -Dkeyboard=madbd34      # 対象キーボード（デフォルト: madbd34）
+zig build -Dkeymap=default        # 対象キーマップ（デフォルト: default）
+zig build -Dboot2=path/to/boot2.bin  # 第2段ブートローダーバイナリ（実機書き込み時に必要）
 ```
 
 ### QMK CLI
@@ -127,10 +140,27 @@ src/
 │   ├── clock.zig                  # クロックツリー初期化（XOSC→PLL→125MHz/48MHz）
 │   ├── bootloader.zig             # BOOTSEL モードジャンプ（Watchdog リセット）
 │   └── vector_table.zig           # ARM Cortex-M0+ 割り込みベクタテーブル
+├── tests/                         # 移植済み C 版テスト（upstream tests/ と論理的等価）
+│   ├── integration_test.zig       # End-to-End パイプライン検証
+│   ├── test_keypress.zig          # キープレス処理テスト
+│   ├── test_action_layer.zig      # レイヤー切替テスト
+│   ├── test_tapping.zig           # タップ/ホールドテスト
+│   ├── test_oneshot.zig           # ワンショットテスト
+│   ├── test_mousekey.zig          # マウスキーテスト
+│   ├── test_tap_hold_config.zig   # タップホールド設定テスト
+│   └── test_secure.zig            # セキュアモードテスト
+├── compat/                        # C ABI 互換性検証
+│   ├── qmk_abi.zig                # C版との構造体レイアウト互換チェック
+│   └── abi_test.zig               # ABI テスト
 ├── drivers/                       # ドライバ（未実装）
 └── keyboards/                     # キーボード定義
     └── madbd34.zig                # madbd34 キーボード定義（4x12 スプリット、RP2040）
 ```
+
+補足:
+
+- `tools/uf2gen.zig` — ELF→UF2 変換ツール
+- `tools/flash.zig` — RP2040 BOOTSEL ドライブへの書き込みツール
 
 設計方針:
 
@@ -158,12 +188,23 @@ make test:basic         # 基本テストのみ
 zig build test
 ```
 
-主要テストファイル（upstream参照）:
+### Zig テスト構造
 
-- `tests/basic/test_keypress.cpp` - キープレス処理
-- `tests/basic/test_action_layer.cpp` - レイヤー切替
-- `tests/basic/test_tapping.cpp` - タップ/ホールド
-- `tests/mousekeys/` - マウスキー
+- テストのエントリポイントは `src/main.zig` の `test` ブロック
+- `@import("std").testing.refAllDecls()` で `core`、`hal`、`keyboards` の全テストを自動収集
+- `src/tests/` の各ファイルも `main.zig` から明示的に `@import` される
+- テスト用フィクスチャ: `src/core/test_fixture.zig`（`TestFixture` 構造体でキーボードシミュレーション）
+- テスト用モックドライバ: `src/core/test_driver.zig`（HID レポート捕捉用）
+- 新しいテストファイルを追加する場合は、`src/main.zig` の test ブロックに `@import` を追加すること
+
+### upstream テスト対応表
+
+| upstream (C/googletest) | Zig版 |
+|---|---|
+| `tests/basic/test_keypress.cpp` | `src/tests/test_keypress.zig` |
+| `tests/basic/test_action_layer.cpp` | `src/tests/test_action_layer.zig` |
+| `tests/basic/test_tapping.cpp` | `src/tests/test_tapping.zig` |
+| `tests/mousekeys/` | `src/tests/test_mousekey.zig` |
 
 ## Custom Keyboards
 
