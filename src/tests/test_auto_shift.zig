@@ -73,7 +73,7 @@ test "key_release_before_timeout" {
     try testing.expect(!auto_shift.isInProgress());
 
     // KC_A が送信される（Shift なし）(EXPECT_REPORT(KC_A))
-    try testing.expect(driver.keyboard_count >= 2);
+    try testing.expectEqual(@as(usize, 2), driver.keyboard_count);
     try testing.expect(driver.keyboard_reports[0].hasKey(KC.A));
     try testing.expectEqual(@as(u8, 0), driver.keyboard_reports[0].mods);
 
@@ -112,7 +112,10 @@ test "key_release_after_timeout" {
     try testing.expect(!auto_shift.isInProgress());
 
     // Shift + KC_A が送信される (EXPECT_REPORT(KC_LSFT, KC_A))
-    try testing.expect(driver.keyboard_count >= 2);
+    // 設計差異: C版の finishAutoShift は3レポート送信（unregisterCode → sendReport({KC_LSFT})
+    // → delWeakMods → sendReport({})）だが、Zig版は registerCode(Shift+KC_A) → sendReport
+    // → unregisterCode → sendReport({}) の2レポートで完結する。
+    try testing.expectEqual(@as(usize, 2), driver.keyboard_count);
     try testing.expect(driver.keyboard_reports[0].hasKey(KC.A));
     try testing.expectEqual(
         report_mod.ModBit.LSHIFT,
