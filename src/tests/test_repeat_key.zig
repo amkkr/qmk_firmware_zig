@@ -217,6 +217,7 @@ test "RepeatKey: RollingToRepeat - rolling press from key to repeat" {
     // Repeat を押す（A はまだ押されている）→ A が繰り返される
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
+    try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.A));
 
     // A を離す
     fixture.releaseKey(0, 0);
@@ -260,9 +261,11 @@ test "RepeatKey: RollingFromRepeat - rolling press from repeat to key" {
     fixture.runOneScanLoop();
     try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.A));
 
-    // B を押す（Repeat はまだ押されている）
+    // B を押す（Repeat はまだ押されている）→ KC_A と KC_B の両方がレポートに含まれる
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
+    try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.A));
+    try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.B));
 
     // last_keycode が KC_B に更新されること
     try testing.expectEqual(KC.B, repeat_key.getLastKeycode());
@@ -629,6 +632,14 @@ test "RepeatKey: SetRepeatKeyKeycode - direct API test" {
     // KC_NO (0) を設定しても、setLastKeycode は KC_NO を無視するため last_keycode は KC_B のまま
     repeat_key.setLastKeycode(0, 0);
     try testing.expectEqual(KC.B, repeat_key.getLastKeycode());
+
+    // setLastKeycode(0, 0) 後に Repeat を押すと、last_keycode が KC_B のままなので KC_B が送信される
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    var r2 = fixture.driver.lastKeyboardReport();
+    try testing.expect(r2.hasKey(KC.B));
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
 }
 
 // ============================================================
@@ -649,6 +660,8 @@ test "RepeatKey: NoKeyRecorded - repeat does nothing when no key recorded" {
     fixture.releaseKey(0, 0);
     fixture.runOneScanLoop();
     // repeat_key.processRepeatKey は last_keycode == 0 の場合何もしない
+    // レポートが送信されないこと（空のレポート）を確認
+    try testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
     // last_keycode が 0 のままであることを確認
     try testing.expectEqual(@as(u8, 0), repeat_key.getLastKeycode());
 }
