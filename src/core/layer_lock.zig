@@ -97,7 +97,7 @@ pub fn task() void {
     }
 }
 
-/// アクティビティトリガー（ロック操作時にタイマーリセット）
+/// アクティビティトリガー（任意のキー入力でタイマーリセット）
 pub fn activityTrigger() void {
     lock_timer = timer.read32();
 }

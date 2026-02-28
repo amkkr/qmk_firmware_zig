@@ -135,6 +135,10 @@ pub fn task() void {
                     else
                         KeyEvent.keyRelease(@intCast(row), @intCast(col), time);
 
+                    // Layer Lock アクティビティトリガー:
+                    // C版 process_layer_lock() 互換で全キーイベントでタイムアウトをリセット
+                    layer_lock.activityTrigger();
+
                     // Secure プリプロセス: アンロック中はキー入力をシーケンス照合に使用
                     // C版 preprocess_secure() 互換:
                     //   press イベントはシーケンス照合に渡す（離しイベントはスキップ、
@@ -514,6 +518,67 @@ test "keyboard_task: Layer Lock がレイヤーをロックする" {
     // Layer Lock がロック中のレイヤーの layerOff をスキップする
     try testing.expect(layer_lock.isLayerLocked(1));
     try testing.expect(layer.layerStateIs(1)); // レイヤー1はまだアクティブ
+}
+
+test "keyboard_task: Layer Lock アイドルタイムアウトが他キー入力でリセットされる" {
+    _ = setup();
+    defer teardown();
+
+    const TAPPING_TERM = tapping.TAPPING_TERM;
+    const TIMEOUT: u32 = 5000;
+
+    // Layer 0: (0,0) = MO(1), (0,1) = KC_A
+    // Layer 1: (0,1) = QK_LLCK, (0,2) = KC_B
+    test_keymap[0][0][0] = keycode.MO(1);
+    test_keymap[0][0][1] = keycode.KC.A;
+    test_keymap[1][0][1] = keycode.QK_LLCK;
+    test_keymap[1][0][2] = keycode.KC.B;
+
+    // アイドルタイムアウトを設定
+    layer_lock.idle_timeout = TIMEOUT;
+
+    // MO(1) を押してホールド確定
+    pressKey(0, 0);
+    task();
+    timer.mockAdvance(TAPPING_TERM + 1);
+    task();
+    try testing.expect(layer.layerStateIs(1));
+
+    // Layer Lock を押してレイヤー1をロック
+    pressKey(0, 1);
+    task();
+    try testing.expect(layer_lock.isLayerLocked(1));
+    releaseKey(0, 1);
+    task();
+
+    // MO(1) を離す（ロック中なのでレイヤー1は維持）
+    releaseKey(0, 0);
+    task();
+    try testing.expect(layer_lock.isLayerLocked(1));
+    try testing.expect(layer.layerStateIs(1));
+
+    // タイムアウトの半分経過
+    timer.mockAdvance(TIMEOUT / 2);
+    task();
+    try testing.expect(layer_lock.isLayerLocked(1)); // まだロック中
+
+    // 別のキーを押す -> activityTrigger によりタイマーリセット
+    pressKey(0, 2);
+    task();
+    releaseKey(0, 2);
+    task();
+
+    // さらにタイムアウトの半分+少し経過（リセットされなければタイムアウト超過）
+    timer.mockAdvance(TIMEOUT / 2 + 100);
+    task();
+    // activityTrigger でリセットされているので、まだロック中のはず
+    try testing.expect(layer_lock.isLayerLocked(1));
+    try testing.expect(layer.layerStateIs(1));
+
+    // さらにタイムアウト分経過 → タイムアウトでロック解除
+    timer.mockAdvance(TIMEOUT);
+    task();
+    try testing.expect(!layer_lock.isLayerLocked(1));
 }
 
 test "keyboard_task: Tri Layer — Lower+Upper で Adjust が有効になる" {
