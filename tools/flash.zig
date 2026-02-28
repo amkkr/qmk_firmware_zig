@@ -62,6 +62,7 @@ pub fn main() !void {
 }
 
 const timeout_seconds = 60;
+const poll_interval_ms = 500;
 
 fn waitForBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
     std.debug.print(
@@ -71,8 +72,8 @@ fn waitForBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
         \\
     , .{timeout_seconds});
 
-    for (0..timeout_seconds * 2) |_| {
-        std.time.sleep(500 * std.time.ns_per_ms);
+    for (0..timeout_seconds * std.time.ms_per_s / poll_interval_ms) |_| {
+        std.time.sleep(poll_interval_ms * std.time.ns_per_ms);
         if (detectBootselDrive(allocator)) |path| {
             return path;
         } else |err| {
