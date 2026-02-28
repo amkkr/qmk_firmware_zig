@@ -67,6 +67,8 @@ pub const DPRAM = struct {
     pub const EP_IN_CTRL_BASE: u32 = 0x08;
     pub const EP_OUT_CTRL_BASE: u32 = 0x0C;
     pub const EP_BUF_CTRL_BASE: u32 = 0x80;
+    pub const EP0_IN_BUF: u32 = 0x100;
+    pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
 };
 
@@ -161,12 +163,18 @@ pub const UsbDriver = struct {
     keyboard_leds: u8 = 0,
     /// Data toggle tracking per endpoint (IN)
     data_toggle: [4]bool = .{ false, false, false, false },
+    /// EP0 IN multi-packet transfer state
+    ep0_in_data: ?[]const u8 = null,
+    ep0_in_offset: u16 = 0,
+    ep0_in_total_len: u16 = 0,
     /// Mock EP0 OUT data (for testing SET_REPORT etc.)
     mock_ep0_out_data: u8 = 0,
     /// Mock INTS register value (for testing task() polling)
     mock_ints: u32 = 0,
     /// Mock setup packet (for testing task() SETUP_REQ dispatch)
     mock_setup_packet: ?SetupPacket = null,
+    /// Mock BUFF_STATUS value (for testing handleBuffStatus)
+    mock_buff_status: u32 = 0,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -178,9 +186,13 @@ pub const UsbDriver = struct {
         self.keyboard_idle = 0;
         self.keyboard_leds = 0;
         self.data_toggle = .{ false, false, false, false };
+        self.ep0_in_data = null;
+        self.ep0_in_offset = 0;
+        self.ep0_in_total_len = 0;
         self.mock_ep0_out_data = 0;
         self.mock_ints = 0;
         self.mock_setup_packet = null;
+        self.mock_buff_status = 0;
 
         if (is_freestanding) {
             self.hwInit();
@@ -303,7 +315,7 @@ pub const UsbDriver = struct {
                 // Descriptor type is in high byte of wValue
                 const desc_type: u8 = @truncate(setup.wValue >> 8);
                 const desc_index: u8 = @truncate(setup.wValue);
-                self.handleGetDescriptor(desc_type, desc_index, setup.wLength);
+                self.handleGetDescriptor(desc_type, desc_index, setup.wIndex, setup.wLength);
             },
             else => self.stallEndpoint0(),
         }
@@ -343,14 +355,87 @@ pub const UsbDriver = struct {
         }
     }
 
-    fn handleGetDescriptor(self: *UsbDriver, desc_type: u8, desc_index: u8, max_len: u16) void {
-        _ = max_len;
-        _ = self;
-        _ = desc_type;
-        _ = desc_index;
-        // In real implementation, this would copy the descriptor to EP0 IN buffer
-        // and start the transfer. The actual descriptor data is in usb_descriptors.zig.
-        // For the mock/test version, this is a no-op.
+    const EP0_MAX_PACKET_SIZE: u16 = 64;
+
+    /// GET_DESCRIPTOR 応答: ディスクリプタを選択し EP0 IN で送信開始。
+    /// 64バイト超のディスクリプタはマルチパケットに分割される。
+    fn handleGetDescriptor(self: *UsbDriver, desc_type: u8, desc_index: u8, w_index: u16, max_len: u16) void {
+        const desc: ?[]const u8 = switch (desc_type) {
+            usb_descriptors.DescriptorType.DEVICE => &usb_descriptors.device_descriptor,
+            usb_descriptors.DescriptorType.CONFIGURATION => &usb_descriptors.configuration_descriptor,
+            usb_descriptors.DescriptorType.STRING => switch (desc_index) {
+                0 => &usb_descriptors.string_descriptor_0,
+                1 => &usb_descriptors.string_descriptor_manufacturer,
+                2 => &usb_descriptors.string_descriptor_product,
+                3 => &usb_descriptors.string_descriptor_serial,
+                else => null,
+            },
+            usb_descriptors.DescriptorType.HID_REPORT => blk: {
+                const iface: u8 = @truncate(w_index);
+                break :blk switch (iface) {
+                    usb_descriptors.KEYBOARD_INTERFACE => &usb_descriptors.keyboard_report_descriptor,
+                    usb_descriptors.MOUSE_INTERFACE => &usb_descriptors.mouse_report_descriptor,
+                    usb_descriptors.EXTRA_INTERFACE => &usb_descriptors.extra_report_descriptor,
+                    else => null,
+                };
+            },
+            else => null,
+        };
+
+        if (desc) |data| {
+            const send_len = @min(@as(u16, @intCast(data.len)), max_len);
+            self.ep0_in_data = data;
+            self.ep0_in_offset = 0;
+            self.ep0_in_total_len = send_len;
+            self.sendEp0InPacket();
+        } else {
+            self.stallEndpoint0();
+        }
+    }
+
+    /// EP0 IN パケット送信（最大 64 バイト単位）。
+    /// マルチパケット転送の場合、BUFF_STATUS で次パケットが要求される。
+    fn sendEp0InPacket(self: *UsbDriver) void {
+        const data = self.ep0_in_data orelse return;
+        const offset = self.ep0_in_offset;
+        const total = self.ep0_in_total_len;
+
+        if (offset >= total) {
+            self.ep0_in_data = null;
+            return;
+        }
+
+        const remaining = total - offset;
+        const chunk_len = @min(remaining, EP0_MAX_PACKET_SIZE);
+
+        const is_last = (offset + chunk_len) >= total;
+
+        if (is_freestanding) {
+            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_IN_BUF));
+            for (0..chunk_len) |i| {
+                ep0_buf[i] = data[offset + i];
+            }
+
+            const buf_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE));
+            var ctrl: u32 = chunk_len & BufCtrl.LEN_MASK;
+            ctrl |= BufCtrl.FULL | BufCtrl.AVAILABLE;
+            if (is_last) {
+                ctrl |= BufCtrl.LAST;
+            }
+            if (self.data_toggle[0]) {
+                ctrl |= BufCtrl.DATA_PID;
+            }
+            self.data_toggle[0] = !self.data_toggle[0];
+            buf_ctrl.* = ctrl;
+        } else {
+            self.data_toggle[0] = !self.data_toggle[0];
+        }
+
+        self.ep0_in_offset += chunk_len;
+
+        if (is_last) {
+            self.ep0_in_data = null;
+        }
     }
 
     fn stallEndpoint0(self: *UsbDriver) void {
@@ -383,15 +468,28 @@ pub const UsbDriver = struct {
         }
     }
 
+    /// BUFF_STATUS EP0 IN bit (bit 0)
+    const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
+
     /// Handle buffer status events (endpoint transfer completions).
+    /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。
     fn handleBuffStatus(self: *UsbDriver) void {
-        if (is_freestanding) {
+        const status = if (is_freestanding) blk: {
             // Read and clear BUFF_STATUS (W1C)
             const buff_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.BUFF_STATUS));
-            const status = buff_status.*;
-            buff_status.* = status;
+            const s = buff_status.*;
+            buff_status.* = s;
+            break :blk s;
+        } else blk: {
+            const s = self.mock_buff_status;
+            self.mock_buff_status = 0;
+            break :blk s;
+        };
+
+        // Continue multi-packet EP0 IN transfer
+        if ((status & BUFF_STATUS_EP0_IN) != 0 and self.ep0_in_data != null) {
+            self.sendEp0InPacket();
         }
-        _ = self;
     }
 
     fn sendEndpoint(self: *UsbDriver, ep: u8, data: []const u8) void {
@@ -818,4 +916,285 @@ test "EP control register DPRAM offsets" {
     try testing.expectEqual(@as(u32, 0x10), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 2) - 1) * 8);
     // EP3 IN control: EP_IN_CTRL_BASE + (3 - 1) * 8 = 0x18
     try testing.expectEqual(@as(u32, 0x18), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 3) - 1) * 8);
+}
+
+test "GET_DESCRIPTOR DEVICE returns device descriptor" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80, // Device-to-Host, Standard, Device
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.DEVICE) << 8,
+        .wIndex = 0,
+        .wLength = 18,
+    });
+
+    // Device descriptor fits in one packet (18 bytes < 64), transfer should be complete
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 18), drv.ep0_in_total_len);
+    // Data toggle should have been flipped once
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "GET_DESCRIPTOR CONFIGURATION returns configuration descriptor" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    const config_len: u16 = @intCast(usb_descriptors.configuration_descriptor.len);
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.CONFIGURATION) << 8,
+        .wIndex = 0,
+        .wLength = 0xFFFF, // Host often requests max first
+    });
+
+    // Configuration descriptor > 64 bytes, multi-packet transfer
+    try testing.expectEqual(config_len, drv.ep0_in_total_len);
+
+    if (config_len > UsbDriver.EP0_MAX_PACKET_SIZE) {
+        // First packet sent, more data pending
+        try testing.expectEqual(UsbDriver.EP0_MAX_PACKET_SIZE, drv.ep0_in_offset);
+        try testing.expect(drv.ep0_in_data != null);
+
+        // Send remaining packets
+        while (drv.ep0_in_data != null) {
+            drv.sendEp0InPacket();
+        }
+    }
+    // After all packets sent, transfer is complete
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "GET_DESCRIPTOR STRING returns correct string descriptors" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // String descriptor 0 (language)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.STRING) << 8 | 0,
+        .wIndex = 0,
+        .wLength = 255,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.string_descriptor_0.len)), drv.ep0_in_total_len);
+    try testing.expect(drv.ep0_in_data == null); // Small, fits in one packet
+
+    // String descriptor 1 (manufacturer)
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.STRING) << 8 | 1,
+        .wIndex = 0,
+        .wLength = 255,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.string_descriptor_manufacturer.len)), drv.ep0_in_total_len);
+
+    // String descriptor 2 (product)
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.STRING) << 8 | 2,
+        .wIndex = 0,
+        .wLength = 255,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.string_descriptor_product.len)), drv.ep0_in_total_len);
+
+    // String descriptor 3 (serial)
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.STRING) << 8 | 3,
+        .wIndex = 0,
+        .wLength = 255,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.string_descriptor_serial.len)), drv.ep0_in_total_len);
+}
+
+test "GET_DESCRIPTOR HID_REPORT selects by interface via wIndex" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Keyboard report descriptor (interface 0)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81, // Device-to-Host, Standard, Interface
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 0xFFFF,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.keyboard_report_descriptor.len)), drv.ep0_in_total_len);
+
+    // Mouse report descriptor (interface 1)
+    drv.data_toggle[0] = false;
+    drv.ep0_in_data = null;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.MOUSE_INTERFACE,
+        .wLength = 0xFFFF,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.mouse_report_descriptor.len)), drv.ep0_in_total_len);
+
+    // Extra report descriptor (interface 2)
+    drv.data_toggle[0] = false;
+    drv.ep0_in_data = null;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.EXTRA_INTERFACE,
+        .wLength = 0xFFFF,
+    });
+    try testing.expectEqual(@as(u16, @intCast(usb_descriptors.extra_report_descriptor.len)), drv.ep0_in_total_len);
+}
+
+test "GET_DESCRIPTOR unknown type does not set ep0_in_data" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, 0xFF) << 8, // Unknown descriptor type
+        .wIndex = 0,
+        .wLength = 64,
+    });
+
+    // Should not start any transfer (stallEndpoint0 called instead)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_DESCRIPTOR clamps to wLength" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Request device descriptor with wLength < descriptor size
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.DEVICE) << 8,
+        .wIndex = 0,
+        .wLength = 8, // Only request first 8 bytes
+    });
+
+    try testing.expectEqual(@as(u16, 8), drv.ep0_in_total_len);
+    try testing.expect(drv.ep0_in_data == null); // 8 bytes < 64, single packet
+}
+
+test "GET_DESCRIPTOR unknown string index does not set ep0_in_data" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.STRING) << 8 | 99,
+        .wIndex = 0,
+        .wLength = 255,
+    });
+
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_DESCRIPTOR HID_REPORT unknown interface does not set ep0_in_data" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = 99, // Unknown interface
+        .wLength = 0xFFFF,
+    });
+
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "sendEp0InPacket multi-packet transfer" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Simulate a transfer of configuration descriptor (> 64 bytes)
+    const config = &usb_descriptors.configuration_descriptor;
+    const config_len: u16 = @intCast(config.len);
+    drv.ep0_in_data = config;
+    drv.ep0_in_offset = 0;
+    drv.ep0_in_total_len = config_len;
+
+    // Count packets needed
+    var packets: u16 = 0;
+    while (drv.ep0_in_data != null) {
+        drv.sendEp0InPacket();
+        packets += 1;
+    }
+
+    // Expected number of packets
+    const expected_packets = (config_len + UsbDriver.EP0_MAX_PACKET_SIZE - 1) / UsbDriver.EP0_MAX_PACKET_SIZE;
+    try testing.expectEqual(expected_packets, packets);
+
+    // Data toggle should have been flipped for each packet
+    // Starting from false, after odd number of flips = true, after even = false
+    try testing.expectEqual(packets % 2 == 1, drv.data_toggle[0]);
+}
+
+test "handleBuffStatus continues multi-packet EP0 IN transfer" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Request configuration descriptor (> 64 bytes) via GET_DESCRIPTOR
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.CONFIGURATION) << 8,
+        .wIndex = 0,
+        .wLength = 0xFFFF,
+    });
+
+    const config_len: u16 = @intCast(usb_descriptors.configuration_descriptor.len);
+
+    // First packet already sent by handleGetDescriptor
+    if (config_len > UsbDriver.EP0_MAX_PACKET_SIZE) {
+        try testing.expect(drv.ep0_in_data != null);
+        try testing.expectEqual(UsbDriver.EP0_MAX_PACKET_SIZE, drv.ep0_in_offset);
+
+        // Simulate BUFF_STATUS EP0 IN completion to trigger next packet
+        drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+        drv.handleBuffStatus();
+
+        // Should have advanced the offset
+        try testing.expect(drv.ep0_in_offset > UsbDriver.EP0_MAX_PACKET_SIZE);
+
+        // Continue until transfer completes (re-set mock_buff_status each iteration)
+        while (drv.ep0_in_data != null) {
+            drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+            drv.handleBuffStatus();
+        }
+    }
+
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "handleBuffStatus no-op when no EP0 IN data pending" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // No pending transfer
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+    drv.handleBuffStatus();
+
+    // Should not crash, state unchanged
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_offset);
 }
