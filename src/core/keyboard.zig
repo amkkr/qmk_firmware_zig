@@ -26,6 +26,7 @@ const key_override = @import("key_override.zig");
 const autocorrect = @import("autocorrect.zig");
 const secure = @import("secure.zig");
 const magic = @import("magic.zig");
+const unicode = @import("unicode.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -98,6 +99,7 @@ pub fn init() void {
     key_override.reset();
     autocorrect.reset();
     secure.reset();
+    unicode.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     secure_consumed = .{0} ** MATRIX_ROWS;
@@ -185,8 +187,9 @@ pub fn task() void {
                             // 呼ばれるため正確な tap_count は利用不可。Mod-Tap/Layer-Tap の
                             // ホールド時は filterKeycode で skip されず基本キーコードが抽出される
                             // が、ホールド中は actionExec 側でキーが処理されるため実害はない。
+                            // Unicode キーコード処理（UC_NEXT/UC_PREV, Basic Unicode 0x8000-0xFFFF）
                             // Magic キーコード処理（CL_SWAP, AG_TOGG 等）
-                            if (magic.process(kc, pressed) and autocorrect.process(kc, pressed, 1)) {
+                            if (unicode.process(kc, pressed) and magic.process(kc, pressed) and autocorrect.process(kc, pressed, 1)) {
                                 // Secure キーコード処理（SE_LOCK/SE_UNLK/SE_TOGG/SE_REQ）
                                 if (secure.processKeycode(kc, pressed)) {
                                     var record = KeyRecord{ .event = ev };
