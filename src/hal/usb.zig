@@ -310,9 +310,14 @@ pub const UsbDriver = struct {
 
     fn hwInit(self: *UsbDriver) void {
         _ = self;
-        // Reset USB peripheral
-        const regs = @as([*]volatile u32, @ptrFromInt(USBCTRL_REGS_BASE));
-        _ = regs;
+        // Release USB peripheral from reset via RESETS register
+        const RESETS_USBCTRL_BIT: u32 = 1 << 24;
+        const resets_clr = @as(*volatile u32, @ptrFromInt(0x4000_F000)); // RESETS atomic clear alias
+        resets_clr.* = RESETS_USBCTRL_BIT;
+
+        // Wait for reset release to complete
+        const reset_done = @as(*volatile u32, @ptrFromInt(0x4000_C008)); // RESET_DONE
+        while (reset_done.* & RESETS_USBCTRL_BIT == 0) {}
 
         // Clear DPRAM
         const dpram = @as([*]volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE));
