@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Based on TMK key event types
-// Original: Jun Wako
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
 
 //! QMK Key Event definitions (Zig port)
 //! Based on quantum/keyboard.h

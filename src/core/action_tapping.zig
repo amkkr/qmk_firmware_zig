@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of quantum/action_tapping.c
-// Original: Jun Wako (TMK)
+// Original: Copyright 2011,2012,2013 Jun Wako <wakojun@gmail.com>
 
 //! タップ/ホールド判定ステートマシン
 //! C版 quantum/action_tapping.c に相当
