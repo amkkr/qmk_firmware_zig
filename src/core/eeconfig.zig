@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of quantum/eeconfig.c
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
 
 //! EEPROM設定API（eeconfig）
 //! Based on quantum/eeconfig.h / quantum/eeconfig.c

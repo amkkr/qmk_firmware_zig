@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of quantum/swap_hands.c
+// Original: Copyright 2016 Jack Humbert
 
 //! Swap Hands 機能
 //! C版 quantum/action.c の ACT_SWAP_HANDS 処理および
