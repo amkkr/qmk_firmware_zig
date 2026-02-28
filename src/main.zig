@@ -8,9 +8,11 @@ const builtin = @import("builtin");
 pub const core = @import("core/core.zig");
 pub const hal = @import("hal/hal.zig");
 pub const drivers = struct {};
-pub const keyboards = struct {
-    pub const madbd34 = @import("keyboards/madbd34.zig");
-};
+const build_options = @import("build_options");
+pub const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
+    @import("keyboards/madbd34.zig")
+else
+    @import("keyboards/madbd5.zig");
 
 const is_freestanding = builtin.os.tag == .freestanding;
 
@@ -81,9 +83,12 @@ pub const startup = if (is_freestanding) struct {
     const keyboard = @import("core/keyboard.zig");
     const action_mod = @import("core/action.zig");
     const host_mod = @import("core/host.zig");
-    const kb = @import("keyboards/madbd34.zig");
+    const kb_mod = if (std.mem.eql(u8, @import("build_options").KEYBOARD, "madbd34"))
+        @import("keyboards/madbd34.zig")
+    else
+        @import("keyboards/madbd5.zig");
 
-    const MatrixType = matrix_mod.Matrix(kb.rows, kb.cols);
+    const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
 
     var usb_driver: usb.UsbDriver = .{};
     var matrix: MatrixType = undefined;
@@ -93,7 +98,7 @@ pub const startup = if (is_freestanding) struct {
         clock.init();
 
         // キーボードマトリックス初期化
-        matrix = MatrixType.init(kb.matrixConfig());
+        matrix = MatrixType.init(kb_mod.matrixConfig());
 
         // USB HID 初期化
         usb_driver.init();
@@ -101,14 +106,14 @@ pub const startup = if (is_freestanding) struct {
 
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
-        keyboard.getTestKeymap().* = kb.default_keymap;
+        keyboard.getTestKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
         // メインループ
         while (true) {
             // マトリックススキャン → 状態を keyboard モジュールに反映
             _ = matrix.scan();
-            for (0..kb.rows) |row| {
+            for (0..kb_mod.rows) |row| {
                 keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
             }
 
@@ -137,14 +142,14 @@ test "module structure exists" {
     _ = core;
     _ = hal;
     _ = drivers;
-    _ = keyboards;
+    _ = kb;
 }
 
 test {
     // Run all sub-module tests
     @import("std").testing.refAllDecls(core);
     @import("std").testing.refAllDecls(hal);
-    @import("std").testing.refAllDecls(keyboards);
+    @import("std").testing.refAllDecls(kb);
     // Boot2モジュールのテストを実行
     _ = @import("hal/boot2.zig");
     // 統合テストを実行

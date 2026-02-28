@@ -148,8 +148,9 @@ pub fn getHighestLayer(state: LayerState) u5 {
 // so that on release the same layer is used (prevents stuck keys
 // when layers change while a key is held).
 
-const MATRIX_ROWS = 4;
-const MATRIX_COLS = 12;
+const build_options = @import("build_options");
+const MATRIX_ROWS: u8 = build_options.MATRIX_ROWS;
+const MATRIX_COLS: u8 = build_options.MATRIX_COLS;
 const CACHE_ENTRIES = MATRIX_ROWS * MATRIX_COLS;
 const MAX_LAYER_BITS = 4; // log2(MAX_LAYERS) = log2(16) = 4
 
