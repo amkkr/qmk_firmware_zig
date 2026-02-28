@@ -18,7 +18,7 @@
 //! no_action_tapping/test_one_shot_keys.cpp:
 //! 6. OSMWithoutAdditionalKeypressDoesNothing — OSM(MOD_LSFT) → 即座に LSFT
 //! 7. OSL_No_ReportPress              — OSL(1) タップ＋リリース → レポートなし
-//! 8. OSL_ReportPress                 — OSL(1) ホールド中に別キー → レポートなし
+//! 8. OSL_ReportPress                 — OSL(1) ホールド中に別キー → MO として動作し layer 1 の KC_A を送信（C版は NOOP のためレポートなし、Zig版は MO のため KC_A レポートあり）
 //!
 //! no_mod_tap_mods/test_tapping.cpp:
 //! 9. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) → 即座に LSFT（モッドとして動作）
