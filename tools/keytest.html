@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>QMK Key Tester</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h1 { color: #00d4ff; margin-bottom: 10px; font-size: 18px; }
+.info { color: #888; margin-bottom: 20px; font-size: 13px; }
+.current { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+.current-box {
+  background: #16213e; border: 1px solid #0f3460; border-radius: 8px;
+  padding: 15px; min-width: 180px; flex: 1;
+}
+.current-box.active { border-color: #00d4ff; background: #1a2a4e; }
+.current-box h2 { font-size: 12px; color: #888; margin-bottom: 8px; }
+.current-box .value { font-size: 24px; color: #00ff88; }
+.current-box .sub { font-size: 12px; color: #aaa; margin-top: 5px; }
+.mods { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.mod {
+  background: #16213e; border: 1px solid #333; border-radius: 4px;
+  padding: 6px 12px; font-size: 13px; color: #666;
+}
+.mod.active { background: #0f3460; border-color: #00d4ff; color: #00d4ff; }
+#log {
+  background: #0a0a1a; border: 1px solid #333; border-radius: 8px;
+  padding: 15px; max-height: 400px; overflow-y: auto; font-size: 13px;
+  line-height: 1.6;
+}
+.log-entry { border-bottom: 1px solid #1a1a2e; padding: 3px 0; }
+.log-entry.down { color: #00ff88; }
+.log-entry.up { color: #ff6b6b; }
+.log-entry .time { color: #666; }
+.log-entry .code { color: #00d4ff; }
+.log-entry .key { color: #ffd93d; }
+.clear { background: #333; color: #ccc; border: none; padding: 6px 16px;
+  border-radius: 4px; cursor: pointer; margin-bottom: 10px; font-family: monospace; }
+.clear:hover { background: #444; }
+</style>
+</head>
+<body tabindex="0" autofocus>
+<h1>QMK Key Tester</h1>
+<p class="info">キーボードを接続してキーを押してください</p>
+
+<div class="current">
+  <div class="current-box" id="codeBox">
+    <h2>KeyboardEvent.code</h2>
+    <div class="value" id="curCode">-</div>
+  </div>
+  <div class="current-box" id="keyBox">
+    <h2>KeyboardEvent.key</h2>
+    <div class="value" id="curKey">-</div>
+  </div>
+  <div class="current-box" id="whichBox">
+    <h2>keyCode (deprecated)</h2>
+    <div class="value" id="curWhich">-</div>
+    <div class="sub" id="curWhichHex"></div>
+  </div>
+  <div class="current-box" id="locationBox">
+    <h2>location</h2>
+    <div class="value" id="curLocation">-</div>
+  </div>
+</div>
+
+<div class="mods" id="mods">
+  <div class="mod" id="mod-shift">Shift</div>
+  <div class="mod" id="mod-ctrl">Ctrl</div>
+  <div class="mod" id="mod-alt">Alt</div>
+  <div class="mod" id="mod-meta">Meta</div>
+  <div class="mod" id="mod-capslock">CapsLock</div>
+</div>
+
+<button class="clear" onclick="document.getElementById('log').innerHTML=''">Clear Log</button>
+<div id="log"></div>
+
+<script>
+const locationMap = { 0: 'Standard', 1: 'Left', 2: 'Right', 3: 'Numpad' };
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function updateMods(e) {
+  const modMap = {
+    'mod-shift': e.shiftKey,
+    'mod-ctrl': e.ctrlKey,
+    'mod-alt': e.altKey,
+    'mod-meta': e.metaKey,
+    'mod-capslock': e.getModifierState('CapsLock'),
+  };
+  for (const [id, active] of Object.entries(modMap)) {
+    document.getElementById(id).classList.toggle('active', active);
+  }
+}
+
+function addLog(type, e) {
+  const log = document.getElementById('log');
+  const now = new Date();
+  const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  const arrow = type === 'down' ? '▼' : '▲';
+  const mods = [];
+  if (e.shiftKey) mods.push('Shift');
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.metaKey) mods.push('Meta');
+  const modStr = mods.length ? ` [${mods.join('+')}]` : '';
+  entry.innerHTML = `<span class="time">${time}</span> ${arrow} <span class="code">${escapeHtml(e.code)}</span> <span class="key">"${escapeHtml(e.key)}"</span> keyCode=${e.keyCode} (0x${e.keyCode.toString(16).toUpperCase().padStart(2,'0')}) loc=${locationMap[e.location] || e.location}${modStr}`;
+  log.insertBefore(entry, log.firstChild);
+}
+
+document.addEventListener('keydown', (e) => {
+  e.preventDefault();
+  document.getElementById('curCode').textContent = e.code;
+  document.getElementById('curKey').textContent = e.key;
+  document.getElementById('curWhich').textContent = e.keyCode;
+  document.getElementById('curWhichHex').textContent = `0x${e.keyCode.toString(16).toUpperCase().padStart(2, '0')}`;
+  document.getElementById('curLocation').textContent = locationMap[e.location] || e.location;
+  document.getElementById('codeBox').classList.add('active');
+  updateMods(e);
+  addLog('down', e);
+});
+
+document.addEventListener('keyup', (e) => {
+  e.preventDefault();
+  document.getElementById('codeBox').classList.remove('active');
+  updateMods(e);
+  addLog('up', e);
+});
+
+window.addEventListener('load', () => document.body.focus());
+</script>
+</body>
+</html>
