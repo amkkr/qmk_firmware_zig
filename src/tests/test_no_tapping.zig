@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/no_tapping/
 
 //! No Tapping テスト - C版 tests/no_tapping/ の移植
 //!

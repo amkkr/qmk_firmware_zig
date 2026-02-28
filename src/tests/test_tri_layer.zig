@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/tri_layer/test_tri_layer.cpp
 
 //! Tri Layer テスト - C版 tests/tri_layer/test_tri_layer.cpp の完全移植
 //!

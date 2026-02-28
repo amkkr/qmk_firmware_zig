@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/combo/test_combo.cpp
 
 //! Combo テスト - C版 tests/combo/test_combo.cpp の移植
 //!

@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/repeat_key/test_repeat_key.cpp
 
 //! Repeat Key 機能の統合テスト
 //!

@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/tap_hold_configurations/
 
 //! Tap Hold Configuration テスト
 //!

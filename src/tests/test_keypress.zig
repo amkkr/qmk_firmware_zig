@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/basic/test_keypress.cpp
 
 //! test_keypress.zig — Zig port of tests/basic/test_keypress.cpp
 //!

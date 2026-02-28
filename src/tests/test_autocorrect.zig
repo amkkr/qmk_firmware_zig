@@ -1,5 +1,7 @@
 // Copyright 2024 amkkr
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/autocorrect/test_autocorrect.cpp
 
 //! Autocorrect テスト - C版 tests/autocorrect/test_autocorrect.cpp の完全移植
 //!
