@@ -210,43 +210,58 @@ pub fn erase() void {
 /// 5. Program the data in 256-byte pages
 /// 6. Flush XIP cache and re-enable XIP
 /// 7. Re-enable interrupts
+///
+/// Note: On real hardware, the actual flash commit is performed by flashCommit(),
+/// which is placed in the .data section (copied to RAM at startup) to ensure
+/// it can execute while XIP is disabled.
 pub fn flush() void {
     if (!dirty) return;
 
     if (is_freestanding) {
-        // Disable interrupts: flash operations disable XIP, so any interrupt
-        // handler that resides in flash would crash. We must ensure no
-        // interrupts fire during the erase/program sequence.
-        asm volatile ("cpsid i" ::: .{ .memory = true });
-
-        // Prepare flash interface for direct access
-        rom.connectInternalFlash();
-        rom.flashExitXip();
-
-        // Erase the EEPROM sector (4KB)
-        rom.flashRangeErase(EEPROM_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-
-        // Program EEPROM data in 256-byte pages
-        // EEPROM_SIZE (1024) = 4 pages of 256 bytes
-        // The sector is 4KB but we only write EEPROM_SIZE bytes;
-        // the rest remains erased (0xFF).
-        var offset: u32 = 0;
-        while (offset < EEPROM_SIZE) : (offset += FLASH_PAGE_SIZE) {
-            rom.flashRangeProgram(
-                EEPROM_FLASH_OFFSET + offset,
-                @as([*]const u8, @ptrCast(&storage)) + offset,
-                FLASH_PAGE_SIZE,
-            );
-        }
-
-        // Re-enable XIP and flush cache so subsequent flash reads are correct
-        rom.flashFlushCache();
-
-        // Re-enable interrupts
-        asm volatile ("cpsie i" ::: .{ .memory = true });
+        flashCommit();
     }
 
     dirty = false;
+}
+
+/// Perform the actual flash erase/program sequence.
+/// This function MUST execute from RAM because XIP is disabled during flash operations.
+/// Placed in .data section so it is copied from flash to RAM by the startup code.
+const flashCommit = if (is_freestanding) flashCommitImpl else struct {
+    fn f() void {}
+}.f;
+
+fn flashCommitImpl() linksection(".data") void {
+    // Disable interrupts: flash operations disable XIP, so any interrupt
+    // handler that resides in flash would crash. We must ensure no
+    // interrupts fire during the erase/program sequence.
+    asm volatile ("cpsid i" ::: .{ .memory = true });
+
+    // Prepare flash interface for direct access
+    rom.connectInternalFlash();
+    rom.flashExitXip();
+
+    // Erase the EEPROM sector (4KB)
+    rom.flashRangeErase(EEPROM_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+
+    // Program EEPROM data in 256-byte pages
+    // EEPROM_SIZE (1024) = 4 pages of 256 bytes
+    // The sector is 4KB but we only write EEPROM_SIZE bytes;
+    // the rest remains erased (0xFF).
+    var offset: u32 = 0;
+    while (offset < EEPROM_SIZE) : (offset += FLASH_PAGE_SIZE) {
+        rom.flashRangeProgram(
+            EEPROM_FLASH_OFFSET + offset,
+            @as([*]const u8, @ptrCast(&storage)) + offset,
+            FLASH_PAGE_SIZE,
+        );
+    }
+
+    // Re-enable XIP and flush cache so subsequent flash reads are correct
+    rom.flashFlushCache();
+
+    // Re-enable interrupts
+    asm volatile ("cpsie i" ::: .{ .memory = true });
 }
 
 /// Check if the RAM cache has been modified since last flush
