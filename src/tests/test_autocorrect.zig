@@ -151,7 +151,7 @@ test "fales_disabled_autocorrect" {
 
 // ============================================================
 // C版 falsify_should_not_autocorrect の移植
-// "falsify" は辞書に含まれるが "fals" の後に "ify" が続くため修正されない
+// "fals" までトライ木パスに部分一致するが、続く 'i' で "fales" のパスから外れるため修正が発動しない
 // ============================================================
 
 test "falsify_should_not_autocorrect" {
