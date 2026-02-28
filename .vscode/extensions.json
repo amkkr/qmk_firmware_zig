@@ -1,9 +1,8 @@
 // Suggested extensions
 {
   "recommendations": [
+    "ziglang.vscode-zig",
     "EditorConfig.EditorConfig",
-    "xaver.clang-format",
-    "llvm-vs-code-extensions.vscode-clangd",
     "bierner.github-markdown-preview",
     "donjayamanne.git-extension-pack"
   ]
