@@ -83,10 +83,7 @@ pub const startup = if (is_freestanding) struct {
     const keyboard = @import("core/keyboard.zig");
     const action_mod = @import("core/action.zig");
     const host_mod = @import("core/host.zig");
-    const kb_mod = if (std.mem.eql(u8, @import("build_options").KEYBOARD, "madbd34"))
-        @import("keyboards/madbd34.zig")
-    else
-        @import("keyboards/madbd5.zig");
+    const kb_mod = @import("root").kb;
 
     const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
 
