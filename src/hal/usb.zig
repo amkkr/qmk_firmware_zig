@@ -162,6 +162,8 @@ pub const UsbDriver = struct {
     mock_ints: u32 = 0,
     /// Mock setup packet (for testing task() SETUP_REQ dispatch)
     mock_setup_packet: ?SetupPacket = null,
+    /// Mock BUFF_STATUS value (for testing handleBuffStatus)
+    mock_buff_status: u32 = 0,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -179,6 +181,7 @@ pub const UsbDriver = struct {
         self.mock_ep0_out_data = 0;
         self.mock_ints = 0;
         self.mock_setup_packet = null;
+        self.mock_buff_status = 0;
 
         if (is_freestanding) {
             self.hwInit();
@@ -342,7 +345,7 @@ pub const UsbDriver = struct {
 
     /// GET_DESCRIPTOR 応答: ディスクリプタを選択し EP0 IN で送信開始。
     /// 64バイト超のディスクリプタはマルチパケットに分割される。
-    fn handleGetDescriptor(self: *UsbDriver, desc_type: u8, desc_index: u8, wIndex: u16, max_len: u16) void {
+    fn handleGetDescriptor(self: *UsbDriver, desc_type: u8, desc_index: u8, w_index: u16, max_len: u16) void {
         const desc: ?[]const u8 = switch (desc_type) {
             usb_descriptors.DescriptorType.DEVICE => &usb_descriptors.device_descriptor,
             usb_descriptors.DescriptorType.CONFIGURATION => &usb_descriptors.configuration_descriptor,
@@ -354,7 +357,7 @@ pub const UsbDriver = struct {
                 else => null,
             },
             usb_descriptors.DescriptorType.HID_REPORT => blk: {
-                const iface: u8 = @truncate(wIndex);
+                const iface: u8 = @truncate(w_index);
                 break :blk switch (iface) {
                     usb_descriptors.KEYBOARD_INTERFACE => &usb_descriptors.keyboard_report_descriptor,
                     usb_descriptors.MOUSE_INTERFACE => &usb_descriptors.mouse_report_descriptor,
@@ -391,6 +394,8 @@ pub const UsbDriver = struct {
         const remaining = total - offset;
         const chunk_len = @min(remaining, EP0_MAX_PACKET_SIZE);
 
+        const is_last = (offset + chunk_len) >= total;
+
         if (is_freestanding) {
             const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE));
             for (0..chunk_len) |i| {
@@ -400,6 +405,9 @@ pub const UsbDriver = struct {
             const buf_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE));
             var ctrl: u32 = chunk_len & BufCtrl.LEN_MASK;
             ctrl |= BufCtrl.FULL | BufCtrl.AVAILABLE;
+            if (is_last) {
+                ctrl |= BufCtrl.LAST;
+            }
             if (self.data_toggle[0]) {
                 ctrl |= BufCtrl.DATA_PID;
             }
@@ -411,7 +419,7 @@ pub const UsbDriver = struct {
 
         self.ep0_in_offset += chunk_len;
 
-        if (self.ep0_in_offset >= total) {
+        if (is_last) {
             self.ep0_in_data = null;
         }
     }
@@ -446,15 +454,24 @@ pub const UsbDriver = struct {
         }
     }
 
+    /// BUFF_STATUS EP0 IN bit (bit 0)
+    const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
+
     /// Handle buffer status events (endpoint transfer completions).
+    /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。
     fn handleBuffStatus(self: *UsbDriver) void {
-        if (is_freestanding) {
+        const status = if (is_freestanding) blk: {
             // Read and clear BUFF_STATUS (W1C)
             const buff_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.BUFF_STATUS));
-            const status = buff_status.*;
-            buff_status.* = status;
+            const s = buff_status.*;
+            buff_status.* = s;
+            break :blk s;
+        } else self.mock_buff_status;
+
+        // Continue multi-packet EP0 IN transfer
+        if ((status & BUFF_STATUS_EP0_IN) != 0 and self.ep0_in_data != null) {
+            self.sendEp0InPacket();
         }
-        _ = self;
     }
 
     fn sendEndpoint(self: *UsbDriver, ep: u8, data: []const u8) void {
@@ -1049,4 +1066,53 @@ test "sendEp0InPacket multi-packet transfer" {
     // Data toggle should have been flipped for each packet
     // Starting from false, after odd number of flips = true, after even = false
     try testing.expectEqual(packets % 2 == 1, drv.data_toggle[0]);
+}
+
+test "handleBuffStatus continues multi-packet EP0 IN transfer" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Request configuration descriptor (> 64 bytes) via GET_DESCRIPTOR
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.CONFIGURATION) << 8,
+        .wIndex = 0,
+        .wLength = 0xFFFF,
+    });
+
+    const config_len: u16 = @intCast(usb_descriptors.configuration_descriptor.len);
+
+    // First packet already sent by handleGetDescriptor
+    if (config_len > UsbDriver.EP0_MAX_PACKET_SIZE) {
+        try testing.expect(drv.ep0_in_data != null);
+        try testing.expectEqual(UsbDriver.EP0_MAX_PACKET_SIZE, drv.ep0_in_offset);
+
+        // Simulate BUFF_STATUS EP0 IN completion to trigger next packet
+        drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+        drv.handleBuffStatus();
+
+        // Should have advanced the offset
+        try testing.expect(drv.ep0_in_offset > UsbDriver.EP0_MAX_PACKET_SIZE);
+
+        // Continue until transfer completes
+        while (drv.ep0_in_data != null) {
+            drv.handleBuffStatus();
+        }
+    }
+
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "handleBuffStatus no-op when no EP0 IN data pending" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // No pending transfer
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+    drv.handleBuffStatus();
+
+    // Should not crash, state unchanged
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_offset);
 }
