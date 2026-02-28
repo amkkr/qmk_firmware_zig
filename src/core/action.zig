@@ -615,18 +615,10 @@ fn processLayerTapSpecial(keyp: *KeyRecord, l: u5, code: u8) void {
         },
         OP_ONESHOT => {
             // One-Shot Layer (OSL)
-            // C版: #if !defined(NO_ACTION_ONESHOT) && !defined(NO_ACTION_TAPPING)
-            // NO_ACTION_TAPPING 有効時は oneshot 動作を無効化し、
-            // 単純な MO (layer_on/layer_off) として動作する
-            if (action_code.no_action_tapping) {
-                if (ev.pressed) {
-                    layer.layerOn(l);
-                } else {
-                    layer.layerOff(l);
-                }
-            } else {
-                processOneShotLayerAction(keyp, l);
-            }
+            // no_action_tapping=true の場合、keycodeToAction で OSL は
+            // ACTION_LAYER_MOMENTARY (OP_ON_OFF) に変換されるため、
+            // OP_ONESHOT に到達する時点で常に oneshot 動作が有効
+            processOneShotLayerAction(keyp, l);
         },
         else => {},
     }
