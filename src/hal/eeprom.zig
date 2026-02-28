@@ -45,7 +45,6 @@ const rom = if (is_freestanding) struct {
     /// RP2040 ROM function table lookup
     /// ROM stores a table of function pointers that can be looked up by two-character code.
     /// See RP2040 datasheet section 2.8.3 "Bootrom Contents"
-
     const ROM_TABLE_LOOKUP_ADDR: u32 = 0x00000018;
     const ROM_FUNC_TABLE_ADDR: u32 = 0x00000014;
 
@@ -140,29 +139,33 @@ pub fn writeByte(address: u16, data: u8) void {
 }
 
 /// Read a 16-bit word from EEPROM (little-endian)
+/// Uses u32 arithmetic to prevent u16 wraparound for boundary addresses.
 pub fn readWord(address: u16) u16 {
     const lo = readByte(address);
-    const hi = readByte(address + 1);
+    const hi = readByte(@intCast(@as(u32, address) + 1));
     return @as(u16, hi) << 8 | @as(u16, lo);
 }
 
 /// Write a 16-bit word to EEPROM (little-endian)
+/// Uses u32 arithmetic to prevent u16 wraparound for boundary addresses.
 pub fn writeWord(address: u16, data: u16) void {
     writeByte(address, @truncate(data));
-    writeByte(address + 1, @truncate(data >> 8));
+    writeByte(@intCast(@as(u32, address) + 1), @truncate(data >> 8));
 }
 
 /// Read a 32-bit double word from EEPROM (little-endian)
+/// Uses u32 arithmetic to prevent u16 wraparound for boundary addresses.
 pub fn readDword(address: u16) u32 {
     const lo = readWord(address);
-    const hi = readWord(address + 2);
+    const hi = readWord(@intCast(@as(u32, address) + 2));
     return @as(u32, hi) << 16 | @as(u32, lo);
 }
 
 /// Write a 32-bit double word to EEPROM (little-endian)
+/// Uses u32 arithmetic to prevent u16 wraparound for boundary addresses.
 pub fn writeDword(address: u16, data: u32) void {
     writeWord(address, @truncate(data));
-    writeWord(address + 2, @truncate(data >> 16));
+    writeWord(@intCast(@as(u32, address) + 2), @truncate(data >> 16));
 }
 
 /// Read a block of bytes from EEPROM
@@ -214,7 +217,7 @@ pub fn flush() void {
         // Disable interrupts: flash operations disable XIP, so any interrupt
         // handler that resides in flash would crash. We must ensure no
         // interrupts fire during the erase/program sequence.
-        asm volatile ("cpsid i");
+        asm volatile ("cpsid i" ::: .{ .memory = true });
 
         // Prepare flash interface for direct access
         rom.connectInternalFlash();
@@ -240,7 +243,7 @@ pub fn flush() void {
         rom.flashFlushCache();
 
         // Re-enable interrupts
-        asm volatile ("cpsie i");
+        asm volatile ("cpsie i" ::: .{ .memory = true });
     }
 
     dirty = false;
