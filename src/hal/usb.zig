@@ -350,7 +350,7 @@ pub const UsbDriver = struct {
     }
 
     /// Read setup packet from DPRAM and dispatch to handleSetup.
-    /// On freestanding, clears SETUP_REQ in SIE_STATUS (W1C).
+    /// On freestanding, clears SETUP_REC in SIE_STATUS (W1C).
     fn handleSetupFromHw(self: *UsbDriver) void {
         if (is_freestanding) {
             // Read setup packet from DPRAM first (volatile: USB controller writes asynchronously)
