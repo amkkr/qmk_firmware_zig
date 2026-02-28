@@ -80,11 +80,6 @@ pub const BufCtrl = struct {
     pub const DATA_PID: u32 = 1 << 13;
     pub const AVAILABLE: u32 = 1 << 10;
     pub const LEN_MASK: u32 = 0x3FF;
-
-    /// EP0 IN buffer control register address (DPRAM offset 0x80)
-    pub const EP0_IN_ADDR: u32 = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE;
-    /// EP0 OUT buffer control register address (DPRAM offset 0x84)
-    pub const EP0_OUT_ADDR: u32 = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + 4;
 };
 
 /// Endpoint control register bits (DPRAM EP_IN_CTRL / EP_OUT_CTRL)
@@ -276,9 +271,6 @@ pub const UsbDriver = struct {
             // Reset device address to 0
             const addr_endp = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.ADDR_ENDP));
             addr_endp.* = 0;
-
-            // Re-initialize EP0 OUT BUF CTRL to receive next SETUP packet
-            self.hwPrepareEp0Out();
         }
 
         self.address = 0;
@@ -469,9 +461,6 @@ pub const UsbDriver = struct {
             sie_status.* = SieStatus.SETUP_REC;
 
             self.handleSetup(&pkt);
-
-            // Re-arm EP0 OUT to receive the next SETUP/OUT packet
-            self.hwPrepareEp0Out();
         } else {
             if (self.mock_setup_packet) |*pkt| {
                 self.handleSetup(pkt);
@@ -549,22 +538,9 @@ pub const UsbDriver = struct {
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
         inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
 
-        // Initialize EP0 OUT buffer control to receive SETUP/OUT packets from host.
-        // EP0 OUT BUF CTRL (DPRAM offset 0x84): set AVAILABLE with max packet size (64 bytes).
-        const ep0_out_buf_ctrl = @as(*volatile u32, @ptrFromInt(BufCtrl.EP0_OUT_ADDR));
-        ep0_out_buf_ctrl.* = BufCtrl.AVAILABLE | (EP0_MAX_PACKET_SIZE & BufCtrl.LEN_MASK);
-
         // Enable pull-up to signal device connection
         const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
         sie_ctrl.* = 1 << 16; // PULLUP_EN
-    }
-
-    /// Prepare EP0 OUT buffer control to receive the next OUT/SETUP packet from host.
-    /// Must be called after completing each control transfer stage.
-    fn hwPrepareEp0Out(self: *UsbDriver) void {
-        _ = self;
-        const ep0_out_buf_ctrl = @as(*volatile u32, @ptrFromInt(BufCtrl.EP0_OUT_ADDR));
-        ep0_out_buf_ctrl.* = BufCtrl.AVAILABLE | (EP0_MAX_PACKET_SIZE & BufCtrl.LEN_MASK);
     }
 
     fn hwSetAddress(self: *UsbDriver, addr: u8) void {
@@ -1233,13 +1209,4 @@ test "handleBuffStatus no-op when no EP0 IN data pending" {
     // Should not crash, state unchanged
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_offset);
-}
-
-test "EP0 BUF CTRL addresses" {
-    // EP0 IN BUF CTRL: DPRAM base + 0x80
-    try testing.expectEqual(USBCTRL_DPRAM_BASE + 0x80, BufCtrl.EP0_IN_ADDR);
-    // EP0 OUT BUF CTRL: DPRAM base + 0x84
-    try testing.expectEqual(USBCTRL_DPRAM_BASE + 0x84, BufCtrl.EP0_OUT_ADDR);
-    // EP0 OUT is 4 bytes after EP0 IN (IN/OUT pair per endpoint)
-    try testing.expectEqual(BufCtrl.EP0_IN_ADDR + 4, BufCtrl.EP0_OUT_ADDR);
 }
