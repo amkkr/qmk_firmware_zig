@@ -111,6 +111,9 @@ pub const startup = if (is_freestanding) struct {
 
         // メインループ
         while (true) {
+            // USBイベントポーリング（SETUP_REQ/BUS_RESET/BUFF_STATUS処理）
+            usb_driver.task();
+
             // マトリックススキャン → 状態を keyboard モジュールに反映
             _ = matrix.scan();
             for (0..kb_mod.rows) |row| {
