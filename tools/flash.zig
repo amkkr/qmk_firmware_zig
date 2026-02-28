@@ -38,11 +38,7 @@ pub fn main() !void {
 
     // Detect BOOTSEL drive (wait for it if not found)
     const bootsel_path = detectBootselDrive(allocator) catch |err| switch (err) {
-        error.BootselNotFound => blk: {
-            break :blk waitForBootselDrive(allocator) catch {
-                return error.BootselNotFound;
-            };
-        },
+        error.BootselNotFound => waitForBootselDrive(allocator) catch return error.BootselNotFound,
         else => return err,
     };
     defer allocator.free(bootsel_path);
@@ -79,7 +75,9 @@ fn waitForBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
         std.time.sleep(500 * std.time.ns_per_ms);
         if (detectBootselDrive(allocator)) |path| {
             return path;
-        } else |_| {}
+        } else |err| {
+            if (err != error.BootselNotFound) return err;
+        }
     }
 
     std.debug.print("Error: タイムアウト。RP2040 が検出されませんでした。\n", .{});
