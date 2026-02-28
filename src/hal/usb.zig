@@ -25,6 +25,11 @@ const is_freestanding = builtin.os.tag == .freestanding;
 pub const USBCTRL_REGS_BASE: u32 = 0x50110000;
 pub const USBCTRL_DPRAM_BASE: u32 = 0x50100000;
 
+pub const RESETS_BASE: u32 = 0x4000_C000;
+pub const RESETS_CLR: u32 = RESETS_BASE + 0x3000; // Atomic clear alias
+pub const RESET_DONE: u32 = RESETS_BASE + 0x08;
+pub const RESETS_USBCTRL_BIT: u32 = 1 << 24;
+
 /// USB register offsets
 pub const Reg = struct {
     pub const ADDR_ENDP: u32 = 0x00;
@@ -311,13 +316,12 @@ pub const UsbDriver = struct {
     fn hwInit(self: *UsbDriver) void {
         _ = self;
         // Release USB peripheral from reset via RESETS register
-        const RESETS_USBCTRL_BIT: u32 = 1 << 24;
-        const resets_clr = @as(*volatile u32, @ptrFromInt(0x4000_F000)); // RESETS atomic clear alias
+        const resets_clr = @as(*volatile u32, @ptrFromInt(RESETS_CLR));
         resets_clr.* = RESETS_USBCTRL_BIT;
 
         // Wait for reset release to complete
-        const reset_done = @as(*volatile u32, @ptrFromInt(0x4000_C008)); // RESET_DONE
-        while (reset_done.* & RESETS_USBCTRL_BIT == 0) {}
+        const reset_done = @as(*volatile u32, @ptrFromInt(RESET_DONE));
+        while ((reset_done.* & RESETS_USBCTRL_BIT) == 0) {}
 
         // Clear DPRAM
         const dpram = @as([*]volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE));
