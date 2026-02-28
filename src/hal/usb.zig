@@ -455,27 +455,25 @@ pub const UsbDriver = struct {
     /// Sets endpoint type (Interrupt), buffer address, and interrupt-per-buffer for each IN endpoint.
     fn hwConfigureEndpoints(self: *UsbDriver) void {
         _ = self;
-        const endpoints = [_]struct { ep: u8, size: u8 }{
-            .{ .ep = usb_descriptors.KEYBOARD_ENDPOINT, .size = usb_descriptors.KEYBOARD_ENDPOINT_SIZE },
-            .{ .ep = usb_descriptors.MOUSE_ENDPOINT, .size = usb_descriptors.MOUSE_ENDPOINT_SIZE },
-            .{ .ep = usb_descriptors.EXTRA_ENDPOINT, .size = usb_descriptors.EXTRA_ENDPOINT_SIZE },
+        const endpoints = [_]u8{
+            usb_descriptors.KEYBOARD_ENDPOINT,
+            usb_descriptors.MOUSE_ENDPOINT,
+            usb_descriptors.EXTRA_ENDPOINT,
         };
 
-        for (endpoints) |entry| {
+        for (endpoints) |ep| {
             // EP control register address: EP_IN_CTRL_BASE + (ep - 1) * 8
             // EP0 has no control register; EP1 starts at offset 0x08
-            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, entry.ep) - 1) * 8;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep) - 1) * 8;
             const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
 
             // Buffer address in DPRAM (relative to DPRAM base): EP_BUF_BASE + (ep - 1) * 64
-            const buf_offset = DPRAM.EP_BUF_BASE + (@as(u32, entry.ep) - 1) * 64;
+            const buf_offset = DPRAM.EP_BUF_BASE + (@as(u32, ep) - 1) * 64;
 
             ctrl_reg.* = EpCtrl.ENABLE |
                 EpCtrl.INTERRUPT_PER_BUFF |
                 EpCtrl.EP_TYPE_INTERRUPT |
                 (buf_offset & EpCtrl.BUFFER_ADDRESS_MASK);
-
-            _ = entry.size;
         }
     }
 
