@@ -57,6 +57,7 @@ pub const IntBit = struct {
 
 /// SIE_STATUS register bits
 pub const SieStatus = struct {
+    pub const SETUP_REQ: u32 = 1 << 17;
     pub const BUS_RESET: u32 = 1 << 19;
 };
 
@@ -153,6 +154,10 @@ pub const UsbDriver = struct {
     data_toggle: [4]bool = .{ false, false, false, false },
     /// Mock EP0 OUT data (for testing SET_REPORT etc.)
     mock_ep0_out_data: u8 = 0,
+    /// Mock INTS register value (for testing task() polling)
+    mock_ints: u32 = 0,
+    /// Mock setup packet (for testing task() SETUP_REQ dispatch)
+    mock_setup_packet: ?SetupPacket = null,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -165,6 +170,8 @@ pub const UsbDriver = struct {
         self.keyboard_leds = 0;
         self.data_toggle = .{ false, false, false, false };
         self.mock_ep0_out_data = 0;
+        self.mock_ints = 0;
+        self.mock_setup_packet = null;
 
         if (is_freestanding) {
             self.hwInit();
@@ -211,6 +218,25 @@ pub const UsbDriver = struct {
             usb_descriptors.EXTRA_ENDPOINT,
             std.mem.asBytes(&r),
         );
+    }
+
+    /// Poll USB peripheral for pending events and dispatch handlers.
+    /// Called from the main loop on each iteration.
+    pub fn task(self: *UsbDriver) void {
+        const ints = if (is_freestanding) blk: {
+            const ints_reg = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTS));
+            break :blk ints_reg.*;
+        } else self.mock_ints;
+
+        if ((ints & IntBit.BUS_RESET) != 0) {
+            self.handleBusReset();
+        }
+        if ((ints & IntBit.SETUP_REQ) != 0) {
+            self.handleSetupFromHw();
+        }
+        if ((ints & IntBit.BUFF_STATUS) != 0) {
+            self.handleBuffStatus();
+        }
     }
 
     /// Handle USB bus reset event
@@ -319,6 +345,36 @@ pub const UsbDriver = struct {
         if (is_freestanding) {
             const ep_stall_arm = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.EP_STALL_ARM));
             ep_stall_arm.* = 0x03; // Stall EP0 IN and OUT
+        }
+        _ = self;
+    }
+
+    /// Read setup packet from DPRAM and dispatch to handleSetup.
+    /// On freestanding, clears SETUP_REQ in SIE_STATUS (W1C).
+    fn handleSetupFromHw(self: *UsbDriver) void {
+        if (is_freestanding) {
+            // Clear SETUP_REQ bit in SIE_STATUS (W1C, bit 17)
+            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
+            sie_status.* = SieStatus.SETUP_REQ;
+
+            // Read setup packet from DPRAM
+            const setup_ptr = @as(*const SetupPacket, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.SETUP_PACKET));
+            self.handleSetup(setup_ptr);
+        } else {
+            if (self.mock_setup_packet) |*pkt| {
+                self.handleSetup(pkt);
+                self.mock_setup_packet = null;
+            }
+        }
+    }
+
+    /// Handle buffer status events (endpoint transfer completions).
+    fn handleBuffStatus(self: *UsbDriver) void {
+        if (is_freestanding) {
+            // Read and clear BUFF_STATUS (W1C)
+            const buff_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.BUFF_STATUS));
+            const status = buff_status.*;
+            buff_status.* = status;
         }
         _ = self;
     }
@@ -584,6 +640,102 @@ test "UsbDriver handleBusReset resets state" {
     try testing.expectEqual(@as(u8, 0), drv.address);
     try testing.expectEqual(@as(u8, 0), drv.configuration);
     try testing.expectEqual([4]bool{ false, false, false, false }, drv.data_toggle);
+}
+
+test "UsbDriver task dispatches BUS_RESET" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Configure device first
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 3,
+    });
+    try testing.expectEqual(DeviceState.addressed, drv.state);
+
+    // Inject BUS_RESET event via mock
+    drv.mock_ints = IntBit.BUS_RESET;
+    drv.task();
+
+    try testing.expectEqual(DeviceState.default_state, drv.state);
+    try testing.expectEqual(@as(u8, 0), drv.address);
+}
+
+test "UsbDriver task dispatches SETUP_REQ" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Inject SETUP_REQ event with SET_ADDRESS packet via mock
+    drv.mock_ints = IntBit.SETUP_REQ;
+    drv.mock_setup_packet = .{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 10,
+    };
+    drv.task();
+
+    try testing.expectEqual(@as(u8, 10), drv.address);
+    try testing.expectEqual(DeviceState.addressed, drv.state);
+    // Mock setup packet should be consumed
+    try testing.expect(drv.mock_setup_packet == null);
+}
+
+test "UsbDriver task handles BUFF_STATUS without crash" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Inject BUFF_STATUS event
+    drv.mock_ints = IntBit.BUFF_STATUS;
+    drv.task();
+
+    // Should not change state
+    try testing.expectEqual(DeviceState.disconnected, drv.state);
+}
+
+test "UsbDriver task handles multiple events" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Configure device
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 5,
+    });
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    try testing.expectEqual(DeviceState.configured, drv.state);
+
+    // Inject BUS_RESET + BUFF_STATUS simultaneously
+    drv.mock_ints = IntBit.BUS_RESET | IntBit.BUFF_STATUS;
+    drv.task();
+
+    try testing.expectEqual(DeviceState.default_state, drv.state);
+    try testing.expectEqual(@as(u8, 0), drv.address);
+}
+
+test "UsbDriver task no-op when no events" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 7,
+    });
+    try testing.expectEqual(@as(u8, 7), drv.address);
+
+    // No events
+    drv.mock_ints = 0;
+    drv.task();
+
+    // State should be unchanged
+    try testing.expectEqual(@as(u8, 7), drv.address);
+    try testing.expectEqual(DeviceState.addressed, drv.state);
 }
 
 test "SetupPacket size" {
