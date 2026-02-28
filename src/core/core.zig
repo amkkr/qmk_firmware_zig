@@ -36,6 +36,7 @@ pub const dynamic_macro = @import("dynamic_macro.zig");
 pub const autocorrect = @import("autocorrect.zig");
 pub const secure = @import("secure.zig");
 pub const magic = @import("magic.zig");
+pub const unicode = @import("unicode.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};

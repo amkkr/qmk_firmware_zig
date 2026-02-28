@@ -169,6 +169,7 @@ test {
     _ = @import("tests/test_tap_dance.zig");
     _ = @import("tests/test_autocorrect.zig");
     _ = @import("tests/test_no_tapping.zig");
+    _ = @import("tests/test_unicode.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");
     _ = @import("compat/qmk_abi.zig");
