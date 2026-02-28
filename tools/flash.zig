@@ -38,7 +38,7 @@ pub fn main() !void {
 
     // Detect BOOTSEL drive (wait for it if not found)
     const bootsel_path = detectBootselDrive(allocator) catch |err| switch (err) {
-        error.BootselNotFound => waitForBootselDrive(allocator) catch return error.BootselNotFound,
+        error.BootselNotFound => waitForBootselDrive(allocator) catch |e| return e,
         else => return err,
     };
     defer allocator.free(bootsel_path);
