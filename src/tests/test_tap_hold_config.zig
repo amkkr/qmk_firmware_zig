@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/tap_hold_configurations/
+// Original: Copyright 2021 Stefan Kerkmann
+
 //! Tap Hold Configuration テスト
 //!
 //! upstream の tests/tap_hold_configurations/ 以下のテストケースを Zig に移植。

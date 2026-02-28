@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/combo/test_combo.cpp
+// Original: Copyright 2023 Stefan Kerkmann (@KarlK90), @filterpaper
+
 //! Combo テスト - C版 tests/combo/test_combo.cpp の移植
 //!
 //! C版テストケースを Zig の combo.zig API で再現する。

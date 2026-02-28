@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_auto_shift.c
+// Original: Copyright 2017 Jeremy Cowgar
+
 //! Auto Shift: TAPPING_TERM より長くホールドすると自動で Shift を適用
 //! C版 quantum/process_keycode/process_auto_shift.c の移植
 //!

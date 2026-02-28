@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/caps_word.c
+// Original: Copyright 2021-2022 Google LLC (Apache-2.0)
+
 //! Caps Word 機能
 //! C版 quantum/caps_word.c に相当
 //!

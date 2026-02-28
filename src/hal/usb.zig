@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! RP2040 USB Device Driver
 //! Based on tmk_core/protocol/chibios/usb_main.c
 //!

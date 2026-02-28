@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! EEPROM emulation for RP2040
 //! Based on drivers/eeprom/eeprom_custom.c
 //!

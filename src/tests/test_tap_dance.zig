@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/tap_dance/test_examples.cpp
+// Original: Copyright 2022 Jouke Witteveen
+
 //! Tap Dance テスト - C版 tests/tap_dance/test_examples.cpp の移植
 //!
 //! C版テストケースを Zig の tap_dance API で論理的に等価に再現する。

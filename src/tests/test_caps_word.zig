@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/caps_word/test_caps_word.cpp
+// Original: Copyright 2022 Google LLC
+
 //! Caps Word テスト - Caps Word 機能の統合テスト
 //!
 //! C版 tests/caps_word/test_caps_word.cpp (697行) を Zig に移植。

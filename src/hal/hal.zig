@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Hardware Abstraction Layer
 //! Re-exports all HAL sub-modules.
 

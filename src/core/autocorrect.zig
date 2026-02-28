@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_autocorrect.c
+// Original: Copyright 2021 Google LLC (Apache-2.0)
+
 //! Autocorrect 機能
 //! C版 quantum/process_keycode/process_autocorrect.c に相当
 //!

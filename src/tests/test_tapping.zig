@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/basic/test_tapping.cpp
+// Original: Copyright 2017 Fred Sundvik
+
 //! Tapping テスト - Mod-Tap / Layer-Tap キーのタップ/ホールド動作検証
 //!
 //! upstream参照: tests/basic/test_tapping.cpp

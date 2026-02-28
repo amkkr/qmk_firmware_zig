@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! RP2040 BOOTSEL flash tool
 //! Detects RP2040 in BOOTSEL mode and copies UF2 firmware file to it.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! QMK Firmware - Zig Implementation
 //! RP2040 (ARM Cortex-M0+) keyboard firmware
 

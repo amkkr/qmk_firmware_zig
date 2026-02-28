@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/matrix.c
+// Original: Copyright 2012-2018 Jun Wako, Jack Humbert, Yiancar
+
 //! Matrix scan module
 //! Based on quantum/matrix.c and quantum/matrix_common.c
 //!

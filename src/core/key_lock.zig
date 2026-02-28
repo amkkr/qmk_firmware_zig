@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_key_lock.c
+// Original: Copyright 2017 Fredric Silberberg
+
 //! Key Lock 機能
 //! C版 quantum/process_keycode/process_key_lock.c に相当
 //!

@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_grave_esc.c
+// Original: Copyright 2020 Nick Brassel (@tzarc)
+
 //! Grave Escape (QK_GRAVE_ESCAPE) の実装
 //! C版 quantum/process_keycode/process_grave_esc.c の移植
 //!

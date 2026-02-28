@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! 統合テスト - End-to-End キーボード処理パイプライン検証
 //!
 //! 目的:

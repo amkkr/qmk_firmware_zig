@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! One-Shot Mods (OSM) テスト
 //!
 //! OSM の動作を tapping パイプライン経由で検証する。

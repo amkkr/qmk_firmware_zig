@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! QMK Core module - data types and logic
 //! Re-exports all core sub-modules.
 

@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/action_code.h
+// Original: Copyright 2013 Jun Wako <wakojun@gmail.com>
+
 //! QMK Action Code definitions (Zig port)
 //! Based on quantum/action_code.h
 //!

@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_magic.c
+// Original: Copyright 2019 Jack Humbert
+
 //! Magic Keycodes 処理
 //! C版 quantum/process_keycode/process_magic.c に相当
 //!

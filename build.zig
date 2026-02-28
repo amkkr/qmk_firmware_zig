@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 const std = @import("std");
 
 const KeyboardConfig = struct { rows: u8, cols: u8 };
