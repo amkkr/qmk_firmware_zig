@@ -489,6 +489,14 @@ pub const EC_SWAP: Keycode = QK_MAGIC_SWAP_ESCAPE_CAPS_LOCK;
 pub const EC_NORM: Keycode = QK_MAGIC_UNSWAP_ESCAPE_CAPS_LOCK;
 pub const EC_TOGG: Keycode = QK_MAGIC_TOGGLE_ESCAPE_CAPS_LOCK;
 
+// Dynamic Tapping Term (0x7C50-0x7C52)
+pub const QK_DYNAMIC_TAPPING_TERM_PRINT: Keycode = 0x7C50;
+pub const QK_DYNAMIC_TAPPING_TERM_UP: Keycode = 0x7C51;
+pub const QK_DYNAMIC_TAPPING_TERM_DOWN: Keycode = 0x7C52;
+pub const DT_PRNT: Keycode = QK_DYNAMIC_TAPPING_TERM_PRINT;
+pub const DT_UP: Keycode = QK_DYNAMIC_TAPPING_TERM_UP;
+pub const DT_DOWN: Keycode = QK_DYNAMIC_TAPPING_TERM_DOWN;
+
 // Secure (0x7C60-0x7C63)
 pub const QK_SECURE_LOCK: Keycode = 0x7C60;
 pub const QK_SECURE_UNLOCK: Keycode = 0x7C61;

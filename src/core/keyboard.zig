@@ -32,6 +32,7 @@ const key_override = @import("key_override.zig");
 const autocorrect = @import("autocorrect.zig");
 const secure = @import("secure.zig");
 const magic = @import("magic.zig");
+const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
 const unicode = @import("unicode.zig");
 
 const KeyEvent = event_mod.KeyEvent;
@@ -195,7 +196,7 @@ pub fn task() void {
                             // が、ホールド中は actionExec 側でキーが処理されるため実害はない。
                             // Unicode キーコード処理（UC_NEXT/UC_PREV, Basic Unicode 0x8000-0xFFFF）
                             // Magic キーコード処理（CL_SWAP, AG_TOGG 等）
-                            if (unicode.process(kc, pressed) and magic.process(kc, pressed) and autocorrect.process(kc, pressed, 1)) {
+                            if (dynamic_tapping_term.process(kc, pressed) and unicode.process(kc, pressed) and magic.process(kc, pressed) and autocorrect.process(kc, pressed, 1)) {
                                 // Secure キーコード処理（SE_LOCK/SE_UNLK/SE_TOGG/SE_REQ）
                                 if (secure.processKeycode(kc, pressed)) {
                                     var record = KeyRecord{ .event = ev };
