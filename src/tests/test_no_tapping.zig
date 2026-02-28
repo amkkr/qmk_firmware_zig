@@ -306,9 +306,9 @@ test "NoTapping_OneShot: OSL_No_ReportPress" {
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 }
 
-// OSL(1) ホールド中に別キー → 全てレポートなし
-// C版: OSL ホールド中は layer 1 が有効だが、NO_ACTION_TAPPING 時は
-// EXPECT_NO_REPORT でレポートが出ないことを検証
+// OSL(1) ホールド中に別キー → OSL 自体はレポートなし、regular_key は通常通り KC_A を送信
+// C版: EXPECT_NO_REPORT は run_one_scan_loop() 後に設定されるため、
+// Google Mock の Times(0) 仕様上、実際の KC_A レポートは検証対象外
 test "NoTapping_OneShot: OSL_ReportPress" {
     const fixture = setupNoTapping();
     defer teardown(fixture);
