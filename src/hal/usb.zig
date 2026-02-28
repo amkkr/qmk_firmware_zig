@@ -79,6 +79,15 @@ pub const BufCtrl = struct {
     pub const LEN_MASK: u32 = 0x3FF;
 };
 
+/// Endpoint control register bits (DPRAM EP_IN_CTRL / EP_OUT_CTRL)
+pub const EpCtrl = struct {
+    pub const ENABLE: u32 = 1 << 31;
+    pub const INTERRUPT_PER_BUFF: u32 = 1 << 29;
+    pub const ENDPOINT_TYPE_SHIFT: u5 = 26;
+    pub const EP_TYPE_INTERRUPT: u32 = 3 << ENDPOINT_TYPE_SHIFT;
+    pub const BUFFER_ADDRESS_MASK: u32 = 0xFFFF;
+};
+
 // ============================================================
 // USB Device State
 // ============================================================
@@ -290,6 +299,9 @@ pub const UsbDriver = struct {
                 self.configuration = @truncate(setup.wValue);
                 if (self.configuration > 0) {
                     self.state = .configured;
+                    if (is_freestanding) {
+                        self.hwConfigureEndpoints();
+                    }
                 } else {
                     self.state = .addressed;
                 }
@@ -530,6 +542,33 @@ pub const UsbDriver = struct {
         addr_endp.* = addr;
     }
 
+    /// Configure EP1-EP3 endpoint control registers in DPRAM.
+    /// Called on SET_CONFIGURATION when configuration > 0.
+    /// Sets endpoint type (Interrupt), buffer address, and interrupt-per-buffer for each IN endpoint.
+    fn hwConfigureEndpoints(self: *UsbDriver) void {
+        _ = self;
+        const endpoints = [_]u8{
+            usb_descriptors.KEYBOARD_ENDPOINT,
+            usb_descriptors.MOUSE_ENDPOINT,
+            usb_descriptors.EXTRA_ENDPOINT,
+        };
+
+        for (endpoints) |ep| {
+            // EP control register address: EP_IN_CTRL_BASE + (ep - 1) * 8
+            // EP0 has no control register; EP1 starts at offset 0x08
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep) - 1) * 8;
+            const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
+
+            // Buffer address in DPRAM (relative to DPRAM base): EP_BUF_BASE + (ep - 1) * 64
+            const buf_offset = DPRAM.EP_BUF_BASE + (@as(u32, ep) - 1) * 64;
+
+            ctrl_reg.* = EpCtrl.ENABLE |
+                EpCtrl.INTERRUPT_PER_BUFF |
+                EpCtrl.EP_TYPE_INTERRUPT |
+                (buf_offset & EpCtrl.BUFFER_ADDRESS_MASK);
+        }
+    }
+
     fn hwSendEndpoint(self: *UsbDriver, ep: u8, data: []const u8) void {
         const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
         const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
@@ -537,8 +576,8 @@ pub const UsbDriver = struct {
         // Wait for previous packet to be consumed by host before overwriting
         while (buf_ctrl.* & BufCtrl.AVAILABLE != 0) {}
 
-        // Calculate buffer address in DPRAM
-        const buf_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE + @as(u32, ep) * 64;
+        // Calculate buffer address in DPRAM (must match hwConfigureEndpoints)
+        const buf_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE + (@as(u32, ep) - 1) * 64;
         const buf = @as([*]volatile u8, @ptrFromInt(buf_addr));
 
         // Clamp data length to endpoint buffer size (64 bytes max)
@@ -835,6 +874,42 @@ test "UsbDriver task no-op when no events" {
 
 test "SetupPacket size" {
     try testing.expectEqual(@as(usize, 8), @sizeOf(SetupPacket));
+}
+
+test "EpCtrl bit positions" {
+    try testing.expectEqual(@as(u32, 0x80000000), EpCtrl.ENABLE);
+    try testing.expectEqual(@as(u32, 0x20000000), EpCtrl.INTERRUPT_PER_BUFF);
+    // Interrupt type = 3 << 26 = 0x0C000000
+    try testing.expectEqual(@as(u32, 0x0C000000), EpCtrl.EP_TYPE_INTERRUPT);
+}
+
+test "EP buffer offsets are consistent between hwConfigureEndpoints and hwSendEndpoint" {
+    // hwConfigureEndpoints uses: EP_BUF_BASE + (ep - 1) * 64
+    // hwSendEndpoint uses:       EP_BUF_BASE + (ep - 1) * 64
+    // Both must produce the same buffer offset for each endpoint.
+    const ep1_offset = DPRAM.EP_BUF_BASE + (@as(u32, usb_descriptors.KEYBOARD_ENDPOINT) - 1) * 64;
+    const ep2_offset = DPRAM.EP_BUF_BASE + (@as(u32, usb_descriptors.MOUSE_ENDPOINT) - 1) * 64;
+    const ep3_offset = DPRAM.EP_BUF_BASE + (@as(u32, usb_descriptors.EXTRA_ENDPOINT) - 1) * 64;
+
+    // EP1 (Keyboard) buffer at 0x180
+    try testing.expectEqual(@as(u32, 0x180), ep1_offset);
+    // EP2 (Mouse) buffer at 0x1C0
+    try testing.expectEqual(@as(u32, 0x1C0), ep2_offset);
+    // EP3 (Extra) buffer at 0x200
+    try testing.expectEqual(@as(u32, 0x200), ep3_offset);
+
+    // Buffers must not overlap (each is 64 bytes)
+    try testing.expect(ep2_offset >= ep1_offset + 64);
+    try testing.expect(ep3_offset >= ep2_offset + 64);
+}
+
+test "EP control register DPRAM offsets" {
+    // EP1 IN control: EP_IN_CTRL_BASE + (1 - 1) * 8 = 0x08
+    try testing.expectEqual(@as(u32, 0x08), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 1) - 1) * 8);
+    // EP2 IN control: EP_IN_CTRL_BASE + (2 - 1) * 8 = 0x10
+    try testing.expectEqual(@as(u32, 0x10), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 2) - 1) * 8);
+    // EP3 IN control: EP_IN_CTRL_BASE + (3 - 1) * 8 = 0x18
+    try testing.expectEqual(@as(u32, 0x18), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 3) - 1) * 8);
 }
 
 test "GET_DESCRIPTOR DEVICE returns device descriptor" {
