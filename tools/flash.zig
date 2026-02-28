@@ -19,7 +19,6 @@ const BOOTSEL_VOLUME_NAME = "RPI-RP2";
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-    const stdout = std.io.getStdOut().writer();
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -57,7 +56,7 @@ pub fn main() !void {
     };
     defer allocator.free(bootsel_path);
 
-    try stdout.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
+    std.debug.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
 
     // Copy UF2 file to BOOTSEL drive
     const dest_path = std.fs.path.join(allocator, &.{ bootsel_path, std.fs.path.basename(uf2_path) }) catch {
@@ -65,14 +64,14 @@ pub fn main() !void {
     };
     defer allocator.free(dest_path);
 
-    try stdout.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
+    std.debug.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
 
     std.fs.cwd().copyFile(uf2_path, std.fs.cwd(), dest_path, .{}) catch |err| {
         std.debug.print("Error: UF2 ファイルのコピーに失敗しました: {}\n", .{err});
         return error.CopyFailed;
     };
 
-    try stdout.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
+    std.debug.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
 }
 
 fn detectBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
