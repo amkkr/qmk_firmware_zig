@@ -48,11 +48,16 @@ pub const Reg = struct {
     pub const INTS: u32 = 0x98;
 };
 
-/// USB interrupt bits
+/// USB interrupt bits (INTE/INTS registers)
 pub const IntBit = struct {
     pub const BUFF_STATUS: u32 = 1 << 4;
     pub const BUS_RESET: u32 = 1 << 12;
     pub const SETUP_REQ: u32 = 1 << 16;
+};
+
+/// SIE_STATUS register bits
+pub const SieStatus = struct {
+    pub const BUS_RESET: u32 = 1 << 19;
 };
 
 /// DPRAM endpoint buffer control offsets
@@ -211,9 +216,9 @@ pub const UsbDriver = struct {
     /// Handle USB bus reset event
     pub fn handleBusReset(self: *UsbDriver) void {
         if (is_freestanding) {
-            // Clear BUS_RESET bit in SIE_STATUS (W1C)
+            // Clear BUS_RESET bit in SIE_STATUS (W1C, bit 19)
             const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
-            sie_status.* = IntBit.BUS_RESET;
+            sie_status.* = SieStatus.BUS_RESET;
 
             // Reset device address to 0
             const addr_endp = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.ADDR_ENDP));
@@ -221,6 +226,7 @@ pub const UsbDriver = struct {
         }
 
         self.address = 0;
+        self.configuration = 0;
         self.state = .default_state;
         self.data_toggle = .{ false, false, false, false };
     }
@@ -566,6 +572,7 @@ test "UsbDriver handleBusReset resets state" {
     });
     try testing.expectEqual(DeviceState.configured, drv.state);
     try testing.expectEqual(@as(u8, 5), drv.address);
+    try testing.expectEqual(@as(u8, 1), drv.configuration);
 
     // Simulate some data toggle activity
     drv.data_toggle = .{ true, false, true, false };
@@ -575,6 +582,7 @@ test "UsbDriver handleBusReset resets state" {
 
     try testing.expectEqual(DeviceState.default_state, drv.state);
     try testing.expectEqual(@as(u8, 0), drv.address);
+    try testing.expectEqual(@as(u8, 0), drv.configuration);
     try testing.expectEqual([4]bool{ false, false, false, false }, drv.data_toggle);
 }
 
