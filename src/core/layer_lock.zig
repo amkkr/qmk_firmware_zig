@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_layer_lock.c
+// Original: Copyright 2022-2023 Google LLC (Apache-2.0)
+
 //! Layer Lock 機能
 //! C版 quantum/layer_lock.c に相当
 //!

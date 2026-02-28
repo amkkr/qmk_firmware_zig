@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/leader/test_leader.cpp
+// Original: Copyright 2023 QMK
+
 //! Leader Key テスト - Leader Key 機能の統合テスト
 //!
 //! C版 tests/leader/test_leader.cpp (224行) を Zig に移植。

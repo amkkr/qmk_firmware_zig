@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Boot2 - RP2040 第2段ブートローダー
 //!
 //! RP2040はフラッシュからの起動時、内蔵BootROM（マスクROM）が

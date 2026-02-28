@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/leader.c
+// Original: Copyright 2023 QMK
+
 //! Leader Key 機能
 //! C版 quantum/leader.c に相当
 //!

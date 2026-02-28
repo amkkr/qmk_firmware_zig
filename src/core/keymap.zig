@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! QMK Keymap module (Zig port)
 //! Based on quantum/keymap_common.c
 //!

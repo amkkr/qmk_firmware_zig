@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! UF2 file generator for RP2040
 //! Converts raw binary firmware to UF2 format
 //! See: https://github.com/microsoft/uf2

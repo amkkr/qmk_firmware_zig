@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/no_tapping/
+// Original: Copyright 2017 Fred Sundvik, 2021 Stefan Kerkmann
+
 //! No Tapping テスト - C版 tests/no_tapping/ の移植
 //!
 //! NO_ACTION_TAPPING 設定時の挙動をテストする。

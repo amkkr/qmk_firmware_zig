@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_repeat_key.c
+// Original: Copyright 2022-2023 Google LLC (Apache-2.0)
+
 //! Repeat Key 機能
 //! C版 quantum/repeat_key.c に相当
 //!

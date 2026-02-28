@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! GPIO driver for RP2040
 //! Based on platforms/chibios/gpio.h
 //!

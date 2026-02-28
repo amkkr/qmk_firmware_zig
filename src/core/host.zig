@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tmk_core/protocol/host.c
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
+
 //! Host driver interface and HID report state management
 //! Based on tmk_core/protocol/host.h, host.c
 //!

@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/debounce/sym_defer_pk.c
+// Original: Copyright 2017 Alex Ong, 2020 Andrei Purdea, 2021 Simon Arlott
+
 //! Debounce module (symmetric defer per-key)
 //! Based on quantum/debounce/sym_defer_pk.c
 //!

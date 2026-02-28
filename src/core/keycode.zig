@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/keycode.h
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
+
 //! QMK Keycode definitions (Zig port)
 //! Based on quantum/keycodes.h and quantum/quantum_keycodes.h
 //!
@@ -501,6 +507,14 @@ pub const SE_UNLK: Keycode = QK_SECURE_UNLOCK;
 pub const SE_TOGG: Keycode = QK_SECURE_TOGGLE;
 pub const SE_REQ: Keycode = QK_SECURE_REQUEST;
 
+// Unicode (0x7C80-0x7C81, 0x8000-0xFFFF)
+pub const QK_UNICODE_MODE_NEXT: Keycode = 0x7C80;
+pub const QK_UNICODE_MODE_PREV: Keycode = 0x7C81;
+pub const UC_NEXT: Keycode = QK_UNICODE_MODE_NEXT;
+pub const UC_PREV: Keycode = QK_UNICODE_MODE_PREV;
+pub const QK_UNICODE: Keycode = 0x8000;
+pub const QK_UNICODE_MAX: Keycode = 0xFFFF;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================
@@ -709,6 +723,21 @@ pub inline fn isSwapHandsSpecialKey(kc: Keycode) bool {
 
 pub inline fn isTapDance(kc: Keycode) bool {
     return kc >= QK_TAP_DANCE and kc <= QK_TAP_DANCE_MAX;
+}
+
+/// Unicode Basic キーコード範囲かどうか（0x8000-0xFFFF）
+pub inline fn isUnicode(kc: Keycode) bool {
+    return kc >= QK_UNICODE and kc <= QK_UNICODE_MAX;
+}
+
+/// Unicode キーコードからコードポイントを取得する（下位15bit）
+pub inline fn unicodeGetCodePoint(kc: Keycode) u15 {
+    return @truncate(kc & 0x7FFF);
+}
+
+/// コードポイントから Unicode キーコードを生成する
+pub inline fn UC(code_point: u15) Keycode {
+    return QK_UNICODE | @as(Keycode, code_point);
 }
 
 // ============================================================

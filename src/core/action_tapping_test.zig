@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! action_tapping のテスト
 //! C版 tests/basic/test_tapping.cpp に相当
 

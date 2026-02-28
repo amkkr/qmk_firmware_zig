@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_space_cadet.c
+// Original: Copyright 2019 Jack Humbert
+
 //! Space Cadet 機能
 //! C版 quantum/process_keycode/process_space_cadet.c に相当
 //!

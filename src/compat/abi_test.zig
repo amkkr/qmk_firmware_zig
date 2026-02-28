@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! C ABI compatibility tests
 //! Verifies that Zig struct sizes, field offsets, and bit layouts
 //! match the corresponding C struct definitions in QMK.

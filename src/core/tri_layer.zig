@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_tri_layer.c
+// Original: Copyright 2023 QMK
+
 //! Tri Layer の実装
 //! C版 quantum/tri_layer.c + quantum/process_keycode/process_tri_layer.c の移植
 //!

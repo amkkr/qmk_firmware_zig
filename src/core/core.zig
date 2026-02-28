@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! QMK Core module - data types and logic
 //! Re-exports all core sub-modules.
 
@@ -37,6 +40,7 @@ pub const autocorrect = @import("autocorrect.zig");
 pub const secure = @import("secure.zig");
 pub const magic = @import("magic.zig");
 pub const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
+pub const unicode = @import("unicode.zig");
 
 // Test infrastructure - only included in test builds to avoid bloating firmware
 pub const test_driver = if (builtin.is_test) @import("test_driver.zig") else struct {};

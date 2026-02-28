@@ -1,3 +1,10 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tmk_core/protocol/usb_descriptor.c
+// Original: Copyright 2012 Jun Wako <wakojun@gmail.com>
+// Based on LUFA Library, Copyright 2012 Dean Camera
+
 //! USB and HID descriptor definitions
 //! Based on tmk_core/protocol/usb_descriptor.c and usb_descriptor.h
 //!

@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tests/secure/test_secure.cpp
+// Original: Copyright 2021 Stefan Kerkmann
+
 //! Secure 機能の統合テスト
 //!
 //! C版 tests/secure/test_secure.cpp を Zig に移植。

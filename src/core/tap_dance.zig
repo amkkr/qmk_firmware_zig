@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_tap_dance.c
+// Original: Copyright 2016 Jack Humbert
+
 //! Tap Dance 機能
 //! C版 quantum/process_keycode/process_tap_dance.c に相当
 //!

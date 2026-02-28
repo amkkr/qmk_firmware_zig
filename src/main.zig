@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! QMK Firmware - Zig Implementation
 //! RP2040 (ARM Cortex-M0+) keyboard firmware
 
@@ -170,6 +173,7 @@ test {
     _ = @import("tests/test_autocorrect.zig");
     _ = @import("tests/test_no_tapping.zig");
     _ = @import("tests/test_dynamic_tapping_term.zig");
+    _ = @import("tests/test_unicode.zig");
     // C ABI互換性テストを実行
     _ = @import("compat/abi_test.zig");
     _ = @import("compat/qmk_abi.zig");

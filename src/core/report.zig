@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of tmk_core/protocol/report.h
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
+
 //! QMK HID Report definitions (Zig port)
 //! Based on tmk_core/protocol/report.h
 //!

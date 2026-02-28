@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_dynamic_macro.c
+// Original: Copyright 2016 Jack Humbert, 2019 Drashna
+
 //! Dynamic Macros - キーボード上でのマクロ録音・再生機能
 //! Based on quantum/process_keycode/process_dynamic_macro.c
 //!

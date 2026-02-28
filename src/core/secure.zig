@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/secure.c
+// Original: Copyright 2022 QMK
+
 //! Secure 機能
 //! C版 quantum/secure.c + quantum/process_keycode/process_secure.c に相当
 //!

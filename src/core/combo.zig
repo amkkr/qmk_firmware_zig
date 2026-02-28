@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/process_keycode/process_combo.c
+// Original: Copyright 2016 Jack Humbert
+
 //! Combo キー: 複数キーの同時押しで別のキーコードを発動
 //! C版 quantum/process_keycode/process_combo.c の移植
 //!
