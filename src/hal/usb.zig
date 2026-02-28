@@ -353,13 +353,15 @@ pub const UsbDriver = struct {
     /// On freestanding, clears SETUP_REQ in SIE_STATUS (W1C).
     fn handleSetupFromHw(self: *UsbDriver) void {
         if (is_freestanding) {
-            // Clear SETUP_REC bit in SIE_STATUS (W1C, bit 17)
+            // Read setup packet from DPRAM first (volatile: USB controller writes asynchronously)
+            // Per RP2040 TRM: read the 8-byte setup packet, then clear SETUP_REC
+            const setup_ptr = @as(*align(1) volatile const SetupPacket, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.SETUP_PACKET));
+            const pkt = setup_ptr.*;
+
+            // Clear SETUP_REC bit in SIE_STATUS (W1C, bit 17) after reading
             const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
             sie_status.* = SieStatus.SETUP_REC;
 
-            // Read setup packet from DPRAM (volatile: USB controller writes asynchronously)
-            const setup_ptr = @as(*align(1) volatile const SetupPacket, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.SETUP_PACKET));
-            const pkt = setup_ptr.*;
             self.handleSetup(&pkt);
         } else {
             if (self.mock_setup_packet) |*pkt| {
