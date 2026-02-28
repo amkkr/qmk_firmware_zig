@@ -48,8 +48,10 @@ const rom = if (is_freestanding) struct {
     const ROM_TABLE_LOOKUP_ADDR: u32 = 0x00000018;
     const ROM_FUNC_TABLE_ADDR: u32 = 0x00000014;
 
-    /// Look up a ROM function by its two-character code
-    fn romFuncLookup(code: [2]u8) usize {
+    /// Look up a ROM function by its two-character code.
+    /// Must be inline so it is embedded in the caller (flashCommitImpl in RAM),
+    /// not placed in .text (flash). pico-sdk uses __force_inline for the same reason.
+    inline fn romFuncLookup(code: [2]u8) usize {
         const rom_table_lookup: *const fn (table: u16, code: u32) callconv(.c) usize =
             @ptrFromInt(@as(u32, @as(*const u16, @ptrFromInt(ROM_TABLE_LOOKUP_ADDR)).*));
         const func_table: u16 = @as(*const u16, @ptrFromInt(ROM_FUNC_TABLE_ADDR)).*;
@@ -58,7 +60,8 @@ const rom = if (is_freestanding) struct {
 
     /// flash_range_erase(offset: u32, count: u32, block_size: u32, block_cmd: u8)
     /// Erases `count` bytes of flash starting at `offset` (from flash start, not XIP base).
-    fn flashRangeErase(offset: u32, count: u32) void {
+    /// Inline to ensure execution from RAM when called from flashCommitImpl.
+    inline fn flashRangeErase(offset: u32, count: u32) void {
         const func: *const fn (u32, u32, u32, u8) callconv(.c) void =
             @ptrFromInt(romFuncLookup("RE".*));
         func(offset, count, FLASH_SECTOR_SIZE, 0x20); // 0x20 = sector erase command
@@ -66,7 +69,8 @@ const rom = if (is_freestanding) struct {
 
     /// flash_range_program(offset: u32, data: [*]const u8, count: u32)
     /// Programs `count` bytes to flash starting at `offset`.
-    fn flashRangeProgram(offset: u32, data: [*]const u8, count: u32) void {
+    /// Inline to ensure execution from RAM when called from flashCommitImpl.
+    inline fn flashRangeProgram(offset: u32, data: [*]const u8, count: u32) void {
         const func: *const fn (u32, [*]const u8, u32) callconv(.c) void =
             @ptrFromInt(romFuncLookup("RP".*));
         func(offset, data, count);
@@ -74,7 +78,8 @@ const rom = if (is_freestanding) struct {
 
     /// connect_internal_flash()
     /// Restores flash interface to default state after flash operations.
-    fn connectInternalFlash() void {
+    /// Inline to ensure execution from RAM when called from flashCommitImpl.
+    inline fn connectInternalFlash() void {
         const func: *const fn () callconv(.c) void =
             @ptrFromInt(romFuncLookup("IF".*));
         func();
@@ -82,7 +87,8 @@ const rom = if (is_freestanding) struct {
 
     /// flash_exit_xip()
     /// Exits XIP mode to allow direct flash access.
-    fn flashExitXip() void {
+    /// Inline to ensure execution from RAM when called from flashCommitImpl.
+    inline fn flashExitXip() void {
         const func: *const fn () callconv(.c) void =
             @ptrFromInt(romFuncLookup("EX".*));
         func();
@@ -90,7 +96,8 @@ const rom = if (is_freestanding) struct {
 
     /// flash_flush_cache()
     /// Flushes and enables the XIP cache after flash operations.
-    fn flashFlushCache() void {
+    /// Inline to ensure execution from RAM when called from flashCommitImpl.
+    inline fn flashFlushCache() void {
         const func: *const fn () callconv(.c) void =
             @ptrFromInt(romFuncLookup("FC".*));
         func();
