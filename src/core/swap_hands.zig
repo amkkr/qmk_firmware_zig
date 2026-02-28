@@ -1,3 +1,8 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/swap_hands.c
+
 //! Swap Hands 機能
 //! C版 quantum/action.c の ACT_SWAP_HANDS 処理および
 //! quantum/process_keycode/process_swap_hands.c に相当

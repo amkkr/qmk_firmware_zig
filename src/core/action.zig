@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/action.c
+// Original: Copyright 2012,2013 Jun Wako <wakojun@gmail.com>
+
 //! アクション処理の中核
 //! C版 quantum/action.c に相当
 //!

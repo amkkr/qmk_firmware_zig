@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! madbd5 キーボード定義（Zig版）
 //! 5x16 キーボード（テンキー付き、60キーポジション、7レイヤー）
 //! プロセッサ: RP2040 (ARM Cortex-M0+)

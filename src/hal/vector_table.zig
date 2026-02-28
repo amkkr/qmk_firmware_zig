@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! ARM Cortex-M0+ Vector Table for RP2040
 
 extern var _stack_top: anyopaque;

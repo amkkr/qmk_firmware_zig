@@ -1,3 +1,8 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/eeconfig.c
+
 //! EEPROM設定API（eeconfig）
 //! Based on quantum/eeconfig.h / quantum/eeconfig.c
 //!

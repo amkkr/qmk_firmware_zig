@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! madbd34 キーボード定義（Zig版）
 //! 4x12 スプリットキーボード（41キーポジション、4レイヤー）
 //! プロセッサ: RP2040 (ARM Cortex-M0+)

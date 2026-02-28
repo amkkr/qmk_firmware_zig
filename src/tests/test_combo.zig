@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Combo テスト - C版 tests/combo/test_combo.cpp の移植
 //!
 //! C版テストケースを Zig の combo.zig API で再現する。

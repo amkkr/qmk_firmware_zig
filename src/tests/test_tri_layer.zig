@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Tri Layer テスト - C版 tests/tri_layer/test_tri_layer.cpp の完全移植
 //!
 //! TestFixture 経由のフルパイプラインテスト（keyboard_task 経由で tri_layer キー処理を検証）。

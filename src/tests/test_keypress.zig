@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! test_keypress.zig — Zig port of tests/basic/test_keypress.cpp
 //!
 //! C版テストとの論理的等価性を重視。

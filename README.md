@@ -61,3 +61,5 @@ src/
 ## ライセンス
 
 [GNU General Public License v2.0](LICENSE)
+
+このプロジェクトは [QMK Firmware](https://github.com/qmk/qmk_firmware) からの派生著作物です。各ファイルの元の著作権表示はソースコード内のヘッダーを参照してください。

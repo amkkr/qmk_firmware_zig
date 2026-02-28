@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Mock Host Driver for testing
 //! Zig equivalent of tests/test_common/test_driver.cpp
 //!

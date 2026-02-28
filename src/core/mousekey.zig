@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/mousekey.c
+// Original: Copyright 2011 Jun Wako <wakojun@gmail.com>
+
 //! Mousekey - キーボードによるマウス操作
 //! Based on quantum/mousekey.c, quantum/mousekey.h
 //!

@@ -1,3 +1,8 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/action_layer.c
+
 //! QMK Layer management module (Zig port)
 //! Based on quantum/action_layer.c
 //!

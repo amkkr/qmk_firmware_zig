@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Layer Lock テスト - C版 tests/layer_lock/test_layer_lock.cpp の Zig 移植
 //!
 //! upstream参照: tests/layer_lock/test_layer_lock.cpp (284行)

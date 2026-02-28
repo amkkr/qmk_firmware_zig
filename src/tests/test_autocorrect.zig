@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Autocorrect テスト - C版 tests/autocorrect/test_autocorrect.cpp の完全移植
 //!
 //! C版テストケースを Zig の autocorrect API で論理的に等価に再現する。

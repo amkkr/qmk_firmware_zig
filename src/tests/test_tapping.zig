@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Tapping テスト - Mod-Tap / Layer-Tap キーのタップ/ホールド動作検証
 //!
 //! upstream参照: tests/basic/test_tapping.cpp

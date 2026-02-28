@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Unicode 入力処理
 //! C版 quantum/process_keycode/process_unicode.c, process_unicode_common.c に相当
 //!

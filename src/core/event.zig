@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Based on TMK key event types
+// Original: Jun Wako
+
 //! QMK Key Event definitions (Zig port)
 //! Based on quantum/keyboard.h
 

@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Auto Shift テスト - C版 tests/auto_shift/test_auto_shift.cpp の移植
 //!
 //! C版テストケースを Zig の auto_shift.processAutoShift() で論理的に等価に再現する。

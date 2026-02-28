@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! No Tapping テスト - C版 tests/no_tapping/ の移植
 //!
 //! NO_ACTION_TAPPING 設定時の挙動をテストする。

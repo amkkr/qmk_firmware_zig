@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! test_action_layer.zig — Zig port of tests/basic/test_action_layer.cpp
 //!
 //! レイヤー API テスト（パイプライン不要）と、キーボード統合テスト（TestFixture 使用）の移植。

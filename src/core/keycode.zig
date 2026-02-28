@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/keycode.h
+// Original: Copyright 2011,2012 Jun Wako <wakojun@gmail.com>
+
 //! QMK Keycode definitions (Zig port)
 //! Based on quantum/keycodes.h and quantum/quantum_keycodes.h
 //!

@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! C ABI export stubs for QMK compatibility
 //! Provides `export fn` wrappers around Zig core modules,
 //! allowing C code to call into the Zig implementation.

@@ -1,3 +1,8 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/bootmagic/bootmagic_lite.c
+
 //! Bootmagic Lite implementation
 //! Based on quantum/bootmagic/bootmagic.c
 //!

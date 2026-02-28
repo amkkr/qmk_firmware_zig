@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! Unicode 入力テスト
 //! C版 tests/unicode/test_unicode.cpp の Zig 移植
 //!

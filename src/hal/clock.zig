@@ -1,3 +1,6 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //! RP2040 クロック初期化モジュール
 //!
 //! RP2040のクロックツリーを初期化する。

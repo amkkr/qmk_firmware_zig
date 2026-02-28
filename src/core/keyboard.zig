@@ -1,3 +1,9 @@
+// Copyright 2024 amkkr
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Zig port of quantum/keyboard.c
+// Original: Copyright 2011,2012,2013 Jun Wako <wakojun@gmail.com>
+
 //! キーボードメイン処理ループ
 //! C版 quantum/keyboard.c に相当
 //!
