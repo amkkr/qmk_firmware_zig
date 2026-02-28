@@ -36,23 +36,10 @@ pub fn main() !void {
         return error.Uf2NotFound;
     };
 
-    // Detect BOOTSEL drive
-    const bootsel_path = detectBootselDrive(allocator) catch |err| {
-        switch (err) {
-            error.BootselNotFound => {
-                std.debug.print(
-                    \\Error: RP2040 が BOOTSEL モードで検出されませんでした。
-                    \\
-                    \\以下の手順で BOOTSEL モードに入ってください:
-                    \\  1. RP2040 の BOOT ボタンを押しながら USB ケーブルを接続
-                    \\  2. 「RPI-RP2」ドライブがマウントされるのを確認
-                    \\  3. 再度 zig build flash を実行
-                    \\
-                , .{});
-                return error.BootselNotFound;
-            },
-            else => return err,
-        }
+    // Detect BOOTSEL drive (wait for it if not found)
+    const bootsel_path = detectBootselDrive(allocator) catch |err| switch (err) {
+        error.BootselNotFound => try waitForBootselDrive(allocator),
+        else => return err,
     };
     defer allocator.free(bootsel_path);
 
@@ -72,6 +59,30 @@ pub fn main() !void {
     };
 
     std.debug.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
+}
+
+const timeout_seconds = 60;
+const poll_interval_ms = 500;
+
+fn waitForBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
+    std.debug.print(
+        \\RP2040 を BOOTSEL モードで接続してください...
+        \\  (BOOT ボタンを押しながら USB ケーブルを接続)
+        \\  {d}秒以内に検出されない場合はタイムアウトします。
+        \\
+    , .{timeout_seconds});
+
+    for (0..timeout_seconds * std.time.ms_per_s / poll_interval_ms) |_| {
+        std.time.sleep(poll_interval_ms * std.time.ns_per_ms);
+        if (detectBootselDrive(allocator)) |path| {
+            return path;
+        } else |err| {
+            if (err != error.BootselNotFound) return err;
+        }
+    }
+
+    std.debug.print("Error: タイムアウト。RP2040 が検出されませんでした。\n", .{});
+    return error.BootselNotFound;
 }
 
 fn detectBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
