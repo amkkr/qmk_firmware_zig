@@ -67,7 +67,7 @@ pub const DPRAM = struct {
     pub const EP_IN_CTRL_BASE: u32 = 0x08;
     pub const EP_OUT_CTRL_BASE: u32 = 0x0C;
     pub const EP_BUF_CTRL_BASE: u32 = 0x80;
-    pub const EP0_IN_BUF: u32 = 0x100;
+    pub const EP0_BUF: u32 = 0x100; // ep0_buf_a: EP0 data stage buffer (IN/OUT shared)
     pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
 };
@@ -350,7 +350,7 @@ pub const UsbDriver = struct {
                 // not in wValue. wValue contains (ReportType << 8 | ReportID).
                 if (is_freestanding) {
                     // Read LED byte from EP0 OUT data buffer
-                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE));
+                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
                     self.keyboard_leds = ep0_buf.*;
                 } else {
                     // Mock: use ep0_out_data if set, otherwise no-op
@@ -421,7 +421,7 @@ pub const UsbDriver = struct {
         const is_last = (offset + chunk_len) >= total;
 
         if (is_freestanding) {
-            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_IN_BUF));
+            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
             for (0..chunk_len) |i| {
                 ep0_buf[i] = data[offset + i];
             }
@@ -945,6 +945,15 @@ test "EP buffer offsets are consistent between hwConfigureEndpoints and hwSendEn
     // Buffers must not overlap (each is 64 bytes)
     try testing.expect(ep2_offset >= ep1_offset + 64);
     try testing.expect(ep3_offset >= ep2_offset + 64);
+}
+
+test "EP0 data buffer address is correct" {
+    // EP0 data buffer (ep0_buf_a) is at DPRAM offset 0x100
+    // This is used for both GET_DESCRIPTOR (IN) and SET_REPORT (OUT) data stages.
+    try testing.expectEqual(@as(u32, 0x100), DPRAM.EP0_BUF);
+    // EP0_BUF must not overlap with EP1+ buffers
+    try testing.expect(DPRAM.EP0_BUF + 64 <= DPRAM.EP0_OUT_BUF);
+    try testing.expect(DPRAM.EP0_OUT_BUF + 64 <= DPRAM.EP_BUF_BASE);
 }
 
 test "EP control register DPRAM offsets" {
