@@ -269,22 +269,23 @@ test "NoTapping_OneShot: OSMWithoutAdditionalKeypressDoesNothing" {
     try testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
 }
 
-// OSL(1) タップ＋リリース → レイヤー操作のみでレポートなし
+// OSL(1) タップ＋リリース後に別キー → 全てレポートなし
 // NO_ACTION_TAPPING 時の OSL は MO（layer_on/layer_off）として動作する
-// C版: #if !defined(NO_ACTION_ONESHOT) && !defined(NO_ACTION_TAPPING) の else ブランチ
+// C版: OSL タップ後は layer_off されるため、regular_key は layer 0 の KC_NO として処理される
 test "NoTapping_OneShot: OSL_No_ReportPress" {
     const fixture = setupNoTapping();
     defer teardown(fixture);
 
-    // OSL(1) at (0,0,0)
     const osl_key = keycode_mod.OSL(1);
     fixture.setKeymap(&.{
         KeymapKey.init(0, 0, 0, osl_key),
+        KeymapKey.init(0, 1, 0, KC.NO),
+        KeymapKey.init(1, 1, 0, KC.A),
     });
 
     const count_before = fixture.driver.keyboard_count;
 
-    // Press OSL key → NO_ACTION_TAPPING 時は layer_on(1) のみ、レポートなし
+    // Press OSL key → layer_on(1) のみ、レポートなし
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
@@ -293,9 +294,21 @@ test "NoTapping_OneShot: OSL_No_ReportPress" {
     fixture.releaseKey(0, 0);
     fixture.runOneScanLoop();
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+
+    // Press regular key → OSL リリース済みなので layer 0 の KC_NO、レポートなし
+    fixture.pressKey(1, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+
+    // Release regular key → レポートなし
+    fixture.releaseKey(1, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 }
 
-// OSL(1) ホールド中 → レイヤー操作のみでレポートなし
+// OSL(1) ホールド中に別キー → 全てレポートなし
+// C版: OSL ホールド中は layer 1 が有効だが、NO_ACTION_TAPPING 時は
+// EXPECT_NO_REPORT でレポートが出ないことを検証
 test "NoTapping_OneShot: OSL_ReportPress" {
     const fixture = setupNoTapping();
     defer teardown(fixture);
@@ -303,19 +316,32 @@ test "NoTapping_OneShot: OSL_ReportPress" {
     const osl_key = keycode_mod.OSL(1);
     fixture.setKeymap(&.{
         KeymapKey.init(0, 0, 0, osl_key),
+        KeymapKey.init(0, 1, 0, KC.NO),
+        KeymapKey.init(1, 1, 0, KC.A),
     });
 
     const count_before = fixture.driver.keyboard_count;
 
-    // Press OSL key (hold) → layer_on(1) のみ、レポートなし
+    // Press OSL key → layer_on(1)、レポートなし
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 
-    // Release OSL key → layer_off(1)、レポートなし
+    // Press regular key (layer 1 の KC_A) → KC_A レポート送信
+    fixture.pressKey(1, 0);
+    fixture.runOneScanLoop();
+    try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.A));
+
+    // Release regular key → 空レポート
+    fixture.releaseKey(1, 0);
+    fixture.runOneScanLoop();
+    try testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+
+    // Release OSL key → layer_off(1)、キーボードレポートなし
+    const count_after_release = fixture.driver.keyboard_count;
     fixture.releaseKey(0, 0);
     fixture.runOneScanLoop();
-    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+    try testing.expectEqual(count_after_release, fixture.driver.keyboard_count);
 }
 
 // ============================================================
@@ -364,10 +390,12 @@ test "NoModTapMods: HoldA_SHFT_T_KeyReportsShift" {
     try testing.expect(fixture.driver.keyboard_count >= 1);
     try testing.expect(fixture.driver.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
 
-    // TAPPING_TERM 経過しても LSFT のまま
+    // TAPPING_TERM 経過しても LSFT のまま、余計なレポートは送信されない
+    const count_before_idle = fixture.driver.keyboard_count;
     fixture.idleFor(TAPPING_TERM);
     fixture.runOneScanLoop();
 
+    try testing.expectEqual(count_before_idle, fixture.driver.keyboard_count);
     try testing.expect(fixture.driver.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
 
     // Release → 空レポート
