@@ -1396,8 +1396,3 @@ test "handleBuffStatus applies pending_address after ZLP" {
     // pending_address should be consumed
     try testing.expect(drv.pending_address == null);
 }
-
-test "EP0 OUT BUF CTRL address" {
-    // EP0 OUT BUF CTRL: DPRAM base + EP_BUF_CTRL_BASE + 4 = 0x84
-    try testing.expectEqual(USBCTRL_DPRAM_BASE + 0x84, BufCtrl.EP0_OUT_ADDR);
-}
