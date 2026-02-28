@@ -273,6 +273,10 @@ test "RepeatKey: RollingFromRepeat - rolling press from repeat to key" {
     // Repeat を離す（KC_A が unregister される）
     fixture.releaseKey(0, 2);
     fixture.runOneScanLoop();
+    // C版 InSequence: EXPECT_REPORT(driver, (KC_B)) に相当
+    // KC_A が unregister され、KC_B のみのレポートになること
+    try testing.expect(fixture.driver.lastKeyboardReport().hasKey(KC.B));
+    try testing.expect(!fixture.driver.lastKeyboardReport().hasKey(KC.A));
 
     // B を離す
     fixture.releaseKey(0, 1);

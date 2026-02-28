@@ -35,22 +35,30 @@ pub fn getLastMods() u8 {
     return last_mods;
 }
 
+/// press 時に登録したキーコード・修飾キーを保持する（C版 registered_record 相当）
+/// ローリングプレスで last_keycode が変わってもキースタックを防ぐ
+var registered_keycode: u8 = 0;
+var registered_mods: u8 = 0;
+
 /// Repeat Key が押されたときの処理
 /// 直前に記録されたキーコードを送信する
 pub fn processRepeatKey(pressed: bool) void {
     if (last_keycode == 0) return;
 
     if (pressed) {
+        // press 時のキーコード・修飾キーを保存（release 時に使用）
+        registered_keycode = last_keycode;
+        registered_mods = last_mods;
         // 直前のキーの修飾キーを一時的に適用
-        if (last_mods != 0) {
-            host.addWeakMods(last_mods);
+        if (registered_mods != 0) {
+            host.addWeakMods(registered_mods);
         }
-        host.registerCode(last_keycode);
+        host.registerCode(registered_keycode);
         host.sendKeyboardReport();
     } else {
-        host.unregisterCode(last_keycode);
-        if (last_mods != 0) {
-            host.delWeakMods(last_mods);
+        host.unregisterCode(registered_keycode);
+        if (registered_mods != 0) {
+            host.delWeakMods(registered_mods);
         }
         host.sendKeyboardReport();
     }
@@ -60,6 +68,8 @@ pub fn processRepeatKey(pressed: bool) void {
 pub fn reset() void {
     last_keycode = 0;
     last_mods = 0;
+    registered_keycode = 0;
+    registered_mods = 0;
 }
 
 // ============================================================
