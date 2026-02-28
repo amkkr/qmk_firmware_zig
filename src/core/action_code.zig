@@ -422,6 +422,11 @@ pub fn keycodeToAction(kc: Keycode) Action {
     // One Shot Layer (0x5280-0x529F)
     if (kc >= keycode.QK_ONE_SHOT_LAYER and kc <= keycode.QK_ONE_SHOT_LAYER_MAX) {
         const layer: u5 = @truncate(kc);
+        if (no_action_tapping) {
+            // C版: #if !defined(NO_ACTION_ONESHOT) && !defined(NO_ACTION_TAPPING) の else ブランチ
+            // NO_ACTION_TAPPING 時は MO として動作する（layer_on/layer_off のみ）
+            return .{ .code = ACTION_LAYER_MOMENTARY(layer) };
+        }
         return .{ .code = ACTION_LAYER_ONESHOT(layer) };
     }
 

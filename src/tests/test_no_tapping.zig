@@ -269,9 +269,54 @@ test "NoTapping_OneShot: OSMWithoutAdditionalKeypressDoesNothing" {
     try testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
 }
 
-// OSL(1) 関連テストは C版でも NO_REPORT を期待
-// NO_ACTION_TAPPING 時の OSL はレイヤー操作キーとして残る（NO_ACTION_ONESHOT は別設定）
-// C版テストで EXPECT_NO_REPORT のため、ここではレポートが発行されないことを検証
+// OSL(1) タップ＋リリース → レイヤー操作のみでレポートなし
+// NO_ACTION_TAPPING 時の OSL は MO（layer_on/layer_off）として動作する
+// C版: #if !defined(NO_ACTION_ONESHOT) && !defined(NO_ACTION_TAPPING) の else ブランチ
+test "NoTapping_OneShot: OSL_No_ReportPress" {
+    const fixture = setupNoTapping();
+    defer teardown(fixture);
+
+    // OSL(1) at (0,0,0)
+    const osl_key = keycode_mod.OSL(1);
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, osl_key),
+    });
+
+    const count_before = fixture.driver.keyboard_count;
+
+    // Press OSL key → NO_ACTION_TAPPING 時は layer_on(1) のみ、レポートなし
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+
+    // Release OSL key → layer_off(1)、レポートなし
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+}
+
+// OSL(1) ホールド中 → レイヤー操作のみでレポートなし
+test "NoTapping_OneShot: OSL_ReportPress" {
+    const fixture = setupNoTapping();
+    defer teardown(fixture);
+
+    const osl_key = keycode_mod.OSL(1);
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, osl_key),
+    });
+
+    const count_before = fixture.driver.keyboard_count;
+
+    // Press OSL key (hold) → layer_on(1) のみ、レポートなし
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+
+    // Release OSL key → layer_off(1)、レポートなし
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expectEqual(count_before, fixture.driver.keyboard_count);
+}
 
 // ============================================================
 // no_mod_tap_mods/test_tapping.cpp の移植
@@ -322,6 +367,8 @@ test "NoModTapMods: HoldA_SHFT_T_KeyReportsShift" {
     // TAPPING_TERM 経過しても LSFT のまま
     fixture.idleFor(TAPPING_TERM);
     fixture.runOneScanLoop();
+
+    try testing.expect(fixture.driver.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
 
     // Release → 空レポート
     fixture.releaseKey(0, 0);
