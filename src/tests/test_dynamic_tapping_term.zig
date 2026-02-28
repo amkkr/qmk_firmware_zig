@@ -14,7 +14,6 @@ const KeymapKey = test_fixture.KeymapKey;
 fn setupFixture(fixture: *TestFixture) void {
     fixture.setup();
     timer.mockReset();
-    tapping.tapping_term = tapping.DEFAULT_TAPPING_TERM;
 }
 
 fn tapKey(fixture: *TestFixture, row: u8, col: u8) void {
