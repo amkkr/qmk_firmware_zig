@@ -34,6 +34,7 @@ const secure = @import("secure.zig");
 const magic = @import("magic.zig");
 const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
 const unicode = @import("unicode.zig");
+const eeprom = @import("../hal/eeprom.zig");
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
@@ -229,6 +230,9 @@ pub fn task() void {
     // Layer Lock タイムアウト・レイヤー状態同期処理
     layer_lock.task();
     layer_lock.syncWithLayerState();
+
+    // EEPROM: dirty ならフラッシュに書き込み
+    eeprom.flush();
 
     // 現在の状態を保存
     matrix_prev = matrix_state;

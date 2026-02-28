@@ -82,6 +82,7 @@ pub const startup = if (is_freestanding) struct {
     }
 
     const usb = @import("hal/usb.zig");
+    const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
     const keyboard = @import("core/keyboard.zig");
     const action_mod = @import("core/action.zig");
@@ -103,6 +104,9 @@ pub const startup = if (is_freestanding) struct {
         // USB HID 初期化
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
+
+        // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
+        eeprom_mod.init();
 
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();

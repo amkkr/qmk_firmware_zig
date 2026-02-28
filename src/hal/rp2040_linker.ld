@@ -4,11 +4,12 @@
  *
  * Boot2 (256 bytes) is placed at flash origin (0x10000000).
  * The main program starts at 0x10000100 (after Boot2).
+ * The last 4KB sector (0x101FF000) is reserved for EEPROM emulation.
  */
 MEMORY
 {
     BOOT2  (rx)  : ORIGIN = 0x10000000, LENGTH = 256
-    FLASH  (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K - 256
+    FLASH  (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K - 256 - 4K
     RAM    (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
