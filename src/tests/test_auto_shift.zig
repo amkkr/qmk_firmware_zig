@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of tests/auto_shift/test_auto_shift.cpp
+// Original: Copyright 2021 Stefan Kerkmann
 
 //! Auto Shift テスト - C版 tests/auto_shift/test_auto_shift.cpp の移植
 //!

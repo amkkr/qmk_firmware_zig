@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of tests/tri_layer/test_tri_layer.cpp
+// Original: Copyright 2021 Christopher Courtney, aka Drashna Jael're (@drashna)
 
 //! Tri Layer テスト - C版 tests/tri_layer/test_tri_layer.cpp の完全移植
 //!

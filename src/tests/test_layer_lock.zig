@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of tests/layer_lock/test_layer_lock.cpp
+// Original: Copyright 2021 Christopher Courtney, aka Drashna Jael're (@drashna)
 
 //! Layer Lock テスト - C版 tests/layer_lock/test_layer_lock.cpp の Zig 移植
 //!

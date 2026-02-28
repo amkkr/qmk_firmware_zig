@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of tests/basic/test_keypress.cpp
+// Original: Copyright 2017 Fred Sundvik
 
 //! test_keypress.zig — Zig port of tests/basic/test_keypress.cpp
 //!

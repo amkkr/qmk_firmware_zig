@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Zig port of tests/basic/test_action_layer.cpp
+// Original: Copyright 2017 Colin T.A. Gray
 
 //! test_action_layer.zig — Zig port of tests/basic/test_action_layer.cpp
 //!
