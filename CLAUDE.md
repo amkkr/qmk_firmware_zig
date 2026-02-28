@@ -213,7 +213,7 @@ zig build test
 
 - プロセッサ: RP2040 (ARM Cortex-M0+)
 - マトリックス: 5行 x 16列（COL2ROW）、60キー
-- ピン: Cols GP5-GP7,GP9-GP20 / Rows GP21-GP22,GP26-GP28
+- ピン: Cols GP5-GP12,GP18-GP22,GP26-GP28 / Rows GP13-GP17
 - レイヤー: QWERTY+numpad, 数字/記号, ナビゲーション, ファンクション/メディア/マウス, ゲーミングベース, ゲーミング記号, ゲーミングFn/Nav（7レイヤー）
 - 設定: `keyboards/madbd5/keyboard.json`
 - キーマップ: `keyboards/madbd5/keymaps/default/keymap.c`
