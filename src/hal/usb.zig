@@ -67,6 +67,8 @@ pub const DPRAM = struct {
     pub const EP_IN_CTRL_BASE: u32 = 0x08;
     pub const EP_OUT_CTRL_BASE: u32 = 0x0C;
     pub const EP_BUF_CTRL_BASE: u32 = 0x80;
+    pub const EP0_IN_BUF: u32 = 0x100;
+    pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
 };
 
@@ -409,7 +411,7 @@ pub const UsbDriver = struct {
         const is_last = (offset + chunk_len) >= total;
 
         if (is_freestanding) {
-            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE));
+            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_IN_BUF));
             for (0..chunk_len) |i| {
                 ep0_buf[i] = data[offset + i];
             }
@@ -478,7 +480,11 @@ pub const UsbDriver = struct {
             const s = buff_status.*;
             buff_status.* = s;
             break :blk s;
-        } else self.mock_buff_status;
+        } else blk: {
+            const s = self.mock_buff_status;
+            self.mock_buff_status = 0;
+            break :blk s;
+        };
 
         // Continue multi-packet EP0 IN transfer
         if ((status & BUFF_STATUS_EP0_IN) != 0 and self.ep0_in_data != null) {
@@ -1170,8 +1176,9 @@ test "handleBuffStatus continues multi-packet EP0 IN transfer" {
         // Should have advanced the offset
         try testing.expect(drv.ep0_in_offset > UsbDriver.EP0_MAX_PACKET_SIZE);
 
-        // Continue until transfer completes
+        // Continue until transfer completes (re-set mock_buff_status each iteration)
         while (drv.ep0_in_data != null) {
+            drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
             drv.handleBuffStatus();
         }
     }
