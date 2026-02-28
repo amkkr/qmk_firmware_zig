@@ -13,7 +13,6 @@
 
 const keycode_mod = @import("keycode.zig");
 const host = @import("host.zig");
-const report_mod = @import("report.zig");
 const Keycode = keycode_mod.Keycode;
 const KC = keycode_mod.KC;
 
@@ -32,6 +31,9 @@ const MODE_COUNT = @typeInfo(UnicodeMode).@"enum".fields.len;
 
 /// 現在の Unicode 入力モード
 var unicode_mode: UnicodeMode = .linux;
+
+/// Unicode 入力中に保存する修飾キー状態
+var saved_mods: u8 = 0;
 
 /// 現在の Unicode 入力モードを取得する
 pub fn getMode() UnicodeMode {
@@ -89,7 +91,7 @@ pub fn process(kc: Keycode, pressed: bool) bool {
 /// OS別の Unicode 入力開始シーケンスを送信する
 fn unicodeInputStart() void {
     // 既存の修飾キーを保存して一旦クリアする
-    const saved_mods = host.getMods();
+    saved_mods = host.getMods();
     host.setMods(0);
     host.sendKeyboardReport();
 
@@ -130,9 +132,6 @@ fn unicodeInputStart() void {
             tapCode(KC.ENTER);
         },
     }
-
-    // 保存した修飾キーを復元（送信はまだしない）
-    _ = saved_mods;
 }
 
 /// OS別の Unicode 入力終了シーケンスを送信する
@@ -163,6 +162,10 @@ fn unicodeInputFinish() void {
             tapCode(KC.ENTER);
         },
     }
+
+    // 保存した修飾キーを復元する
+    host.setMods(saved_mods);
+    host.sendKeyboardReport();
 }
 
 /// コードポイントを16進数で入力する（上位の0は省略）
@@ -216,6 +219,7 @@ fn tapCode(kc: u8) void {
 /// 状態リセット（テスト用）
 pub fn reset() void {
     unicode_mode = .linux;
+    saved_mods = 0;
 }
 
 // ============================================================
