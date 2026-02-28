@@ -144,6 +144,12 @@ pub inline fn ACTION_KEY(key: u8) u16 {
     return ACTION(@intFromEnum(ActionKind.mods), @as(u12, key));
 }
 
+/// ACTION_MODS(mods) - modifier only (no key)
+/// C版 ACTION_MODS(mods) = ACTION(ACT_MODS, mods << 8)
+pub inline fn ACTION_MODS(mods: u5) u16 {
+    return ACTION(@intFromEnum(ActionKind.mods), @as(u12, mods) << 8);
+}
+
 /// ACTION_MODS_KEY(mods, key) - modifier + key
 pub inline fn ACTION_MODS_KEY(mods: u5, key: u8) u16 {
     return ACTION(@intFromEnum(ActionKind.mods), @as(u12, mods) << 8 | @as(u12, key));
@@ -299,6 +305,24 @@ inline fn actionLayerTap(layer: u5, code: u8) u16 {
     return (@as(u16, @intFromEnum(ActionKind.layer_tap)) << 12) | (@as(u16, layer) << 8) | @as(u16, code);
 }
 
+// ============================================================
+// NO_ACTION_TAPPING 設定
+// C版 #define NO_ACTION_TAPPING / NO_ACTION_TAPPING_MODTAP_MODS に相当
+// テスト時に動的に切り替え可能
+// ============================================================
+
+/// NO_ACTION_TAPPING: タッピング判定を無効化
+/// - Layer-Tap → タップキーコードを ACTION_KEY として即座に送信
+/// - Mod-Tap → タップキーコードを ACTION_KEY として即座に送信（modtap_mods=false の場合）
+///             またはモディファイヤを ACTION_MODS として即座に送信（modtap_mods=true の場合）
+/// - OSM → ACTION_MODS として即座に送信（通常モッドとして動作）
+pub var no_action_tapping: bool = false;
+
+/// NO_ACTION_TAPPING_MODTAP_MODS: no_action_tapping=true の場合に
+/// Mod-Tap キーをモディファイヤ（ホールド側）として動作させる。
+/// false の場合はタップキーコード（タップ側）として動作させる。
+pub var no_action_tapping_modtap_mods: bool = false;
+
 /// Convert keycode to action
 /// Zig equivalent of action_for_keycode() in quantum/keymap_common.c
 pub fn keycodeToAction(kc: Keycode) Action {
@@ -334,13 +358,29 @@ pub fn keycodeToAction(kc: Keycode) Action {
         return .{ .code = kc };
     }
 
-    // Mod-Tap (0x2000-0x3FFF) - keycode maps directly to action code
+    // Mod-Tap (0x2000-0x3FFF)
     if (keycode.isModTap(kc)) {
+        if (no_action_tapping) {
+            if (no_action_tapping_modtap_mods) {
+                // NO_ACTION_TAPPING_MODTAP_MODS: モディファイヤ（ホールド側）として動作
+                const mods: u5 = @truncate(kc >> 8);
+                return .{ .code = ACTION_MODS(mods) };
+            } else {
+                // タップキーコードを ACTION_KEY として即座に送信
+                const tap_kc: u8 = @truncate(kc);
+                return .{ .code = ACTION_KEY(tap_kc) };
+            }
+        }
         return .{ .code = kc };
     }
 
     // Layer-Tap (0x4000-0x4FFF)
     if (keycode.isLayerTap(kc)) {
+        if (no_action_tapping) {
+            // タップキーコードを ACTION_KEY として即座に送信（レイヤー切替なし）
+            const tap_kc: u8 = @truncate(kc);
+            return .{ .code = ACTION_KEY(tap_kc) };
+        }
         const lt_layer: u5 = @truncate(kc >> 8);
         const tap_kc: u8 = @truncate(kc);
         return .{ .code = ACTION_LAYER_TAP_KEY(lt_layer, tap_kc) };
@@ -382,12 +422,21 @@ pub fn keycodeToAction(kc: Keycode) Action {
     // One Shot Layer (0x5280-0x529F)
     if (kc >= keycode.QK_ONE_SHOT_LAYER and kc <= keycode.QK_ONE_SHOT_LAYER_MAX) {
         const layer: u5 = @truncate(kc);
+        if (no_action_tapping) {
+            // C版: #if !defined(NO_ACTION_ONESHOT) && !defined(NO_ACTION_TAPPING) の else ブランチ
+            // NO_ACTION_TAPPING 時は MO として動作する（layer_on/layer_off のみ）
+            return .{ .code = ACTION_LAYER_MOMENTARY(layer) };
+        }
         return .{ .code = ACTION_LAYER_ONESHOT(layer) };
     }
 
     // One Shot Mod (0x52A0-0x52BF)
     if (kc >= keycode.QK_ONE_SHOT_MOD and kc <= keycode.QK_ONE_SHOT_MOD_MAX) {
         const mods: u5 = @truncate(kc);
+        if (no_action_tapping) {
+            // NO_ACTION_TAPPING: 通常のモッドとして動作
+            return .{ .code = ACTION_MODS(mods) };
+        }
         return .{ .code = ACTION_MODS_ONESHOT(mods) };
     }
 
