@@ -57,7 +57,7 @@ pub const IntBit = struct {
 
 /// SIE_STATUS register bits
 pub const SieStatus = struct {
-    pub const SETUP_REQ: u32 = 1 << 17;
+    pub const SETUP_REC: u32 = 1 << 17;
     pub const BUS_RESET: u32 = 1 << 19;
 };
 
@@ -353,13 +353,14 @@ pub const UsbDriver = struct {
     /// On freestanding, clears SETUP_REQ in SIE_STATUS (W1C).
     fn handleSetupFromHw(self: *UsbDriver) void {
         if (is_freestanding) {
-            // Clear SETUP_REQ bit in SIE_STATUS (W1C, bit 17)
+            // Clear SETUP_REC bit in SIE_STATUS (W1C, bit 17)
             const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
-            sie_status.* = SieStatus.SETUP_REQ;
+            sie_status.* = SieStatus.SETUP_REC;
 
-            // Read setup packet from DPRAM
-            const setup_ptr = @as(*const SetupPacket, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.SETUP_PACKET));
-            self.handleSetup(setup_ptr);
+            // Read setup packet from DPRAM (volatile: USB controller writes asynchronously)
+            const setup_ptr = @as(*align(1) volatile const SetupPacket, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.SETUP_PACKET));
+            const pkt = setup_ptr.*;
+            self.handleSetup(&pkt);
         } else {
             if (self.mock_setup_packet) |*pkt| {
                 self.handleSetup(pkt);
