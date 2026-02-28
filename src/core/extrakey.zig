@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Based on TMK/QMK extrakey handling
+// Original: Copyright 2012,2013 Jun Wako <wakojun@gmail.com>
 
 //! Extrakey機能 - メディアキー・システムコントロール
 //! C版 quantum/action.c の ACT_USAGE 処理に相当
