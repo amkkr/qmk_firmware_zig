@@ -39,7 +39,7 @@ h1 { color: #00d4ff; margin-bottom: 10px; font-size: 18px; }
 .clear:hover { background: #444; }
 </style>
 </head>
-<body>
+<body tabindex="0" autofocus>
 <h1>QMK Key Tester</h1>
 <p class="info">キーボードを接続してキーを押してください</p>
 
@@ -47,7 +47,6 @@ h1 { color: #00d4ff; margin-bottom: 10px; font-size: 18px; }
   <div class="current-box" id="codeBox">
     <h2>KeyboardEvent.code</h2>
     <div class="value" id="curCode">-</div>
-    <div class="sub" id="curCodeSub"></div>
   </div>
   <div class="current-box" id="keyBox">
     <h2>KeyboardEvent.key</h2>
@@ -77,7 +76,9 @@ h1 { color: #00d4ff; margin-bottom: 10px; font-size: 18px; }
 
 <script>
 const locationMap = { 0: 'Standard', 1: 'Left', 2: 'Right', 3: 'Numpad' };
-const activeMods = new Set();
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function updateMods(e) {
   const modMap = {
@@ -105,7 +106,7 @@ function addLog(type, e) {
   if (e.altKey) mods.push('Alt');
   if (e.metaKey) mods.push('Meta');
   const modStr = mods.length ? ` [${mods.join('+')}]` : '';
-  entry.innerHTML = `<span class="time">${time}</span> ${arrow} <span class="code">${e.code}</span> <span class="key">"${e.key}"</span> keyCode=${e.keyCode} (0x${e.keyCode.toString(16).toUpperCase().padStart(2,'0')}) loc=${locationMap[e.location] || e.location}${modStr}`;
+  entry.innerHTML = `<span class="time">${time}</span> ${arrow} <span class="code">${escapeHtml(e.code)}</span> <span class="key">"${escapeHtml(e.key)}"</span> keyCode=${e.keyCode} (0x${e.keyCode.toString(16).toUpperCase().padStart(2,'0')}) loc=${locationMap[e.location] || e.location}${modStr}`;
   log.insertBefore(entry, log.firstChild);
 }
 
@@ -127,6 +128,8 @@ document.addEventListener('keyup', (e) => {
   updateMods(e);
   addLog('up', e);
 });
+
+window.addEventListener('load', () => document.body.focus());
 </script>
 </body>
 </html>
