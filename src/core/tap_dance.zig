@@ -36,14 +36,13 @@ pub const TapDanceAction = struct {
 };
 
 /// Tap Dance の状態
-/// 注意: C版には `interrupted` フィールドがあるが、Zig版では簡略化のため省略。
-/// C版では割り込み時にホールド中でも `on_tap` を選ぶ場合があるが、
-/// Zig版では `pressed` のみで判断する（ホールド中は常に `on_hold`）。
 pub const TapDanceState = struct {
     /// タップ回数
     count: u8 = 0,
     /// 現在押下中か
     pressed: bool = false,
+    /// 他のキーによって割り込まれたか（C版 interrupted フラグ相当）
+    interrupted: bool = false,
     /// ダンス確定済みか
     finished: bool = false,
     /// 使用中か
@@ -124,6 +123,7 @@ pub fn preprocess(keycode: Keycode, pressed: bool) bool {
     if (td_index >= actions.len) return false;
 
     const state = getState(td_index) orelse return false;
+    state.interrupted = true;
     finishDance(td_index, state);
 
     return true;
@@ -180,17 +180,36 @@ fn finishDance(td_index: u8, state: *TapDanceState) void {
     const td_action = actions[td_index];
 
     // タップ数と押下状態に応じてアクションを決定
-    const kc: Keycode = if (state.pressed) blk: {
-        // ホールド中
-        break :blk if (state.count >= 2) td_action.on_tap_hold else td_action.on_hold;
-    } else blk: {
-        // リリース済み（タップ）
-        break :blk if (state.count >= 2) td_action.on_double_tap else td_action.on_tap;
-    };
+    // C版の interrupted フラグ: count >= 2 かつ interrupted かつ !pressed の場合は
+    // 「ダブルシングルタップ」として、on_tap を count 回独立送信する
+    if (state.count >= 2 and state.interrupted and !state.pressed) {
+        // ダブルシングルタップ: on_tap を (count-1) 回 tap_code + 1回 register_code
+        const tap_kc = td_action.on_tap;
+        // 先行タップ分を tap_code 相当で送信（register → send → unregister → send）
+        var i: u8 = 0;
+        while (i < state.count - 1) : (i += 1) {
+            registerKeycode(tap_kc);
+            host.sendKeyboardReport();
+            unregisterKeycode(tap_kc);
+            host.sendKeyboardReport();
+        }
+        // 最後の1回は register のみ（リリース時に unregister される）
+        state.registered_kc = tap_kc;
+        registerKeycode(tap_kc);
+        host.sendKeyboardReport();
+    } else {
+        const kc: Keycode = if (state.pressed) blk: {
+            // ホールド中
+            break :blk if (state.count >= 2) td_action.on_tap_hold else td_action.on_hold;
+        } else blk: {
+            // リリース済み（タップ）
+            break :blk if (state.count >= 2) td_action.on_double_tap else td_action.on_tap;
+        };
 
-    state.registered_kc = kc;
-    registerKeycode(kc);
-    host.sendKeyboardReport();
+        state.registered_kc = kc;
+        registerKeycode(kc);
+        host.sendKeyboardReport();
+    }
 
     active_td = 0;
 

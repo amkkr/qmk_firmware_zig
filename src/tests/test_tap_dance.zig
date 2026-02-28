@@ -348,3 +348,64 @@ test "QuadFunction_double_hold" {
     _ = tap_dance.process(td_kc, false);
     try testing.expect(driver.lastKeyboardReport().isEmpty());
 }
+
+// ============================================================
+// C版 QuadFunction "Double single tap" の移植
+// tap_key(key_quad); tap_key(key_quad); regular_key.press() で
+// 2回の独立シングルタップ（各々 KC_X）が送信される
+// ============================================================
+
+test "QuadFunction_double_single_tap" {
+    const driver = setupTest();
+    defer teardownTest();
+
+    const actions = [_]tap_dance.TapDanceAction{
+        .{ .on_tap = KC.X, .on_hold = KC.LEFT_CTRL, .on_double_tap = KC.ESCAPE, .on_tap_hold = KC.LEFT_ALT },
+    };
+    tap_dance.setActions(&actions);
+
+    const td_kc = keycode_mod.TD(0);
+
+    // 1st tap
+    _ = tap_dance.process(td_kc, true);
+    timer.mockAdvance(1);
+    _ = tap_dance.process(td_kc, false);
+
+    // 2nd tap
+    timer.mockAdvance(50);
+    _ = tap_dance.process(td_kc, true);
+    timer.mockAdvance(1);
+    _ = tap_dance.process(td_kc, false);
+
+    // 別キーで割り込み → ダブルシングルタップとして確定
+    timer.mockAdvance(5);
+    _ = tap_dance.preprocess(KC.A, true);
+
+    // C版期待値:
+    //   EXPECT_REPORT(driver, (KC_X));      -- 1回目シングルタップ
+    //   EXPECT_EMPTY_REPORT(driver);
+    //   EXPECT_REPORT(driver, (KC_X));      -- 2回目シングルタップ
+    //   EXPECT_EMPTY_REPORT(driver);
+
+    // レポートが4件以上あること（X押下、空、X押下、空）
+    try testing.expect(driver.keyboard_count >= 4);
+
+    // 1つ目: KC_X あり
+    try testing.expect(driver.keyboard_reports[0].hasKey(KC.X));
+    // 2つ目: 空レポート
+    try testing.expect(driver.keyboard_reports[1].isEmpty());
+    // 3つ目: KC_X あり
+    try testing.expect(driver.keyboard_reports[2].hasKey(KC.X));
+    // 4つ目: 空レポート（unregisterAndReset で送信される）
+    try testing.expect(driver.keyboard_reports[3].isEmpty());
+
+    // ESC（on_double_tap）は送信されていないこと
+    var found_esc = false;
+    for (0..@min(driver.keyboard_count, 64)) |i| {
+        if (driver.keyboard_reports[i].hasKey(KC.ESCAPE)) {
+            found_esc = true;
+            break;
+        }
+    }
+    try testing.expect(!found_esc);
+}
