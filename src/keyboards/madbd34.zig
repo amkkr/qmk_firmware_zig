@@ -69,8 +69,36 @@ pub fn matrixConfig() matrix.Config {
 ///   Row 1: k10 k11 k12 k13 k14 k15 | k16 k17 k18 k19 k1a k1b   (12キー)
 ///   Row 2: k20 k21 k22 k23 k24 k25 | k26 k27 k28 k29 k2a        (11キー)
 ///   Row 3:             k33 k34 k35 | k36 k37 k38                  (6キー)
-pub fn LAYOUT(comptime keys: [key_count]Keycode) [keymap.MATRIX_ROWS][keymap.MATRIX_COLS]Keycode {
-    return keymap.layoutMadbd34(keys);
+pub fn LAYOUT(comptime keys: [key_count]Keycode) [rows][cols]Keycode {
+    @setEvalBranchQuota(2000);
+    var result: [rows][cols]Keycode = .{.{KC.NO} ** cols} ** rows;
+    var idx: usize = 0;
+
+    // Row 0: cols 0-11 (12 keys)
+    for (0..12) |col| {
+        result[0][col] = keys[idx];
+        idx += 1;
+    }
+
+    // Row 1: cols 0-11 (12 keys)
+    for (0..12) |col| {
+        result[1][col] = keys[idx];
+        idx += 1;
+    }
+
+    // Row 2: cols 0-10 (11 keys)
+    for (0..11) |col| {
+        result[2][col] = keys[idx];
+        idx += 1;
+    }
+
+    // Row 3: cols 3-8 (6 keys)
+    for (3..9) |col| {
+        result[3][col] = keys[idx];
+        idx += 1;
+    }
+
+    return result;
 }
 
 // ============================================================

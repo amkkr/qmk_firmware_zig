@@ -1,16 +1,28 @@
 const std = @import("std");
 
+const KeyboardConfig = struct { rows: u8, cols: u8 };
+const keyboard_configs = std.StaticStringMap(KeyboardConfig).initComptime(.{
+    .{ "madbd34", KeyboardConfig{ .rows = 4, .cols = 12 } },
+    .{ "madbd5", KeyboardConfig{ .rows = 5, .cols = 16 } },
+});
+
 pub fn build(b: *std.Build) void {
     // Build options
-    const keyboard = b.option([]const u8, "keyboard", "Target keyboard (e.g. madbd34)") orelse "madbd34";
+    const keyboard = b.option([]const u8, "keyboard", "Target keyboard (e.g. madbd5)") orelse "madbd5";
     const keymap = b.option([]const u8, "keymap", "Target keymap (e.g. default)") orelse "default";
     const bootmagic_row = b.option(u8, "BOOTMAGIC_ROW", "Row index for bootmagic key (default: 0)") orelse 0;
     const bootmagic_col = b.option(u8, "BOOTMAGIC_COLUMN", "Column index for bootmagic key (default: 0)") orelse 0;
+
+    const kb_config = keyboard_configs.get(keyboard) orelse
+        std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
 
     // Build options module (passed to firmware and tests as "build_options")
     const build_opts = b.addOptions();
     build_opts.addOption(u8, "BOOTMAGIC_ROW", bootmagic_row);
     build_opts.addOption(u8, "BOOTMAGIC_COLUMN", bootmagic_col);
+    build_opts.addOption(u8, "MATRIX_ROWS", kb_config.rows);
+    build_opts.addOption(u8, "MATRIX_COLS", kb_config.cols);
+    build_opts.addOption([]const u8, "KEYBOARD", keyboard);
 
     const optimize = b.standardOptimizeOption(.{});
 
