@@ -208,6 +208,23 @@ pub const UsbDriver = struct {
         );
     }
 
+    /// Handle USB bus reset event
+    pub fn handleBusReset(self: *UsbDriver) void {
+        if (is_freestanding) {
+            // Clear BUS_RESET bit in SIE_STATUS (W1C)
+            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
+            sie_status.* = IntBit.BUS_RESET;
+
+            // Reset device address to 0
+            const addr_endp = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.ADDR_ENDP));
+            addr_endp.* = 0;
+        }
+
+        self.address = 0;
+        self.state = .default_state;
+        self.data_toggle = .{ false, false, false, false };
+    }
+
     /// Process a setup packet (called from interrupt handler or poll)
     pub fn handleSetup(self: *UsbDriver, setup: *const SetupPacket) void {
         const req_type = setup.bmRequestType & 0x60; // Type field
@@ -530,6 +547,35 @@ test "UsbDriver hostDriver interface" {
 
     const hd = drv.hostDriver();
     try testing.expectEqual(@as(u8, 0x05), hd.keyboardLeds());
+}
+
+test "UsbDriver handleBusReset resets state" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set up an addressed and configured state
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 5,
+    });
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    try testing.expectEqual(@as(u8, 5), drv.address);
+
+    // Simulate some data toggle activity
+    drv.data_toggle = .{ true, false, true, false };
+
+    // Bus reset
+    drv.handleBusReset();
+
+    try testing.expectEqual(DeviceState.default_state, drv.state);
+    try testing.expectEqual(@as(u8, 0), drv.address);
+    try testing.expectEqual([4]bool{ false, false, false, false }, drv.data_toggle);
 }
 
 test "SetupPacket size" {
