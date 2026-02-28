@@ -13,7 +13,11 @@ const host = @import("host.zig");
 const KeyRecord = event_mod.KeyRecord;
 const KeyEvent = event_mod.KeyEvent;
 
-pub const TAPPING_TERM: u16 = 200;
+pub const DEFAULT_TAPPING_TERM: u16 = 200;
+/// 後方互換エイリアス（既存テスト・フィクスチャで参照されるため）
+pub const TAPPING_TERM: u16 = DEFAULT_TAPPING_TERM;
+/// 動的に変更可能なタッピングターム（Dynamic Tapping Term で増減される）
+pub var tapping_term: u16 = DEFAULT_TAPPING_TERM;
 pub const QUICK_TAP_TERM: u16 = 200;
 pub const WAITING_BUFFER_SIZE: u8 = 8;
 
@@ -210,7 +214,7 @@ fn processTapping(keyp: *KeyRecord) bool {
 }
 
 fn withinTappingTerm(ev: KeyEvent) bool {
-    return timerDiff16(ev.time, tapping_key.event.time) < TAPPING_TERM;
+    return timerDiff16(ev.time, tapping_key.event.time) < tapping_term;
 }
 
 /// Quick Tap判定: 前回のタップから十分短い時間内かどうか
@@ -264,7 +268,7 @@ fn waitingBufferScanTap() void {
             buf_ev.key.col == tapping_key.event.key.col and
             buf_ev.key.row == tapping_key.event.key.row and
             !buf_ev.pressed and
-            timerDiff16(buf_ev.time, tapping_key.event.time) < TAPPING_TERM)
+            timerDiff16(buf_ev.time, tapping_key.event.time) < tapping_term)
         {
             tapping_key.tap.count = 1;
             waiting_buffer[i].tap.count = 1;
@@ -279,6 +283,7 @@ pub fn reset() void {
     waiting_buffer = initWaitingBuffer();
     waiting_buffer_head = 0;
     waiting_buffer_tail = 0;
+    tapping_term = DEFAULT_TAPPING_TERM;
 }
 
 test {
