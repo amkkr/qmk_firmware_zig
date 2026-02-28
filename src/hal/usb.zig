@@ -451,10 +451,10 @@ pub const UsbDriver = struct {
     /// Send a zero-length packet (ZLP) on EP0 IN for the status stage of a control transfer.
     /// USB 2.0 spec requires a status stage ZLP after processing host-to-device requests
     /// (SET_ADDRESS, SET_CONFIGURATION, SET_IDLE, SET_PROTOCOL, SET_REPORT).
-    pub fn sendStatusStageZlp(self: *UsbDriver) void {
+    fn sendStatusStageZlp(self: *UsbDriver) void {
         if (is_freestanding) {
             const buf_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE));
-            var ctrl: u32 = BufCtrl.FULL | BufCtrl.AVAILABLE;
+            var ctrl: u32 = BufCtrl.FULL | BufCtrl.LAST | BufCtrl.AVAILABLE;
             if (self.data_toggle[0]) {
                 ctrl |= BufCtrl.DATA_PID;
             }
@@ -1316,6 +1316,24 @@ test "SET_PROTOCOL sends status stage ZLP" {
     });
 
     try testing.expectEqual(HidProtocol.boot, drv.keyboard_protocol);
+    // Data toggle flipped by ZLP
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "SET_REPORT sends status stage ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.mock_ep0_out_data = 0x03; // NumLock + CapsLock
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_REPORT,
+        .wValue = 0x0200, // Output report, ID 0
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u8, 0x03), drv.keyboard_leds);
     // Data toggle flipped by ZLP
     try testing.expect(drv.data_toggle[0] == true);
 }
