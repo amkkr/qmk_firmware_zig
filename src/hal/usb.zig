@@ -2104,3 +2104,153 @@ test "GET_PROTOCOL stalls on unknown interface" {
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
 }
+
+test "GET_STATUS returns 2-byte zero status" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80, // Device-to-Host, Standard, Device
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+
+    try testing.expectEqual(@as(u16, 2), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[1]);
+}
+
+test "GET_STATUS clamps to wLength" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 1, // Less than 2
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+}
+
+test "CLEAR_FEATURE sends ZLP acknowledgment" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00, // Host-to-Device, Standard, Device
+        .bRequest = Request.CLEAR_FEATURE,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+
+    // ZLP sent: ep0_in_total_len=0, ep0_in_data set to empty
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "SET_FEATURE sends ZLP acknowledgment" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_FEATURE,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "SET_INTERFACE sends ZLP acknowledgment" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x01, // Host-to-Device, Standard, Interface
+        .bRequest = Request.SET_INTERFACE,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_INTERFACE returns alternate setting 0" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81, // Device-to-Host, Standard, Interface
+        .bRequest = Request.GET_INTERFACE,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
+}
+
+test "GET_DESCRIPTOR HID type returns HID descriptor by interface" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Request HID descriptor for keyboard interface
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81, // Device-to-Host, Standard, Interface
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID) << 8,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 255,
+    });
+
+    // HID descriptor is 9 bytes, fits in one packet, so ep0_in_data is null after send
+    try testing.expectEqual(@as(u16, 9), drv.ep0_in_total_len);
+
+    // Request HID descriptor for mouse interface
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID) << 8,
+        .wIndex = usb_descriptors.MOUSE_INTERFACE,
+        .wLength = 255,
+    });
+
+    try testing.expectEqual(@as(u16, 9), drv.ep0_in_total_len);
+
+    // Request HID descriptor for extra interface
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID) << 8,
+        .wIndex = usb_descriptors.EXTRA_INTERFACE,
+        .wLength = 255,
+    });
+
+    try testing.expectEqual(@as(u16, 9), drv.ep0_in_total_len);
+}
+
+test "GET_DESCRIPTOR HID type unknown interface returns null" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID) << 8,
+        .wIndex = 99, // Unknown interface
+        .wLength = 255,
+    });
+
+    try testing.expect(drv.ep0_in_data == null);
+}

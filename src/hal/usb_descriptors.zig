@@ -841,3 +841,63 @@ test "CDC endpoint descriptors are present" {
 test "LineCoding size" {
     try testing.expectEqual(@as(usize, 7), @sizeOf(LineCoding));
 }
+
+test "configuration descriptor enables remote wakeup" {
+    // bmAttributes byte at offset 7 of configuration descriptor
+    // Bit 5 = Remote Wakeup
+    const bmAttributes = configuration_descriptor[7];
+    try testing.expectEqual(@as(u8, 0xA0), bmAttributes);
+    try testing.expect(bmAttributes & 0x20 != 0); // Remote Wakeup bit set
+}
+
+test "individual HID descriptors exist and have correct type" {
+    // HID descriptor type = 0x21
+    try testing.expectEqual(@as(u8, DescriptorType.HID), keyboard_hid_descriptor[1]);
+    try testing.expectEqual(@as(u8, DescriptorType.HID), mouse_hid_descriptor[1]);
+    try testing.expectEqual(@as(u8, DescriptorType.HID), extra_hid_descriptor[1]);
+}
+
+test "individual HID descriptor report lengths match report descriptors" {
+    // HID descriptor: byte 7-8 = wDescriptorLength (report descriptor size, little-endian)
+    const kb_len = @as(u16, keyboard_hid_descriptor[8]) << 8 | keyboard_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, keyboard_report_descriptor.len), kb_len);
+
+    const mouse_len = @as(u16, mouse_hid_descriptor[8]) << 8 | mouse_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, mouse_report_descriptor.len), mouse_len);
+
+    const extra_len = @as(u16, extra_hid_descriptor[8]) << 8 | extra_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, extra_report_descriptor.len), extra_len);
+}
+
+test "mouse report descriptor has 8 buttons" {
+    // Search for Usage Maximum in mouse report descriptor
+    // Usage Maximum (8) = 0x29, 0x08
+    var found_8_buttons = false;
+    var i: usize = 0;
+    while (i < mouse_report_descriptor.len - 1) : (i += 1) {
+        if (mouse_report_descriptor[i] == 0x29) { // Usage Maximum tag
+            if (mouse_report_descriptor[i + 1] == 8) {
+                found_8_buttons = true;
+                break;
+            }
+        }
+    }
+    try testing.expect(found_8_buttons);
+}
+
+test "keyboard report descriptor padding uses CONST not CONST_VAR_ABS" {
+    // Input(Const) = 0x81, 0x01
+    // Input(Const,Var,Abs) = 0x81, 0x03
+    // Search for reserved byte padding in keyboard report descriptor
+    var found_const = false;
+    var i: usize = 0;
+    while (i < keyboard_report_descriptor.len - 1) : (i += 1) {
+        if (keyboard_report_descriptor[i] == 0x81) { // Input tag
+            if (keyboard_report_descriptor[i + 1] == 0x01) { // CONST
+                found_const = true;
+                break;
+            }
+        }
+    }
+    try testing.expect(found_const);
+}
