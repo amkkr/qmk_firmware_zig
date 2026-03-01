@@ -112,6 +112,13 @@ pub const DeviceState = enum {
     suspended,
 };
 
+/// EP0 OUT data phase pending operation
+pub const Ep0OutPending = enum {
+    none,
+    set_report,
+    set_line_coding,
+};
+
 /// USB setup packet (8 bytes)
 pub const SetupPacket = extern struct {
     bmRequestType: u8 = 0,
@@ -177,8 +184,12 @@ pub const UsbDriver = struct {
     ep0_in_total_len: u16 = 0,
     /// Pending address to apply after status stage ZLP completion (USB 2.0 spec)
     pending_address: ?u8 = null,
+    /// EP0 OUT data phase pending state (for SET_REPORT / SET_LINE_CODING)
+    ep0_out_pending: Ep0OutPending = .none,
     /// Mock EP0 OUT data (for testing SET_REPORT etc.)
     mock_ep0_out_data: u8 = 0,
+    /// Mock EP0 OUT data buffer (for testing SET_LINE_CODING 7-byte data phase)
+    mock_ep0_out_buf: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
     /// Mock INTS register value (for testing task() polling)
     mock_ints: u32 = 0,
     /// Mock setup packet (for testing task() SETUP_REQ dispatch)
@@ -210,12 +221,14 @@ pub const UsbDriver = struct {
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
         self.pending_address = null;
+        self.ep0_out_pending = .none;
         self.cdc_line_coding = .{};
         self.cdc_control_line_state = 0;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
         self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
         self.mock_ep0_out_data = 0;
+        self.mock_ep0_out_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
         self.mock_ints = 0;
         self.mock_setup_packet = null;
         self.mock_buff_status = 0;
@@ -311,6 +324,7 @@ pub const UsbDriver = struct {
         self.state = .default_state;
         self.data_toggle = .{ false, false, false, false, false, false };
         self.pending_address = null;
+        self.ep0_out_pending = .none;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
     }
@@ -397,15 +411,8 @@ pub const UsbDriver = struct {
                 // LED report from host (1 byte, bits: NumLock, CapsLock, ScrollLock, Compose, Kana)
                 // The LED data is sent in the data phase of the control transfer (EP0 OUT buffer),
                 // not in wValue. wValue contains (ReportType << 8 | ReportID).
-                if (is_freestanding) {
-                    // Read LED byte from EP0 OUT data buffer
-                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
-                    self.keyboard_leds = ep0_buf.*;
-                } else {
-                    // Mock: use ep0_out_data if set, otherwise no-op
-                    self.keyboard_leds = self.mock_ep0_out_data;
-                }
-                self.sendStatusStageZlp();
+                // Defer reading EP0 buffer until DATA phase arrives (EP0 OUT BUFF_STATUS).
+                self.ep0_out_pending = .set_report;
             },
             HidRequest.GET_PROTOCOL => {
                 if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
@@ -429,19 +436,9 @@ pub const UsbDriver = struct {
     fn handleCdcClassRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             usb_descriptors.CdcRequest.SET_LINE_CODING => {
-                // Host sends 7-byte LineCoding struct in data phase (EP0 OUT)
-                if (is_freestanding) {
-                    const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
-                    var buf: [7]u8 = undefined;
-                    for (0..7) |i| {
-                        buf[i] = ep0_buf[i];
-                    }
-                    self.cdc_line_coding = @bitCast(buf);
-                } else {
-                    // Mock: use ep0_reply_buf as mock data source
-                    self.cdc_line_coding = @bitCast(self.ep0_reply_buf);
-                }
-                self.sendStatusStageZlp();
+                // Host sends 7-byte LineCoding struct in data phase (EP0 OUT).
+                // Defer reading EP0 buffer until DATA phase arrives (EP0 OUT BUFF_STATUS).
+                self.ep0_out_pending = .set_line_coding;
             },
             usb_descriptors.CdcRequest.GET_LINE_CODING => {
                 // Send current LineCoding struct (7 bytes) to host
@@ -666,10 +663,13 @@ pub const UsbDriver = struct {
 
     /// BUFF_STATUS EP0 IN bit (bit 0)
     const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
+    /// BUFF_STATUS EP0 OUT bit (bit 1)
+    const BUFF_STATUS_EP0_OUT: u32 = 1 << 1;
 
     /// Handle buffer status events (endpoint transfer completions).
     /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。
     /// SET_ADDRESS の場合は ZLP 完了後にアドレスをハードウェアに適用する。
+    /// EP0 OUT 完了時に保留中の SET_REPORT / SET_LINE_CODING データを読み取る。
     fn handleBuffStatus(self: *UsbDriver) void {
         const status = if (is_freestanding) blk: {
             // Read and clear BUFF_STATUS (W1C)
@@ -696,6 +696,43 @@ pub const UsbDriver = struct {
                 }
                 self.pending_address = null;
             }
+        }
+
+        if ((status & BUFF_STATUS_EP0_OUT) != 0) {
+            self.handleEp0OutData();
+        }
+    }
+
+    /// EP0 OUT DATA フェーズ到着時の処理。
+    /// SET_REPORT / SET_LINE_CODING で保留していたデータを読み取り、
+    /// ZLP status stage を送信する。
+    fn handleEp0OutData(self: *UsbDriver) void {
+        switch (self.ep0_out_pending) {
+            .set_report => {
+                if (is_freestanding) {
+                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
+                    self.keyboard_leds = ep0_buf.*;
+                } else {
+                    self.keyboard_leds = self.mock_ep0_out_data;
+                }
+                self.ep0_out_pending = .none;
+                self.sendStatusStageZlp();
+            },
+            .set_line_coding => {
+                if (is_freestanding) {
+                    const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
+                    var buf: [7]u8 = undefined;
+                    for (0..7) |i| {
+                        buf[i] = ep0_buf[i];
+                    }
+                    self.cdc_line_coding = @bitCast(buf);
+                } else {
+                    self.cdc_line_coding = @bitCast(self.mock_ep0_out_buf);
+                }
+                self.ep0_out_pending = .none;
+                self.sendStatusStageZlp();
+            },
+            .none => {},
         }
     }
 
@@ -988,8 +1025,7 @@ test "UsbDriver SET_REPORT (LEDs)" {
     var drv = UsbDriver{};
     drv.init();
 
-    // Simulate LED data in EP0 OUT data buffer (mock)
-    drv.mock_ep0_out_data = 0x02; // CapsLock
+    // Send SETUP packet — should only set pending flag
     drv.handleSetup(&.{
         .bmRequestType = 0x21,
         .bRequest = HidRequest.SET_REPORT,
@@ -997,8 +1033,21 @@ test "UsbDriver SET_REPORT (LEDs)" {
         .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
     });
 
+    // After SETUP, pending flag should be set but LEDs not yet updated
+    try testing.expectEqual(Ep0OutPending.set_report, drv.ep0_out_pending);
+    try testing.expectEqual(@as(u8, 0x00), drv.keyboard_leds); // not yet applied
+    try testing.expect(drv.data_toggle[0] == false); // no ZLP yet
+
+    // Simulate LED data arriving in DATA phase
+    drv.mock_ep0_out_data = 0x02; // CapsLock
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_OUT;
+    drv.handleBuffStatus();
+
+    // Now LEDs should be applied and ZLP sent
     try testing.expectEqual(@as(u8, 0x02), drv.keyboard_leds);
     try testing.expectEqual(@as(u8, 0x02), drv.getLeds());
+    try testing.expectEqual(Ep0OutPending.none, drv.ep0_out_pending);
+    try testing.expect(drv.data_toggle[0] == true);
 }
 
 test "UsbDriver send does nothing when not configured" {
@@ -1561,11 +1610,10 @@ test "SET_PROTOCOL sends status stage ZLP" {
     try testing.expect(drv.data_toggle[0] == true);
 }
 
-test "SET_REPORT sends status stage ZLP" {
+test "SET_REPORT sends status stage ZLP after DATA phase" {
     var drv = UsbDriver{};
     drv.init();
 
-    drv.mock_ep0_out_data = 0x03; // NumLock + CapsLock
     drv.handleSetup(&.{
         .bmRequestType = 0x21,
         .bRequest = HidRequest.SET_REPORT,
@@ -1574,9 +1622,19 @@ test "SET_REPORT sends status stage ZLP" {
         .wLength = 1,
     });
 
+    // SETUP only sets pending flag, no ZLP yet
+    try testing.expectEqual(Ep0OutPending.set_report, drv.ep0_out_pending);
+    try testing.expect(drv.data_toggle[0] == false);
+
+    // Simulate DATA phase arrival
+    drv.mock_ep0_out_data = 0x03; // NumLock + CapsLock
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_OUT;
+    drv.handleBuffStatus();
+
     try testing.expectEqual(@as(u8, 0x03), drv.keyboard_leds);
     // Data toggle flipped by ZLP
     try testing.expect(drv.data_toggle[0] == true);
+    try testing.expectEqual(Ep0OutPending.none, drv.ep0_out_pending);
 }
 
 test "handleBusReset clears pending_address" {
@@ -1703,15 +1761,7 @@ test "CDC SET_LINE_CODING stores line coding" {
     var drv = UsbDriver{};
     drv.init();
 
-    // Mock: set LineCoding data in ep0_reply_buf (used as mock source)
-    const lc = usb_descriptors.LineCoding{
-        .dwDTERate = 9600,
-        .bCharFormat = 1,
-        .bParityType = 2,
-        .bDataBits = 7,
-    };
-    drv.ep0_reply_buf = @bitCast(lc);
-
+    // Send SETUP packet — should only set pending flag, not read data yet
     drv.handleSetup(&.{
         .bmRequestType = 0x21, // Host-to-Device, Class, Interface
         .bRequest = usb_descriptors.CdcRequest.SET_LINE_CODING,
@@ -1720,10 +1770,30 @@ test "CDC SET_LINE_CODING stores line coding" {
         .wLength = 7,
     });
 
+    // After SETUP, pending flag should be set but data not yet applied
+    try testing.expectEqual(Ep0OutPending.set_line_coding, drv.ep0_out_pending);
+    try testing.expectEqual(@as(u32, 115200), drv.cdc_line_coding.dwDTERate); // still default
+    try testing.expect(drv.data_toggle[0] == false); // no ZLP yet
+
+    // Mock: set LineCoding data in mock_ep0_out_buf (simulating DATA phase arrival)
+    const lc = usb_descriptors.LineCoding{
+        .dwDTERate = 9600,
+        .bCharFormat = 1,
+        .bParityType = 2,
+        .bDataBits = 7,
+    };
+    drv.mock_ep0_out_buf = @bitCast(lc);
+
+    // Simulate EP0 OUT BUFF_STATUS (DATA phase arrived)
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_OUT;
+    drv.handleBuffStatus();
+
+    // Now data should be applied and ZLP sent
     try testing.expectEqual(@as(u32, 9600), drv.cdc_line_coding.dwDTERate);
     try testing.expectEqual(@as(u8, 1), drv.cdc_line_coding.bCharFormat);
     try testing.expectEqual(@as(u8, 2), drv.cdc_line_coding.bParityType);
     try testing.expectEqual(@as(u8, 7), drv.cdc_line_coding.bDataBits);
+    try testing.expectEqual(Ep0OutPending.none, drv.ep0_out_pending);
     // ZLP sent
     try testing.expect(drv.data_toggle[0] == true);
 }
