@@ -862,8 +862,8 @@ pub const UsbDriver = struct {
         const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
         const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
 
-        // Wait for previous packet to be consumed by host before overwriting
-        while (buf_ctrl.* & BufCtrl.AVAILABLE != 0) {}
+        // Skip if previous packet is still pending (non-blocking)
+        if (buf_ctrl.* & BufCtrl.AVAILABLE != 0) return;
 
         // Calculate buffer address in DPRAM (must match hwConfigureEndpoints)
         const buf_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE + (@as(u32, ep) - 1) * 64;
