@@ -67,7 +67,7 @@ pub const DPRAM = struct {
     pub const EP_IN_CTRL_BASE: u32 = 0x08;
     pub const EP_OUT_CTRL_BASE: u32 = 0x0C;
     pub const EP_BUF_CTRL_BASE: u32 = 0x80;
-    pub const EP0_IN_BUF: u32 = 0x100;
+    pub const EP0_BUF: u32 = 0x100; // ep0_buf_a: EP0 data stage buffer (IN/OUT shared)
     pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
 };
@@ -79,6 +79,9 @@ pub const BufCtrl = struct {
     pub const DATA_PID: u32 = 1 << 13;
     pub const AVAILABLE: u32 = 1 << 10;
     pub const LEN_MASK: u32 = 0x3FF;
+
+    /// EP0 OUT buffer control register address (DPRAM offset 0x84)
+    pub const EP0_OUT_ADDR: u32 = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + 4;
 };
 
 /// Endpoint control register bits (DPRAM EP_IN_CTRL / EP_OUT_CTRL)
@@ -167,6 +170,8 @@ pub const UsbDriver = struct {
     ep0_in_data: ?[]const u8 = null,
     ep0_in_offset: u16 = 0,
     ep0_in_total_len: u16 = 0,
+    /// Pending address to apply after status stage ZLP completion (USB 2.0 spec)
+    pending_address: ?u8 = null,
     /// Mock EP0 OUT data (for testing SET_REPORT etc.)
     mock_ep0_out_data: u8 = 0,
     /// Mock INTS register value (for testing task() polling)
@@ -189,6 +194,7 @@ pub const UsbDriver = struct {
         self.ep0_in_data = null;
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
+        self.pending_address = null;
         self.mock_ep0_out_data = 0;
         self.mock_ints = 0;
         self.mock_setup_packet = null;
@@ -270,12 +276,16 @@ pub const UsbDriver = struct {
             // Reset device address to 0
             const addr_endp = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.ADDR_ENDP));
             addr_endp.* = 0;
+
+            // Re-initialize EP0 OUT BUF CTRL to receive next SETUP packet
+            self.hwPrepareEp0Out();
         }
 
         self.address = 0;
         self.configuration = 0;
         self.state = .default_state;
         self.data_toggle = .{ false, false, false, false };
+        self.pending_address = null;
     }
 
     /// Process a setup packet (called from interrupt handler or poll)
@@ -291,11 +301,13 @@ pub const UsbDriver = struct {
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             Request.SET_ADDRESS => {
-                self.address = @truncate(setup.wValue);
+                const addr: u8 = @truncate(setup.wValue);
+                self.address = addr;
                 self.state = .addressed;
-                if (is_freestanding) {
-                    self.hwSetAddress(self.address);
-                }
+                // Defer hardware address application until after status stage ZLP
+                // (USB 2.0 spec: address takes effect after status stage completion)
+                self.pending_address = addr;
+                self.sendStatusStageZlp();
             },
             Request.SET_CONFIGURATION => {
                 self.configuration = @truncate(setup.wValue);
@@ -307,6 +319,7 @@ pub const UsbDriver = struct {
                 } else {
                     self.state = .addressed;
                 }
+                self.sendStatusStageZlp();
             },
             Request.GET_CONFIGURATION => {
                 // Would send self.configuration back
@@ -325,6 +338,7 @@ pub const UsbDriver = struct {
         switch (setup.bRequest) {
             HidRequest.SET_IDLE => {
                 self.keyboard_idle = @truncate(setup.wValue >> 8);
+                self.sendStatusStageZlp();
             },
             HidRequest.SET_PROTOCOL => {
                 const iface: u8 = @truncate(setup.wIndex);
@@ -334,6 +348,7 @@ pub const UsbDriver = struct {
                 } else if (iface == usb_descriptors.MOUSE_INTERFACE) {
                     self.mouse_protocol = @enumFromInt(protocol & 1);
                 }
+                self.sendStatusStageZlp();
             },
             HidRequest.SET_REPORT => {
                 // LED report from host (1 byte, bits: NumLock, CapsLock, ScrollLock, Compose, Kana)
@@ -341,12 +356,13 @@ pub const UsbDriver = struct {
                 // not in wValue. wValue contains (ReportType << 8 | ReportID).
                 if (is_freestanding) {
                     // Read LED byte from EP0 OUT data buffer
-                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_BASE));
+                    const ep0_buf = @as(*volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
                     self.keyboard_leds = ep0_buf.*;
                 } else {
                     // Mock: use ep0_out_data if set, otherwise no-op
                     self.keyboard_leds = self.mock_ep0_out_data;
                 }
+                self.sendStatusStageZlp();
             },
             HidRequest.GET_PROTOCOL => {
                 // Would send protocol value back
@@ -411,7 +427,7 @@ pub const UsbDriver = struct {
         const is_last = (offset + chunk_len) >= total;
 
         if (is_freestanding) {
-            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_IN_BUF));
+            const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
             for (0..chunk_len) |i| {
                 ep0_buf[i] = data[offset + i];
             }
@@ -438,6 +454,23 @@ pub const UsbDriver = struct {
         }
     }
 
+    /// Send a zero-length packet (ZLP) on EP0 IN for the status stage of a control transfer.
+    /// USB 2.0 spec requires a status stage ZLP after processing host-to-device requests
+    /// (SET_ADDRESS, SET_CONFIGURATION, SET_IDLE, SET_PROTOCOL, SET_REPORT).
+    fn sendStatusStageZlp(self: *UsbDriver) void {
+        if (is_freestanding) {
+            const buf_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE));
+            var ctrl: u32 = BufCtrl.FULL | BufCtrl.LAST | BufCtrl.AVAILABLE;
+            if (self.data_toggle[0]) {
+                ctrl |= BufCtrl.DATA_PID;
+            }
+            self.data_toggle[0] = !self.data_toggle[0];
+            buf_ctrl.* = ctrl;
+        } else {
+            self.data_toggle[0] = !self.data_toggle[0];
+        }
+    }
+
     fn stallEndpoint0(self: *UsbDriver) void {
         if (is_freestanding) {
             const ep_stall_arm = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.EP_STALL_ARM));
@@ -460,6 +493,9 @@ pub const UsbDriver = struct {
             sie_status.* = SieStatus.SETUP_REC;
 
             self.handleSetup(&pkt);
+
+            // Re-arm EP0 OUT to receive the next SETUP/OUT packet
+            self.hwPrepareEp0Out();
         } else {
             if (self.mock_setup_packet) |*pkt| {
                 self.handleSetup(pkt);
@@ -473,6 +509,7 @@ pub const UsbDriver = struct {
 
     /// Handle buffer status events (endpoint transfer completions).
     /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。
+    /// SET_ADDRESS の場合は ZLP 完了後にアドレスをハードウェアに適用する。
     fn handleBuffStatus(self: *UsbDriver) void {
         const status = if (is_freestanding) blk: {
             // Read and clear BUFF_STATUS (W1C)
@@ -486,9 +523,19 @@ pub const UsbDriver = struct {
             break :blk s;
         };
 
-        // Continue multi-packet EP0 IN transfer
-        if ((status & BUFF_STATUS_EP0_IN) != 0 and self.ep0_in_data != null) {
-            self.sendEp0InPacket();
+        if ((status & BUFF_STATUS_EP0_IN) != 0) {
+            // Continue multi-packet EP0 IN transfer
+            if (self.ep0_in_data != null) {
+                self.sendEp0InPacket();
+            }
+
+            // Apply deferred SET_ADDRESS after status stage ZLP completion
+            if (self.pending_address) |addr| {
+                if (is_freestanding) {
+                    self.hwSetAddress(addr);
+                }
+                self.pending_address = null;
+            }
         }
     }
 
@@ -506,7 +553,6 @@ pub const UsbDriver = struct {
     // ============================================================
 
     fn hwInit(self: *UsbDriver) void {
-        _ = self;
         // Release USB peripheral from reset via RESETS register
         const resets_clr = @as(*volatile u32, @ptrFromInt(RESETS_CLR));
         resets_clr.* = RESETS_USBCTRL_BIT;
@@ -537,9 +583,20 @@ pub const UsbDriver = struct {
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
         inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
 
+        // Initialize EP0 OUT buffer control to receive SETUP/OUT packets from host
+        self.hwPrepareEp0Out();
+
         // Enable pull-up to signal device connection
         const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
         sie_ctrl.* = 1 << 16; // PULLUP_EN
+    }
+
+    /// Prepare EP0 OUT buffer control to receive the next OUT/SETUP packet from host.
+    /// Sets AVAILABLE with max packet size (64 bytes) at DPRAM offset 0x84.
+    fn hwPrepareEp0Out(self: *UsbDriver) void {
+        _ = self;
+        const ep0_out_buf_ctrl = @as(*volatile u32, @ptrFromInt(BufCtrl.EP0_OUT_ADDR));
+        ep0_out_buf_ctrl.* = BufCtrl.AVAILABLE | (EP0_MAX_PACKET_SIZE & BufCtrl.LEN_MASK);
     }
 
     fn hwSetAddress(self: *UsbDriver, addr: u8) void {
@@ -909,6 +966,15 @@ test "EP buffer offsets are consistent between hwConfigureEndpoints and hwSendEn
     try testing.expect(ep3_offset >= ep2_offset + 64);
 }
 
+test "EP0 data buffer address is correct" {
+    // EP0 data buffer (ep0_buf_a) is at DPRAM offset 0x100
+    // This is used for both GET_DESCRIPTOR (IN) and SET_REPORT (OUT) data stages.
+    try testing.expectEqual(@as(u32, 0x100), DPRAM.EP0_BUF);
+    // EP0_BUF must not overlap with EP1+ buffers
+    try testing.expect(DPRAM.EP0_BUF + 64 <= DPRAM.EP0_OUT_BUF);
+    try testing.expect(DPRAM.EP0_OUT_BUF + 64 <= DPRAM.EP_BUF_BASE);
+}
+
 test "EP control register DPRAM offsets" {
     // EP1 IN control: EP_IN_CTRL_BASE + (1 - 1) * 8 = 0x08
     try testing.expectEqual(@as(u32, 0x08), DPRAM.EP_IN_CTRL_BASE + (@as(u32, 1) - 1) * 8);
@@ -1197,4 +1263,136 @@ test "handleBuffStatus no-op when no EP0 IN data pending" {
     // Should not crash, state unchanged
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_offset);
+}
+
+test "SET_ADDRESS sends status stage ZLP and defers address" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 7,
+    });
+
+    // Address should be set in software immediately
+    try testing.expectEqual(@as(u8, 7), drv.address);
+    try testing.expectEqual(DeviceState.addressed, drv.state);
+
+    // pending_address should be set (waiting for ZLP completion)
+    try testing.expectEqual(@as(?u8, 7), drv.pending_address);
+
+    // Data toggle should have been flipped by ZLP
+    try testing.expect(drv.data_toggle[0] == true);
+
+    // Simulate ZLP completion via BUFF_STATUS
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+    drv.handleBuffStatus();
+
+    // pending_address should be cleared after ZLP completion
+    try testing.expect(drv.pending_address == null);
+}
+
+test "SET_CONFIGURATION sends status stage ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set address first
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 1,
+    });
+    const toggle_after_addr = drv.data_toggle[0];
+
+    // Set configuration
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    // Data toggle should have flipped again (ZLP for SET_CONFIGURATION)
+    try testing.expectEqual(!toggle_after_addr, drv.data_toggle[0]);
+}
+
+test "SET_IDLE sends status stage ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_IDLE,
+        .wValue = 0x0400,
+    });
+
+    try testing.expectEqual(@as(u8, 4), drv.keyboard_idle);
+    // Data toggle flipped by ZLP
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "SET_PROTOCOL sends status stage ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+    });
+
+    try testing.expectEqual(HidProtocol.boot, drv.keyboard_protocol);
+    // Data toggle flipped by ZLP
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "SET_REPORT sends status stage ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.mock_ep0_out_data = 0x03; // NumLock + CapsLock
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_REPORT,
+        .wValue = 0x0200, // Output report, ID 0
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u8, 0x03), drv.keyboard_leds);
+    // Data toggle flipped by ZLP
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "handleBusReset clears pending_address" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_ADDRESS,
+        .wValue = 5,
+    });
+    try testing.expectEqual(@as(?u8, 5), drv.pending_address);
+
+    drv.handleBusReset();
+    try testing.expect(drv.pending_address == null);
+    try testing.expectEqual(@as(u8, 0), drv.address);
+}
+
+test "handleBuffStatus applies pending_address after ZLP" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Manually set pending_address (simulating SET_ADDRESS processing)
+    drv.pending_address = 12;
+
+    // Simulate ZLP completion
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+    drv.handleBuffStatus();
+
+    // pending_address should be consumed
+    try testing.expect(drv.pending_address == null);
 }
