@@ -63,13 +63,9 @@ pub fn build(b: *std.Build) void {
     elf_size_step.dependOn(&install_firmware.step);
     b.getInstallStep().dependOn(elf_size_step);
 
-    // Optional boot2 binary path (required for booting on real hardware)
-    // Obtain from pico-sdk: boot_stage2/boot2_w25q080.bin (or appropriate variant)
-    const boot2_path = b.option([]const u8, "boot2", "Path to boot2.bin (256-byte second stage bootloader from pico-sdk)");
-
     // UF2 conversion step
     const uf2_step = b.step("uf2", "Convert firmware to UF2 format");
-    const uf2_install = addUf2Step(b, firmware, native_target, keyboard, keymap, boot2_path);
+    const uf2_install = addUf2Step(b, firmware, native_target, keyboard, keymap);
     uf2_step.dependOn(&uf2_install.step);
 
     // UF2 ファイルサイズ表示
@@ -149,7 +145,6 @@ fn addUf2Step(
     native_target: std.Build.ResolvedTarget,
     keyboard: []const u8,
     keymap: []const u8,
-    boot2_path: ?[]const u8,
 ) *std.Build.Step.InstallFile {
     const raw_bin = firmware.addObjCopy(.{
         .format = .bin,
@@ -166,9 +161,6 @@ fn addUf2Step(
     const uf2_run = b.addRunArtifact(uf2_gen);
     uf2_run.addFileArg(raw_bin.getOutput());
     const uf2_output = uf2_run.addOutputFileArg(b.fmt("{s}_{s}.uf2", .{ keyboard, keymap }));
-    if (boot2_path) |path| {
-        uf2_run.addArg(path);
-    }
 
     return b.addInstallFile(uf2_output, b.fmt("{s}_{s}.uf2", .{ keyboard, keymap }));
 }

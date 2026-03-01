@@ -83,6 +83,7 @@ pub const startup = if (is_freestanding) struct {
 
     const gpio = @import("hal/gpio.zig");
     const usb = @import("hal/usb.zig");
+    const timer = @import("hal/timer.zig");
     const cdc_console = @import("hal/cdc_console.zig");
     const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
@@ -118,6 +119,11 @@ pub const startup = if (is_freestanding) struct {
         keyboard.getTestKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
+        // 診断用変数
+        var loop_count: u32 = 0;
+        var last_heartbeat: u32 = timer.read32();
+        var prev_matrix: [kb_mod.rows]u32 = .{0} ** kb_mod.rows;
+
         // メインループ
         while (true) {
             // USBイベントポーリング（SETUP_REQ/BUS_RESET/BUFF_STATUS処理）
@@ -131,6 +137,27 @@ pub const startup = if (is_freestanding) struct {
 
             // キーボードタスク実行（差分検出 → イベント生成 → アクション実行）
             keyboard.task();
+
+            // 診断ログ
+            loop_count +%= 1;
+
+            // マトリックス変化検出ログ
+            for (0..kb_mod.rows) |row| {
+                const current = matrix.getRow(@intCast(row));
+                if (current != prev_matrix[row]) {
+                    cdc_console.print("matrix[{d}]: 0x{X:0>4} -> 0x{X:0>4}\r\n", .{ row, prev_matrix[row], current });
+                    prev_matrix[row] = current;
+                }
+            }
+
+            // 定期ハートビートログ（5秒ごと）
+            const now = timer.read32();
+            if (timer.elapsed32(last_heartbeat) >= 5000) {
+                const usb_state: []const u8 = if (usb_driver.isConfigured()) "configured" else "not configured";
+                cdc_console.print("[heartbeat] loops={d} usb={s}\r\n", .{ loop_count, usb_state });
+                last_heartbeat = now;
+                loop_count = 0;
+            }
         }
     }
 } else struct {};

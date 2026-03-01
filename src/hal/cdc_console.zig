@@ -23,7 +23,7 @@ pub fn init(drv: *usb_mod.UsbDriver) void {
 /// Write raw data to CDC
 pub fn write(data: []const u8) void {
     if (usb_driver) |drv| {
-        if (drv.isConfigured() and drv.cdcDtrActive()) {
+        if (drv.isConfigured()) {
             drv.cdcWrite(data);
         }
     }
@@ -32,7 +32,7 @@ pub fn write(data: []const u8) void {
 /// Formatted print to CDC
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     if (usb_driver) |drv| {
-        if (drv.isConfigured() and drv.cdcDtrActive()) {
+        if (drv.isConfigured()) {
             drv.cdcPrint(fmt, args);
         }
     }
