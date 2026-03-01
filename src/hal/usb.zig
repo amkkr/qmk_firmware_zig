@@ -330,7 +330,7 @@ pub const UsbDriver = struct {
                 self.ep0_reply_buf[0] = self.configuration;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
-                self.ep0_in_total_len = 1;
+                self.ep0_in_total_len = @min(1, setup.wLength);
                 self.sendEp0InPacket();
             },
             Request.GET_DESCRIPTOR => {
@@ -385,7 +385,7 @@ pub const UsbDriver = struct {
                 }
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
-                self.ep0_in_total_len = 1;
+                self.ep0_in_total_len = @min(1, setup.wLength);
                 self.sendEp0InPacket();
             },
             else => self.stallEndpoint0(),
@@ -1533,6 +1533,7 @@ test "GET_PROTOCOL returns mouse protocol" {
 
     try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]); // boot = 0
+    try testing.expect(drv.ep0_in_data == null);
 }
 
 test "GET_PROTOCOL stalls on unknown interface" {
