@@ -146,15 +146,16 @@ pub const startup = if (is_freestanding) struct {
         clock.init();
 
         // ペリフェラルリセット解除（ChibiOS hal_lld_init() と同等）
-        // BUSCTRL(bit1), SYSCFG(bit18), SYSINFO(bit19) のリセット解除
-        unresetPeripherals(1 << 1); // BUSCTRL
-        unresetPeripherals(1 << 18); // SYSCFG
-        unresetPeripherals(1 << 19); // SYSINFO
+        // BUSCTRL(bit1), SYSCFG(bit18), SYSINFO(bit19) を一括でリセット解除
+        unresetPeripherals((1 << 1) | (1 << 18) | (1 << 19));
 
         diagPulse();
 
         // [DIAG] Stage 2: gpio.init()
         gpio.init();
+        // gpio.init() が IO_BANK0 をリセットするため GP0 の FUNCSEL が NULL に戻る。
+        // 診断パルスを継続するために GP0 を SIO function に再設定する。
+        @as(*volatile u32, @ptrFromInt(0x40014000 + DIAG_PIN * 8 + 4)).* = 5;
         diagPulse();
 
         // [DIAG] Stage 3: matrix.init()
