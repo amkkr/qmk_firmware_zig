@@ -82,6 +82,7 @@ pub const startup = if (is_freestanding) struct {
     }
 
     const gpio = @import("hal/gpio.zig");
+    const uart = @import("hal/uart.zig");
     const usb = @import("hal/usb.zig");
     const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
@@ -101,6 +102,10 @@ pub const startup = if (is_freestanding) struct {
 
         // GPIO ペリフェラルのリセット解除（IO_BANK0, PADS_BANK0）
         gpio.init();
+
+        // UART0 デバッグ出力初期化（GP0 = TX, 115200bps, 8N1）
+        uart.init();
+        uart.print("{s} firmware started\n", .{build_options.KEYBOARD});
 
         // キーボードマトリックス初期化
         matrix = MatrixType.init(kb_mod.matrixConfig());
@@ -123,9 +128,13 @@ pub const startup = if (is_freestanding) struct {
             usb_driver.task();
 
             // マトリックススキャン → 状態を keyboard モジュールに反映
-            _ = matrix.scan();
+            const matrix_changed = matrix.scan();
             for (0..kb_mod.rows) |row| {
                 keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
+            }
+
+            if (matrix_changed) {
+                uart.print("matrix changed\n", .{});
             }
 
             // キーボードタスク実行（差分検出 → イベント生成 → アクション実行）
