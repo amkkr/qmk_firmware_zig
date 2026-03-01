@@ -8,8 +8,8 @@
 //! USB and HID descriptor definitions
 //! Based on tmk_core/protocol/usb_descriptor.c and usb_descriptor.h
 //!
-//! Defines all USB descriptors needed for a HID keyboard device:
-//! device, configuration, interface, HID, endpoint, and report descriptors.
+//! Defines all USB descriptors needed for a composite HID + CDC ACM device:
+//! device, configuration, interface, HID, CDC, endpoint, and report descriptors.
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -29,16 +29,21 @@ pub const DescriptorType = struct {
     pub const STRING: u8 = 0x03;
     pub const INTERFACE: u8 = 0x04;
     pub const ENDPOINT: u8 = 0x05;
+    pub const INTERFACE_ASSOCIATION: u8 = 0x0B;
+    pub const CS_INTERFACE: u8 = 0x24;
     pub const HID: u8 = 0x21;
     pub const HID_REPORT: u8 = 0x22;
 };
 
 pub const DeviceClass = struct {
     pub const PER_INTERFACE: u8 = 0x00;
+    pub const MISC: u8 = 0xEF;
 };
 
 pub const InterfaceClass = struct {
     pub const HID: u8 = 0x03;
+    pub const CDC: u8 = 0x02;
+    pub const CDC_DATA: u8 = 0x0A;
 };
 
 pub const InterfaceSubClass = struct {
@@ -54,9 +59,11 @@ pub const InterfaceProtocol = struct {
 
 pub const EndpointDirection = struct {
     pub const IN: u8 = 0x80;
+    pub const OUT: u8 = 0x00;
 };
 
 pub const EndpointTransfer = struct {
+    pub const BULK: u8 = 0x02;
     pub const INTERRUPT: u8 = 0x03;
 };
 
@@ -75,19 +82,59 @@ pub const DEVICE_VERSION: u16 = 0x0001;
 pub const KEYBOARD_INTERFACE: u8 = 0;
 pub const MOUSE_INTERFACE: u8 = 1;
 pub const EXTRA_INTERFACE: u8 = 2;
-pub const NUM_INTERFACES: u8 = 3;
+pub const CDC_COMM_INTERFACE: u8 = 3;
+pub const CDC_DATA_INTERFACE: u8 = 4;
+pub const NUM_INTERFACES: u8 = 5;
 
 pub const KEYBOARD_ENDPOINT: u8 = 1;
 pub const MOUSE_ENDPOINT: u8 = 2;
 pub const EXTRA_ENDPOINT: u8 = 3;
+pub const CDC_NOTIFICATION_ENDPOINT: u8 = 4;
+pub const CDC_DATA_ENDPOINT: u8 = 5;
 
 pub const KEYBOARD_ENDPOINT_SIZE: u8 = 8;
 pub const MOUSE_ENDPOINT_SIZE: u8 = 8;
 pub const EXTRA_ENDPOINT_SIZE: u8 = 8;
+pub const CDC_NOTIFICATION_ENDPOINT_SIZE: u8 = 8;
+pub const CDC_DATA_ENDPOINT_SIZE: u8 = 64;
 
 pub const KEYBOARD_INTERVAL: u8 = 10; // ms
 pub const MOUSE_INTERVAL: u8 = 10;
 pub const EXTRA_INTERVAL: u8 = 10;
+pub const CDC_NOTIFICATION_INTERVAL: u8 = 16;
+
+// ============================================================
+// CDC Definitions
+// ============================================================
+
+/// CDC Line Coding structure (7 bytes)
+pub const LineCoding = extern struct {
+    dwDTERate: u32 align(1) = 115200, // baud rate
+    bCharFormat: u8 = 0, // 0: 1 stop bit
+    bParityType: u8 = 0, // 0: none
+    bDataBits: u8 = 8, // 8 data bits
+
+    comptime {
+        if (@sizeOf(LineCoding) != 7) {
+            @compileError("LineCoding must be 7 bytes");
+        }
+    }
+};
+
+/// CDC Class-specific request codes
+pub const CdcRequest = struct {
+    pub const SET_LINE_CODING: u8 = 0x20;
+    pub const GET_LINE_CODING: u8 = 0x21;
+    pub const SET_CONTROL_LINE_STATE: u8 = 0x22;
+};
+
+/// CDC functional descriptor subtypes
+pub const CdcDescSubtype = struct {
+    pub const HEADER: u8 = 0x00;
+    pub const CALL_MANAGEMENT: u8 = 0x01;
+    pub const ACM: u8 = 0x02;
+    pub const UNION: u8 = 0x06;
+};
 
 // ============================================================
 // HID Report Descriptors
@@ -313,9 +360,9 @@ pub const device_descriptor = [18]u8{
     18, // bLength
     DescriptorType.DEVICE, // bDescriptorType
     0x00, 0x02, // bcdUSB (USB 2.0)
-    DeviceClass.PER_INTERFACE, // bDeviceClass
-    0x00, // bDeviceSubClass
-    0x00, // bDeviceProtocol
+    DeviceClass.MISC, // bDeviceClass (Miscellaneous, for IAD)
+    0x02, // bDeviceSubClass (Common Class)
+    0x01, // bDeviceProtocol (Interface Association Descriptor)
     64, // bMaxPacketSize0
     @truncate(USB_VID), @truncate(USB_VID >> 8), // idVendor
     @truncate(USB_PID), @truncate(USB_PID >> 8), // idProduct
@@ -350,6 +397,27 @@ fn interfaceDescriptor(
     };
 }
 
+fn genericInterfaceDescriptor(
+    interface_num: u8,
+    num_endpoints: u8,
+    iface_class: u8,
+    subclass: u8,
+    protocol: u8,
+    iface_string: u8,
+) [9]u8 {
+    return .{
+        9, // bLength
+        DescriptorType.INTERFACE, // bDescriptorType
+        interface_num, // bInterfaceNumber
+        0, // bAlternateSetting
+        num_endpoints, // bNumEndpoints
+        iface_class, // bInterfaceClass
+        subclass, // bInterfaceSubClass
+        protocol, // bInterfaceProtocol
+        iface_string, // iInterface
+    };
+}
+
 fn hidDescriptor(report_desc_len: u16) [9]u8 {
     return .{
         9, // bLength
@@ -375,6 +443,84 @@ fn endpointDescriptor(
         EndpointTransfer.INTERRUPT, // bmAttributes
         max_packet_size, 0, // wMaxPacketSize
         interval, // bInterval
+    };
+}
+
+fn genericEndpointDescriptor(
+    endpoint_addr: u8,
+    attributes: u8,
+    max_packet_size: u8,
+    interval: u8,
+) [7]u8 {
+    return .{
+        7, // bLength
+        DescriptorType.ENDPOINT, // bDescriptorType
+        endpoint_addr, // bEndpointAddress
+        attributes, // bmAttributes
+        max_packet_size, 0, // wMaxPacketSize
+        interval, // bInterval
+    };
+}
+
+/// Interface Association Descriptor (IAD) for CDC
+fn iadDescriptor(
+    first_interface: u8,
+    interface_count: u8,
+    function_class: u8,
+    function_subclass: u8,
+    function_protocol: u8,
+) [8]u8 {
+    return .{
+        8, // bLength
+        DescriptorType.INTERFACE_ASSOCIATION, // bDescriptorType
+        first_interface, // bFirstInterface
+        interface_count, // bInterfaceCount
+        function_class, // bFunctionClass
+        function_subclass, // bFunctionSubClass
+        function_protocol, // bFunctionProtocol
+        0, // iFunction
+    };
+}
+
+/// CDC Header Functional Descriptor
+fn cdcHeaderDescriptor() [5]u8 {
+    return .{
+        5, // bLength
+        DescriptorType.CS_INTERFACE, // bDescriptorType
+        CdcDescSubtype.HEADER, // bDescriptorSubtype
+        0x10, 0x01, // bcdCDC (1.10)
+    };
+}
+
+/// CDC Call Management Functional Descriptor
+fn cdcCallManagementDescriptor(data_interface: u8) [5]u8 {
+    return .{
+        5, // bLength
+        DescriptorType.CS_INTERFACE, // bDescriptorType
+        CdcDescSubtype.CALL_MANAGEMENT, // bDescriptorSubtype
+        0x00, // bmCapabilities (no call management)
+        data_interface, // bDataInterface
+    };
+}
+
+/// CDC ACM Functional Descriptor
+fn cdcAcmDescriptor() [4]u8 {
+    return .{
+        4, // bLength
+        DescriptorType.CS_INTERFACE, // bDescriptorType
+        CdcDescSubtype.ACM, // bDescriptorSubtype
+        0x02, // bmCapabilities (line coding and serial state)
+    };
+}
+
+/// CDC Union Functional Descriptor
+fn cdcUnionDescriptor(master_interface: u8, slave_interface: u8) [5]u8 {
+    return .{
+        5, // bLength
+        DescriptorType.CS_INTERFACE, // bDescriptorType
+        CdcDescSubtype.UNION, // bDescriptorSubtype
+        master_interface, // bMasterInterface
+        slave_interface, // bSlaveInterface
     };
 }
 
@@ -422,10 +568,61 @@ pub const configuration_descriptor = blk: {
         EXTRA_INTERVAL,
     );
 
+    // --- CDC ACM (Interface Association + Comm Interface + Data Interface) ---
+    const cdc_iad = iadDescriptor(
+        CDC_COMM_INTERFACE,
+        2, // 2 interfaces (comm + data)
+        InterfaceClass.CDC, // Communication
+        0x02, // Abstract Control Model
+        0x01, // AT commands (V.25ter)
+    );
+    const cdc_comm_iface = genericInterfaceDescriptor(
+        CDC_COMM_INTERFACE,
+        1, // 1 endpoint (notification)
+        InterfaceClass.CDC,
+        0x02, // ACM
+        0x01, // AT commands
+        0,
+    );
+    const cdc_header = cdcHeaderDescriptor();
+    const cdc_call_mgmt = cdcCallManagementDescriptor(CDC_DATA_INTERFACE);
+    const cdc_acm = cdcAcmDescriptor();
+    const cdc_union = cdcUnionDescriptor(CDC_COMM_INTERFACE, CDC_DATA_INTERFACE);
+    const cdc_notification_ep = genericEndpointDescriptor(
+        CDC_NOTIFICATION_ENDPOINT | EndpointDirection.IN,
+        EndpointTransfer.INTERRUPT,
+        CDC_NOTIFICATION_ENDPOINT_SIZE,
+        CDC_NOTIFICATION_INTERVAL,
+    );
+    const cdc_data_iface = genericInterfaceDescriptor(
+        CDC_DATA_INTERFACE,
+        2, // 2 endpoints (IN + OUT)
+        InterfaceClass.CDC_DATA,
+        0x00,
+        0x00,
+        0,
+    );
+    const cdc_data_in_ep = genericEndpointDescriptor(
+        CDC_DATA_ENDPOINT | EndpointDirection.IN,
+        EndpointTransfer.BULK,
+        CDC_DATA_ENDPOINT_SIZE,
+        0, // bulk endpoints don't use interval
+    );
+    const cdc_data_out_ep = genericEndpointDescriptor(
+        CDC_DATA_ENDPOINT | EndpointDirection.OUT,
+        EndpointTransfer.BULK,
+        CDC_DATA_ENDPOINT_SIZE,
+        0,
+    );
+
     const total_len: u16 = 9 + // Config header
         keyboard_iface.len + keyboard_hid.len + keyboard_ep.len +
         mouse_iface.len + mouse_hid.len + mouse_ep.len +
-        extra_iface.len + extra_hid.len + extra_ep.len;
+        extra_iface.len + extra_hid.len + extra_ep.len +
+        cdc_iad.len + cdc_comm_iface.len +
+        cdc_header.len + cdc_call_mgmt.len + cdc_acm.len + cdc_union.len +
+        cdc_notification_ep.len +
+        cdc_data_iface.len + cdc_data_in_ep.len + cdc_data_out_ep.len;
 
     const config_header = [9]u8{
         9, // bLength
@@ -441,7 +638,11 @@ pub const configuration_descriptor = blk: {
     break :blk config_header ++
         keyboard_iface ++ keyboard_hid ++ keyboard_ep ++
         mouse_iface ++ mouse_hid ++ mouse_ep ++
-        extra_iface ++ extra_hid ++ extra_ep;
+        extra_iface ++ extra_hid ++ extra_ep ++
+        cdc_iad ++ cdc_comm_iface ++
+        cdc_header ++ cdc_call_mgmt ++ cdc_acm ++ cdc_union ++
+        cdc_notification_ep ++
+        cdc_data_iface ++ cdc_data_in_ep ++ cdc_data_out_ep;
 };
 
 // ============================================================
@@ -494,6 +695,12 @@ test "device descriptor VID/PID" {
     try testing.expectEqual(USB_PID, pid);
 }
 
+test "device descriptor uses IAD class for composite device" {
+    try testing.expectEqual(DeviceClass.MISC, device_descriptor[4]); // bDeviceClass
+    try testing.expectEqual(@as(u8, 0x02), device_descriptor[5]); // bDeviceSubClass
+    try testing.expectEqual(@as(u8, 0x01), device_descriptor[6]); // bDeviceProtocol
+}
+
 test "configuration descriptor total length" {
     const total_len = @as(u16, configuration_descriptor[3]) << 8 | configuration_descriptor[2];
     try testing.expectEqual(@as(u16, @intCast(configuration_descriptor.len)), total_len);
@@ -543,4 +750,86 @@ test "string descriptors match keyboard definition" {
 
     // Product string length: 2 (header) + name.len * 2 (UTF-16LE)
     try testing.expectEqual(@as(usize, 2 + kb.name.len * 2), string_descriptor_product.len);
+}
+
+test "configuration descriptor contains IAD for CDC" {
+    var found_iad = false;
+    var i: usize = 0;
+    while (i < configuration_descriptor.len) {
+        const len = configuration_descriptor[i];
+        if (len == 0) break;
+        if (i + 1 < configuration_descriptor.len and
+            configuration_descriptor[i + 1] == DescriptorType.INTERFACE_ASSOCIATION)
+        {
+            found_iad = true;
+            try testing.expectEqual(@as(u8, 8), len);
+            try testing.expectEqual(CDC_COMM_INTERFACE, configuration_descriptor[i + 2]);
+            try testing.expectEqual(@as(u8, 2), configuration_descriptor[i + 3]);
+            try testing.expectEqual(InterfaceClass.CDC, configuration_descriptor[i + 4]);
+            break;
+        }
+        i += len;
+    }
+    try testing.expect(found_iad);
+}
+
+test "configuration descriptor contains CDC functional descriptors" {
+    var cs_count: u8 = 0;
+    var i: usize = 0;
+    while (i < configuration_descriptor.len) {
+        const len = configuration_descriptor[i];
+        if (len == 0) break;
+        if (i + 1 < configuration_descriptor.len and
+            configuration_descriptor[i + 1] == DescriptorType.CS_INTERFACE)
+        {
+            cs_count += 1;
+        }
+        i += len;
+    }
+    // Header, Call Management, ACM, Union = 4
+    try testing.expectEqual(@as(u8, 4), cs_count);
+}
+
+test "CDC endpoint descriptors are present" {
+    var ep_count: u8 = 0;
+    var found_bulk_in = false;
+    var found_bulk_out = false;
+    var found_interrupt_in = false;
+    var i: usize = 0;
+    while (i < configuration_descriptor.len) {
+        const len = configuration_descriptor[i];
+        if (len == 0) break;
+        if (i + 1 < configuration_descriptor.len and
+            configuration_descriptor[i + 1] == DescriptorType.ENDPOINT)
+        {
+            ep_count += 1;
+            const addr = configuration_descriptor[i + 2];
+            const attr = configuration_descriptor[i + 3];
+            if (addr == (CDC_NOTIFICATION_ENDPOINT | EndpointDirection.IN) and
+                attr == EndpointTransfer.INTERRUPT)
+            {
+                found_interrupt_in = true;
+            }
+            if (addr == (CDC_DATA_ENDPOINT | EndpointDirection.IN) and
+                attr == EndpointTransfer.BULK)
+            {
+                found_bulk_in = true;
+            }
+            if (addr == (CDC_DATA_ENDPOINT | EndpointDirection.OUT) and
+                attr == EndpointTransfer.BULK)
+            {
+                found_bulk_out = true;
+            }
+        }
+        i += len;
+    }
+    // 3 HID + 3 CDC = 6
+    try testing.expectEqual(@as(u8, 6), ep_count);
+    try testing.expect(found_interrupt_in);
+    try testing.expect(found_bulk_in);
+    try testing.expect(found_bulk_out);
+}
+
+test "LineCoding size" {
+    try testing.expectEqual(@as(usize, 7), @sizeOf(LineCoding));
 }
