@@ -7,8 +7,8 @@
 //! Matrix scan module
 //! Based on quantum/matrix.c and quantum/matrix_common.c
 //!
-//! COL2ROW scanning: columns are outputs (active low), rows are inputs (pull-up).
-//! When a key is pressed, it connects a column to a row.
+//! COL2ROW scanning: rows are outputs (active low), columns are inputs (pull-up).
+//! When a key is pressed, it connects a row to a column via a diode (row→col).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -66,15 +66,15 @@ pub fn Matrix(comptime rows: u8, comptime cols: u8) type {
         }
 
         fn initPins(self: *@This()) void {
-            // Rows as input with pull-up (COL2ROW: rows are read)
+            // COL2ROW: rows are outputs (active low drive), initially high (unselected)
             for (self.config.row_pins) |pin| {
-                gpio.setPinInputHigh(pin);
-            }
-
-            // Columns as output, initially high (inactive)
-            for (self.config.col_pins) |pin| {
                 gpio.setPinOutput(pin);
                 gpio.writePinHigh(pin);
+            }
+
+            // COL2ROW: columns are inputs with pull-up (read state)
+            for (self.config.col_pins) |pin| {
+                gpio.setPinInputHigh(pin);
             }
         }
 
@@ -82,9 +82,9 @@ pub fn Matrix(comptime rows: u8, comptime cols: u8) type {
         pub fn scan(self: *@This()) bool {
             self.previous = self.current;
 
-            // Scan each column
-            for (0..cols) |col| {
-                self.scanColumn(@intCast(col));
+            // COL2ROW: scan each row (select row, read cols)
+            for (0..rows) |row| {
+                self.scanRow(@intCast(row));
             }
 
             // Apply debounce
@@ -94,30 +94,28 @@ pub fn Matrix(comptime rows: u8, comptime cols: u8) type {
             return self.hasChanged();
         }
 
-        fn scanColumn(self: *@This(), col: u8) void {
-            const col_pin = self.config.col_pins[col];
+        fn scanRow(self: *@This(), row: u8) void {
+            const row_pin = self.config.row_pins[row];
 
-            // Activate column (drive low)
-            gpio.writePinLow(col_pin);
+            // Select row (drive low)
+            gpio.writePinLow(row_pin);
 
             // Small delay for signal to settle
-            // On real hardware: a few NOPs. In mock: instant.
             matrixOutputSelectDelay();
 
-            // Read all rows
-            for (0..rows) |row| {
-                const row_pin = self.config.row_pins[row];
+            // Read all columns — build row value from scratch
+            var current_row_value: MatrixRow = 0;
+            for (0..cols) |col| {
+                const col_pin = self.config.col_pins[col];
                 // With pull-up, unpressed = high (1), pressed = low (0)
-                const pressed = !gpio.readPin(row_pin);
-                if (pressed) {
-                    self.raw[row] |= @as(MatrixRow, 1) << @intCast(col);
-                } else {
-                    self.raw[row] &= ~(@as(MatrixRow, 1) << @intCast(col));
+                if (!gpio.readPin(col_pin)) {
+                    current_row_value |= @as(MatrixRow, 1) << @intCast(col);
                 }
             }
+            self.raw[row] = current_row_value;
 
-            // Deactivate column (drive high)
-            gpio.writePinHigh(col_pin);
+            // Unselect row (drive high)
+            gpio.writePinHigh(row_pin);
         }
 
         fn matrixOutputSelectDelay() void {
