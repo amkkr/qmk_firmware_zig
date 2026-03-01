@@ -61,7 +61,6 @@ pub fn build(b: *std.Build) void {
     const elf_name = b.fmt("{s}_{s}", .{ keyboard, keymap });
     const elf_size_step = addFileSizeStep(b, b.getInstallPath(.bin, elf_name), elf_name);
     elf_size_step.dependOn(&install_firmware.step);
-    b.getInstallStep().dependOn(&install_firmware.step);
     b.getInstallStep().dependOn(elf_size_step);
 
     // Optional boot2 binary path (required for booting on real hardware)

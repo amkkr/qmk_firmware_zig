@@ -104,6 +104,8 @@ pub const startup = if (is_freestanding) struct {
         // UART0 デバッグ出力初期化（GP0 = TX, 115200bps, 8N1）
         uart.init();
 
+        // 注: clock/gpio は UART 初期化前に完了しているが、UART が使用可能になった
+        // この時点でまとめて出力する。clock/gpio でハングした場合はこれらも出力されない。
         uart.print("[BOOT] clock.init() done\n", .{});
         uart.print("[BOOT] gpio.init() done\n", .{});
         uart.print("[BOOT] uart.init() done\n", .{});
