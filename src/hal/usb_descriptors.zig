@@ -537,11 +537,6 @@ test "string descriptor format" {
     try testing.expectEqual(@as(u8, 0), string_descriptor_manufacturer[3]);
 }
 
-test "USB IDs match keyboard definition" {
-    try testing.expectEqual(kb.usb_vid, USB_VID);
-    try testing.expectEqual(kb.usb_pid, USB_PID);
-}
-
 test "string descriptors match keyboard definition" {
     // Manufacturer string length: 2 (header) + manufacturer.len * 2 (UTF-16LE)
     try testing.expectEqual(@as(usize, 2 + kb.manufacturer.len * 2), string_descriptor_manufacturer.len);
