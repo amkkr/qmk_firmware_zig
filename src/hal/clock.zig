@@ -86,6 +86,9 @@ pub const PllRegs = struct {
     pub const PWR_POSTDIVPD_BIT: u32 = 1 << 3;
     pub const PWR_VCOPD_BIT: u32 = 1 << 5;
 
+    /// REFDIV（リファレンス分周器）: pico-SDK PLL_COMMON_REFDIV = 1
+    pub const PLL_REFDIV: u32 = 1;
+
     /// PLL_SYS設定: 12MHz * 125 / 6 / 2 = 125MHz
     pub const SYS_FBDIV: u32 = 125;
     pub const SYS_POSTDIV1: u32 = 6;
@@ -118,6 +121,9 @@ pub const ClockRegs = struct {
     // clk_usb レジスタ
     pub const CLK_USB_CTRL: u32 = CLOCKS_BASE + 0x54;
     pub const CLK_USB_DIV: u32 = CLOCKS_BASE + 0x58;
+
+    // clk_sys resus レジスタ
+    pub const CLK_SYS_RESUS_CTRL: u32 = CLOCKS_BASE + 0x78;
 
     // clk_ref ソース選択
     pub const CLK_REF_SRC_ROSC: u32 = 0x0;
@@ -197,59 +203,71 @@ inline fn regClear(address: u32, bits: u32) void {
 
 /// クロックツリー全体を初期化する
 ///
-/// 初期化シーケンス:
-/// 1. XOSCを起動し安定化を待つ
-/// 2. clk_refをXOSCに切り替え
-/// 3. PLL_SYSを設定（125MHz）
-/// 4. PLL_USBを設定（48MHz）
-/// 5. clk_sysをPLL_SYSに切り替え
-/// 6. clk_usbをPLL_USBに切り替え
-/// 7. clk_periをclk_sysから設定
-/// 8. Watchdogのtickを設定
+/// pico-SDK の clocks_init() と等価な初期化シーケンス:
+/// 1. Watchdog tickを設定（タイマー等の基準、pico-SDKと同じく最初に設定）
+/// 2. Clock resus を無効化（前回のソフトウェアから残っている可能性）
+/// 3. XOSCを起動し安定化を待つ
+/// 4. clk_sys と clk_ref を AUX ソースから退避（PLL設定前の安全策）
+/// 5. PLL_SYSを設定（125MHz）
+/// 6. PLL_USBを設定（48MHz）
+/// 7. clk_refをXOSCに切り替え
+/// 8. clk_sysをPLL_SYSに切り替え
+/// 9. clk_usbをPLL_USBに切り替え
+/// 10. clk_periをclk_sysから設定
 pub fn init() void {
     if (is_test) return;
 
-    // 1. XOSC起動
+    // 1. Watchdog tickの設定（clk_ref基準で1μsタイマー、pico-SDKと同じく最初に設定）
+    configWatchdogTick();
+
+    // 2. Clock resus を無効化（前回のソフトウェアから残っている可能性がある）
+    regWrite(ClockRegs.CLK_SYS_RESUS_CTRL, 0);
+
+    // 3. XOSC起動
     initXosc();
 
-    // 2. clk_refをXOSCに切り替え（PLLの基準クロックとして必要）
-    configClkRef();
-
-    // 3. clk_sysを一旦clk_refに退避（PLL再設定前の安全策）
-    //    clk_sysのソースをrefに設定し、切り替え完了を待つ
+    // 4. PLL再設定前に clk_sys と clk_ref を安全なソースに退避
+    //    clk_sys: AUX → glitchless ref に戻す
     regWrite(ClockRegs.CLK_SYS_CTRL, ClockRegs.CLK_SYS_SRC_REF);
     while (regRead(ClockRegs.CLK_SYS_SELECTED) & 1 == 0) {}
+    //    clk_ref: AUX ソースから退避（SRC=0: ROSC_CLKSRC_PH）
+    regWrite(ClockRegs.CLK_REF_CTRL, ClockRegs.CLK_REF_SRC_ROSC);
+    while (regRead(ClockRegs.CLK_REF_SELECTED) & 1 == 0) {}
 
-    // 4. PLL_SYS設定（12MHz → 125MHz）
+    // 5. PLL_SYS設定（12MHz → 125MHz）
     initPll(PLL_SYS_BASE, PllRegs.SYS_FBDIV, PllRegs.SYS_POSTDIV1, PllRegs.SYS_POSTDIV2);
 
-    // 5. PLL_USB設定（12MHz → 48MHz）
+    // 6. PLL_USB設定（12MHz → 48MHz）
     initPll(PLL_USB_BASE, PllRegs.USB_FBDIV, PllRegs.USB_POSTDIV1, PllRegs.USB_POSTDIV2);
 
-    // 6. clk_sysをPLL_SYSに切り替え
+    // 7. clk_refをXOSCに切り替え
+    configClkRef();
+
+    // 8. clk_sysをPLL_SYSに切り替え
     configClkSys();
 
-    // 7. clk_usbをPLL_USBに切り替え
+    // 9. clk_usbをPLL_USBに切り替え
     configClkUsb();
 
-    // 8. clk_periをclk_sysから設定
+    // 10. clk_periをclk_sysから設定
     configClkPeri();
-
-    // 9. Watchdog tickの設定（clk_ref=12MHz基準で1μsタイマー）
-    configWatchdogTick();
 }
 
 /// XOSC（外部クリスタルオシレータ）を起動する
 ///
 /// 12MHz外部クリスタルを起動し、安定するまで待機する。
+/// pico-SDK xosc_init() と同等のシーケンス。
 /// RP2040データシート Section 2.16.3 参照。
 fn initXosc() void {
     if (is_test) return;
+    // 周波数レンジを先に設定（ENABLEフィールドには触れない）
+    regWrite(XoscRegs.CTRL, XoscRegs.CTRL_FREQ_RANGE_1_15MHZ);
+
     // 起動遅延を設定
     regWrite(XoscRegs.STARTUP, XoscRegs.STARTUP_DELAY);
 
-    // XOSCを有効化（周波数レンジ1-15MHzとENABLEを同時に設定）
-    regWrite(XoscRegs.CTRL, XoscRegs.CTRL_FREQ_RANGE_1_15MHZ | XoscRegs.CTRL_ENABLE_BITS);
+    // ENABLEビットをセット（周波数レンジと起動遅延が確定した後）
+    regSet(XoscRegs.CTRL, XoscRegs.CTRL_ENABLE_BITS);
 
     // 安定化を待つ
     while (regRead(XoscRegs.STATUS) & XoscRegs.STATUS_STABLE_BIT == 0) {}
@@ -263,6 +281,7 @@ fn initXosc() void {
 /// PLL_SYS: 12MHz * 125 / (6 * 2) = 125MHz
 /// PLL_USB: 12MHz * 100 / (5 * 5) = 48MHz
 ///
+/// pico-SDK pll_init() と同等のシーケンス。
 /// RP2040データシート Section 2.18.2 参照。
 fn initPll(pll_base: u32, fbdiv: u32, postdiv1: u32, postdiv2: u32) void {
     if (is_test) return;
@@ -275,11 +294,14 @@ fn initPll(pll_base: u32, fbdiv: u32, postdiv1: u32, postdiv2: u32) void {
     const reset_bit = if (pll_base == PLL_SYS_BASE) ResetsRegs.PLL_SYS_BIT else ResetsRegs.PLL_USB_BIT;
     resetSubsystem(reset_bit);
 
+    // REFDIV を設定（pico-SDKでは refdiv=1）
+    regWrite(cs, PllRegs.PLL_REFDIV);
+
     // FBDIVを設定
     regWrite(fbdiv_reg, fbdiv);
 
-    // VCOとPLL本体の電源をオン（PD=0, VCOPD=0）、ポストディバイダは一旦オフのまま
-    regWrite(pwr, PllRegs.PWR_DSMPD_BIT | PllRegs.PWR_POSTDIVPD_BIT);
+    // VCOとPLL本体の電源をオン（PD, VCOPDビットをクリア）
+    regClear(pwr, PllRegs.PWR_PD_BIT | PllRegs.PWR_VCOPD_BIT);
 
     // VCOがロックするまで待つ
     while (regRead(cs) & PllRegs.CS_LOCK_BIT == 0) {}
@@ -408,6 +430,7 @@ test "レジスタアドレスの正当性" {
     try std.testing.expectEqual(@as(u32, 0x40008048), ClockRegs.CLK_PERI_CTRL);
     try std.testing.expectEqual(@as(u32, 0x40008054), ClockRegs.CLK_USB_CTRL);
     try std.testing.expectEqual(@as(u32, 0x40008058), ClockRegs.CLK_USB_DIV);
+    try std.testing.expectEqual(@as(u32, 0x40008078), ClockRegs.CLK_SYS_RESUS_CTRL);
 
     // RESETS レジスタアドレス
     try std.testing.expectEqual(@as(u32, 0x4000C000), ResetsRegs.RESET);
@@ -441,6 +464,11 @@ test "VCO周波数がRP2040の有効範囲内であることを確認" {
     const usb_vco = XOSC_HZ * PllRegs.USB_FBDIV;
     try std.testing.expect(usb_vco >= VCO_MIN);
     try std.testing.expect(usb_vco <= VCO_MAX);
+}
+
+test "PLL REFDIV値の検証" {
+    // pico-SDK PLL_COMMON_REFDIV = 1
+    try std.testing.expectEqual(@as(u32, 1), PllRegs.PLL_REFDIV);
 }
 
 test "FBDIV値がRP2040の有効範囲内であることを確認" {

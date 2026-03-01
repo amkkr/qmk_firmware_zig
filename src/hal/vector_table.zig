@@ -48,9 +48,9 @@ pub const VectorTable = extern struct {
     reset: *const fn () callconv(.naked) noreturn,
     nmi: *const fn () callconv(.c) void = &defaultHandler,
     hard_fault: *const fn () callconv(.c) void = &defaultHandler,
-    reserved1: [7]u32 = .{0} ** 7,
+    reserved1: [7]*const fn () callconv(.c) void = .{&defaultHandler} ** 7,
     svcall: *const fn () callconv(.c) void = &defaultHandler,
-    reserved2: [2]u32 = .{0} ** 2,
+    reserved2: [2]*const fn () callconv(.c) void = .{&defaultHandler} ** 2,
     pendsv: *const fn () callconv(.c) void = &defaultHandler,
     systick: *const fn () callconv(.c) void = &defaultHandler,
     /// IRQ handlers indexed by Irq enum (26 entries: IRQ0-IRQ25)
@@ -63,4 +63,76 @@ pub fn vectorTable(reset_handler: *const fn () callconv(.naked) noreturn) Vector
         .initial_sp = @ptrCast(&_stack_top),
         .reset = reset_handler,
     };
+}
+
+// ============================================================
+// Tests
+// ============================================================
+
+const testing = @import("std").testing;
+
+test "VectorTable has 42 entries" {
+    // 1(SP) + 1(Reset) + 1(NMI) + 1(HardFault) + 7(reserved1) + 1(SVCall) +
+    // 2(reserved2) + 1(PendSV) + 1(SysTick) + 26(IRQ) = 42 entries
+    const ptr_size = @sizeOf(*anyopaque);
+    try testing.expectEqual(42 * ptr_size, @sizeOf(VectorTable));
+}
+
+test "VectorTable reserved entries are non-zero (filled with defaultHandler)" {
+    const dummy_reset = struct {
+        fn handler() callconv(.naked) noreturn {
+            while (true) {}
+        }
+    }.handler;
+    const vt = VectorTable{
+        .initial_sp = @ptrFromInt(0x20042000),
+        .reset = &dummy_reset,
+    };
+
+    // reserved1 (7 entries) should all be non-zero (defaultHandler address)
+    for (vt.reserved1) |entry| {
+        try testing.expect(@intFromPtr(entry) != 0);
+    }
+
+    // reserved2 (2 entries) should all be non-zero
+    for (vt.reserved2) |entry| {
+        try testing.expect(@intFromPtr(entry) != 0);
+    }
+}
+
+test "VectorTable all IRQ entries default to defaultHandler" {
+    const dummy_reset = struct {
+        fn handler() callconv(.naked) noreturn {
+            while (true) {}
+        }
+    }.handler;
+    const vt = VectorTable{
+        .initial_sp = @ptrFromInt(0x20042000),
+        .reset = &dummy_reset,
+    };
+
+    for (vt.irq) |handler| {
+        try testing.expect(@intFromPtr(handler) != 0);
+    }
+}
+
+test "VectorTable field offsets are sequential" {
+    // Offsets are pointer-size dependent (4 bytes on ARM, 8 bytes on x86-64)
+    const P = @sizeOf(*anyopaque);
+    try testing.expectEqual(@as(usize, P * 0), @offsetOf(VectorTable, "initial_sp"));
+    try testing.expectEqual(@as(usize, P * 1), @offsetOf(VectorTable, "reset"));
+    try testing.expectEqual(@as(usize, P * 2), @offsetOf(VectorTable, "nmi"));
+    try testing.expectEqual(@as(usize, P * 3), @offsetOf(VectorTable, "hard_fault"));
+    try testing.expectEqual(@as(usize, P * 4), @offsetOf(VectorTable, "reserved1"));
+    try testing.expectEqual(@as(usize, P * 11), @offsetOf(VectorTable, "svcall"));
+    try testing.expectEqual(@as(usize, P * 12), @offsetOf(VectorTable, "reserved2"));
+    try testing.expectEqual(@as(usize, P * 14), @offsetOf(VectorTable, "pendsv"));
+    try testing.expectEqual(@as(usize, P * 15), @offsetOf(VectorTable, "systick"));
+    try testing.expectEqual(@as(usize, P * 16), @offsetOf(VectorTable, "irq"));
+}
+
+test "Irq enum covers all 26 RP2040 IRQs" {
+    try testing.expectEqual(@as(u5, 0), @intFromEnum(Irq.TIMER_IRQ_0));
+    try testing.expectEqual(@as(u5, 5), @intFromEnum(Irq.USBCTRL_IRQ));
+    try testing.expectEqual(@as(u5, 25), @intFromEnum(Irq.RTC_IRQ));
 }

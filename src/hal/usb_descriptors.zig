@@ -149,6 +149,10 @@ fn hidUsage(usage: u8) [2]u8 {
     return .{ 0x09, usage };
 }
 
+fn hidUsage16(usage: u16) [3]u8 {
+    return .{ 0x0A, @truncate(usage), @truncate(usage >> 8) };
+}
+
 fn hidCollection(kind: u8) [2]u8 {
     return .{ 0xA1, kind };
 }
@@ -203,7 +207,7 @@ fn hidReportId(id: u8) [2]u8 {
 
 /// Input/Output item flags
 const DATA_VAR_ABS: u8 = 0x02; // Data, Variable, Absolute
-const CONST_VAR_ABS: u8 = 0x03; // Constant, Variable, Absolute
+const CONST: u8 = 0x01; // Constant (for padding/reserved bytes)
 const DATA_ARR_ABS: u8 = 0x00; // Data, Array, Absolute
 const DATA_VAR_REL: u8 = 0x06; // Data, Variable, Relative
 
@@ -231,7 +235,7 @@ pub const keyboard_report_descriptor = blk: {
         // --- Reserved byte (byte 1) ---
         hidReportCount(1) ++
         hidReportSize(8) ++
-        hidInput(CONST_VAR_ABS) ++
+        hidInput(CONST) ++
 
         // --- LED output report ---
         hidUsagePage(0x08) ++ // LEDs
@@ -243,7 +247,7 @@ pub const keyboard_report_descriptor = blk: {
         // Padding (3 bits)
         hidReportCount(1) ++
         hidReportSize(3) ++
-        hidOutput(CONST_VAR_ABS) ++
+        hidOutput(CONST) ++
 
         // --- Key array (bytes 2-7) ---
         hidUsagePage(0x07) ++
@@ -272,19 +276,15 @@ pub const mouse_report_descriptor = blk: {
         // Collection (Physical)
         hidCollection(0x00) ++
 
-        // --- Buttons (5 buttons) ---
+        // --- Buttons (8 buttons) ---
         hidUsagePage(0x09) ++ // Buttons
         hidUsageMin(1) ++
-        hidUsageMax(5) ++
+        hidUsageMax(8) ++
         hidLogicalMin(0) ++
         hidLogicalMax(1) ++
-        hidReportCount(5) ++
+        hidReportCount(8) ++
         hidReportSize(1) ++
         hidInput(DATA_VAR_ABS) ++
-        // Padding (3 bits)
-        hidReportCount(1) ++
-        hidReportSize(3) ++
-        hidInput(CONST_VAR_ABS) ++
 
         // --- X, Y axes ---
         hidUsagePage(0x01) ++ // Generic Desktop
@@ -306,7 +306,7 @@ pub const mouse_report_descriptor = blk: {
 
         // --- Horizontal scroll ---
         hidUsagePage(0x0C) ++ // Consumer
-        hidUsage(0x38) ++ // AC Pan (mapped to 0x238 in some implementations)
+        hidUsage16(0x0238) ++ // AC Pan
         hidLogicalMin(0x81) ++
         hidLogicalMax(127) ++
         hidReportSize(8) ++
@@ -334,7 +334,7 @@ pub const extra_report_descriptor = blk: {
         hidInput(DATA_VAR_ABS) ++
         hidReportCount(1) ++
         hidReportSize(5) ++
-        hidInput(CONST_VAR_ABS) ++
+        hidInput(CONST) ++
         hidEndCollection() ++
 
         // --- Consumer Control ---
@@ -631,7 +631,7 @@ pub const configuration_descriptor = blk: {
         NUM_INTERFACES, // bNumInterfaces
         1, // bConfigurationValue
         0, // iConfiguration
-        0x80, // bmAttributes (bus-powered)
+        0xA0, // bmAttributes (bus-powered, remote wakeup)
         250, // bMaxPower (500mA)
     };
 
@@ -672,6 +672,14 @@ pub const string_descriptor_0 = [4]u8{
 pub const string_descriptor_manufacturer = stringDescriptor(kb.manufacturer);
 pub const string_descriptor_product = stringDescriptor(kb.name);
 pub const string_descriptor_serial = stringDescriptor("000000000000");
+
+// ============================================================
+// Individual HID Descriptors (for GET_DESCRIPTOR HID type 0x21)
+// ============================================================
+
+pub const keyboard_hid_descriptor = hidDescriptor(keyboard_report_descriptor.len);
+pub const mouse_hid_descriptor = hidDescriptor(mouse_report_descriptor.len);
+pub const extra_hid_descriptor = hidDescriptor(extra_report_descriptor.len);
 
 // ============================================================
 // Tests
@@ -832,4 +840,64 @@ test "CDC endpoint descriptors are present" {
 
 test "LineCoding size" {
     try testing.expectEqual(@as(usize, 7), @sizeOf(LineCoding));
+}
+
+test "configuration descriptor enables remote wakeup" {
+    // bmAttributes byte at offset 7 of configuration descriptor
+    // Bit 5 = Remote Wakeup
+    const bmAttributes = configuration_descriptor[7];
+    try testing.expectEqual(@as(u8, 0xA0), bmAttributes);
+    try testing.expect(bmAttributes & 0x20 != 0); // Remote Wakeup bit set
+}
+
+test "individual HID descriptors exist and have correct type" {
+    // HID descriptor type = 0x21
+    try testing.expectEqual(@as(u8, DescriptorType.HID), keyboard_hid_descriptor[1]);
+    try testing.expectEqual(@as(u8, DescriptorType.HID), mouse_hid_descriptor[1]);
+    try testing.expectEqual(@as(u8, DescriptorType.HID), extra_hid_descriptor[1]);
+}
+
+test "individual HID descriptor report lengths match report descriptors" {
+    // HID descriptor: byte 7-8 = wDescriptorLength (report descriptor size, little-endian)
+    const kb_len = @as(u16, keyboard_hid_descriptor[8]) << 8 | keyboard_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, keyboard_report_descriptor.len), kb_len);
+
+    const mouse_len = @as(u16, mouse_hid_descriptor[8]) << 8 | mouse_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, mouse_report_descriptor.len), mouse_len);
+
+    const extra_len = @as(u16, extra_hid_descriptor[8]) << 8 | extra_hid_descriptor[7];
+    try testing.expectEqual(@as(u16, extra_report_descriptor.len), extra_len);
+}
+
+test "mouse report descriptor has 8 buttons" {
+    // Search for Usage Maximum in mouse report descriptor
+    // Usage Maximum (8) = 0x29, 0x08
+    var found_8_buttons = false;
+    var i: usize = 0;
+    while (i < mouse_report_descriptor.len - 1) : (i += 1) {
+        if (mouse_report_descriptor[i] == 0x29) { // Usage Maximum tag
+            if (mouse_report_descriptor[i + 1] == 8) {
+                found_8_buttons = true;
+                break;
+            }
+        }
+    }
+    try testing.expect(found_8_buttons);
+}
+
+test "keyboard report descriptor padding uses CONST not CONST_VAR_ABS" {
+    // Input(Const) = 0x81, 0x01
+    // Input(Const,Var,Abs) = 0x81, 0x03
+    // Search for reserved byte padding in keyboard report descriptor
+    var found_const = false;
+    var i: usize = 0;
+    while (i < keyboard_report_descriptor.len - 1) : (i += 1) {
+        if (keyboard_report_descriptor[i] == 0x81) { // Input tag
+            if (keyboard_report_descriptor[i + 1] == 0x01) { // CONST
+                found_const = true;
+                break;
+            }
+        }
+    }
+    try testing.expect(found_const);
 }

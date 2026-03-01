@@ -1,15 +1,22 @@
 /* RP2040 Memory Map
- * Flash: 2MB XIP at 0x10000000
- * SRAM:  256KB at 0x20000000
+ * Flash:     2MB XIP at 0x10000000
+ * SRAM:      256KB at 0x20000000
+ * Scratch X: 4KB at 0x20040000
+ * Scratch Y: 4KB at 0x20041000
  *
  * Boot2 (256 bytes) is placed at flash origin (0x10000000).
  * The main program starts at 0x10000100 (after Boot2).
  * The last 4KB sector (0x101FF000) is reserved for EEPROM emulation.
+ *
+ * Stack is placed in scratch RAM (separate from main SRAM) to prevent
+ * stack overflow from corrupting .data/.bss sections.
+ * ChibiOS (C version) also uses scratch RAM for the initial stack.
  */
 MEMORY
 {
-    FLASH  (rx)  : ORIGIN = 0x10000000, LENGTH = 2048K - 4K
-    RAM    (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
+    FLASH       (rx)  : ORIGIN = 0x10000000, LENGTH = 2048K - 4K
+    RAM         (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
+    SCRATCH_RAM (rwx) : ORIGIN = 0x20040000, LENGTH = 8K
 }
 
 ENTRY(_start);
@@ -52,13 +59,16 @@ SECTIONS
         _ebss = .;
     } > RAM
 
-    /* Stack (4KB) */
+    /* Stack in scratch RAM (8KB, separate from main SRAM)
+     * ChibiOS uses scratch_y for the initial stack (SP=0x20040400).
+     * We use the full scratch area (scratch_x + scratch_y = 8KB) since
+     * there is no RTOS and everything runs on the main stack. */
     .stack (NOLOAD) : {
         . = ALIGN(8);
         _stack_bottom = .;
-        . += 0x1000;
+        . += 0x2000;
         _stack_top = .;
-    } > RAM
+    } > SCRATCH_RAM
 
     _heap_start = .;
     _heap_end = ORIGIN(RAM) + LENGTH(RAM);
