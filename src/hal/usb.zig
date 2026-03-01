@@ -198,6 +198,7 @@ pub const UsbDriver = struct {
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
         self.pending_address = null;
+        self.ep0_reply_buf = .{0};
         self.mock_ep0_out_data = 0;
         self.mock_ints = 0;
         self.mock_setup_packet = null;
