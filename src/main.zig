@@ -82,7 +82,6 @@ pub const startup = if (is_freestanding) struct {
     }
 
     const gpio = @import("hal/gpio.zig");
-    const uart = @import("hal/uart.zig");
     const usb = @import("hal/usb.zig");
     const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
@@ -101,35 +100,21 @@ pub const startup = if (is_freestanding) struct {
         clock.init();
         // GPIO ペリフェラルのリセット解除（IO_BANK0, PADS_BANK0）
         gpio.init();
-        // UART0 デバッグ出力初期化（GP0 = TX, 115200bps, 8N1）
-        uart.init();
-
-        // 注: clock/gpio は UART 初期化前に完了しているが、UART が使用可能になった
-        // この時点でまとめて出力する。clock/gpio でハングした場合はこれらも出力されない。
-        uart.print("[BOOT] clock.init() done\n", .{});
-        uart.print("[BOOT] gpio.init() done\n", .{});
-        uart.print("[BOOT] uart.init() done\n", .{});
 
         // キーボードマトリックス初期化
         matrix = MatrixType.init(kb_mod.matrixConfig());
-        uart.print("[BOOT] matrix.init() done\n", .{});
 
         // USB HID 初期化
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
-        uart.print("[BOOT] usb.init() done\n", .{});
 
         // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
         eeprom_mod.init();
-        uart.print("[BOOT] eeprom.init() done\n", .{});
 
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
         keyboard.getTestKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
-        uart.print("[BOOT] keyboard.init() done\n", .{});
-
-        uart.print("[BOOT] {s} firmware ready, entering main loop\n", .{build_options.KEYBOARD});
 
         // メインループ
         while (true) {
@@ -137,13 +122,9 @@ pub const startup = if (is_freestanding) struct {
             usb_driver.task();
 
             // マトリックススキャン → 状態を keyboard モジュールに反映
-            const matrix_changed = matrix.scan();
+            _ = matrix.scan();
             for (0..kb_mod.rows) |row| {
                 keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
-            }
-
-            if (matrix_changed) {
-                uart.print("matrix changed\n", .{});
             }
 
             // キーボードタスク実行（差分検出 → イベント生成 → アクション実行）
