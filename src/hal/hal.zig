@@ -9,6 +9,7 @@ pub const timer = @import("timer.zig");
 pub const eeprom = @import("eeprom.zig");
 pub const bootloader = @import("bootloader.zig");
 pub const clock = @import("clock.zig");
+pub const uart = @import("uart.zig");
 
 /// Pin type alias
 pub const Pin = gpio.Pin;

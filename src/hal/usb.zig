@@ -12,6 +12,7 @@ const builtin = @import("builtin");
 const usb_descriptors = @import("usb_descriptors.zig");
 const report = @import("../core/report.zig");
 const host = @import("../core/host.zig");
+const uart = @import("uart.zig");
 const KeyboardReport = report.KeyboardReport;
 const MouseReport = report.MouseReport;
 const ExtraReport = report.ExtraReport;
@@ -256,9 +257,11 @@ pub const UsbDriver = struct {
         } else self.mock_ints;
 
         if ((ints & IntBit.BUS_RESET) != 0) {
+            uart.print("usb: bus reset\n", .{});
             self.handleBusReset();
         }
         if ((ints & IntBit.SETUP_REQ) != 0) {
+            uart.print("usb: setup req\n", .{});
             self.handleSetupFromHw();
         }
         if ((ints & IntBit.BUFF_STATUS) != 0) {
