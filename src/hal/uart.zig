@@ -39,8 +39,6 @@ const UartRegs = struct {
     // フラグビット
     /// TX FIFO フル
     const FR_TXFF: u32 = 1 << 5;
-    /// UART ビジー
-    const FR_BUSY: u32 = 1 << 3;
 
     // ライン制御ビット
     /// 8ビットワード長 (WLEN = 0b11)
@@ -114,10 +112,9 @@ pub fn init() void {
     while (regRead(RESETS_RESET_DONE) & RESETS_UART0_BIT == 0) {}
 
     // 2. GP0 を UART0 TX に設定
-    // PAD 設定: 出力有効 (OD=0), IE=1, DRIVE=4mA, SCHMITT=1
-    // PAD のデフォルト値は 0x56 (IE=1, OD=0, PUE=0, PDE=1, SCHMITT=1, SLEWFAST=0, DRIVE=4mA)
-    // TX 出力なので PDE/PUE は不要、デフォルトで問題ない
-    regWrite(PADS_BANK0_BASE + 0x04 + 0 * 4, 0x56);
+    // PAD 設定: IE=1, OD=0, PUE=0, PDE=0, SCHMITT=1, SLEWFAST=0, DRIVE=4mA
+    // TX 出力なのでプルダウン不要（PDE=0）
+    regWrite(PADS_BANK0_BASE + 0x04 + 0 * 4, 0x52);
     // IO_BANK0 GPIO0_CTRL: FUNCSEL = 2 (UART)
     regWrite(IO_BANK0_BASE + 0x004 + 0 * 8, 2);
 
@@ -193,7 +190,7 @@ test "ボーレート設定値の検証 (115200bps @ 125MHz)" {
     try std.testing.expectEqual(UartRegs.IBRD_115200, ibrd);
 
     // FBRD = round(((125000000 % (16 * 115200)) * 64) / (16 * 115200))
-    // = round((1504000 * 64) / 1843200) = round(96256000 / 1843200) = round(52.22...) = 52
+    // = round((1505600 * 64) / 1843200) = round(96358400 / 1843200) = round(52.28...) = 52
     const remainder = peri_clk % (16 * baud);
     const fbrd = (remainder * 64 + (16 * baud) / 2) / (16 * baud);
     try std.testing.expectEqual(@as(u32, 52), fbrd);
@@ -216,5 +213,4 @@ test "RESETS UART0 ビットの検証" {
 
 test "フラグレジスタビットの検証" {
     try std.testing.expectEqual(@as(u32, 1 << 5), UartRegs.FR_TXFF);
-    try std.testing.expectEqual(@as(u32, 1 << 3), UartRegs.FR_BUSY);
 }
