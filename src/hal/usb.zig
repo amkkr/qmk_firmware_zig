@@ -707,9 +707,9 @@ pub const UsbDriver = struct {
     }
 
     /// BUFF_STATUS EP0 IN bit (bit 0)
-    const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
+    pub const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
     /// BUFF_STATUS EP0 OUT bit (bit 1)
-    const BUFF_STATUS_EP0_OUT: u32 = 1 << 1;
+    pub const BUFF_STATUS_EP0_OUT: u32 = 1 << 1;
 
     /// Handle buffer status events (endpoint transfer completions).
     /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。

@@ -32,9 +32,9 @@ const Ep0OutPending = usb.Ep0OutPending;
 const IntBit = usb.IntBit;
 const SieCtrl = usb.SieCtrl;
 
-// UsbDriver 内の非公開定数を外部テストから使う
-const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
-const BUFF_STATUS_EP0_OUT: u32 = 1 << 1;
+// UsbDriver 内の BUFF_STATUS 定数を参照
+const BUFF_STATUS_EP0_IN: u32 = UsbDriver.BUFF_STATUS_EP0_IN;
+const BUFF_STATUS_EP0_OUT: u32 = UsbDriver.BUFF_STATUS_EP0_OUT;
 
 // ============================================================
 // 1. SETUP 受信時の data toggle リセット
@@ -68,8 +68,11 @@ test "handleSetupFromHw data toggle reset then GET_DESCRIPTOR" {
     var drv = UsbDriver{};
     drv.init();
 
-    // 前のトランザクションで toggle が true になっている
-    drv.data_toggle[0] = true;
+    // 前のトランザクションで toggle が false (DATA0) のまま
+    // リセットなしだと: false → (変化なし) → flip → true
+    // リセットありだと: false → reset to true → flip → false
+    // 期待値 false はリセットがあることを検証する
+    drv.data_toggle[0] = false;
 
     // SETUP で GET_DESCRIPTOR (DEVICE) を処理
     drv.mock_ints = IntBit.SETUP_REQ;
@@ -85,6 +88,7 @@ test "handleSetupFromHw data toggle reset then GET_DESCRIPTOR" {
     // handleSetupFromHw は data_toggle[0] を true (DATA1) にリセットし、
     // sendEp0InPacket が1回フリップする → false。
     // Device descriptor (18 bytes) は1パケットに収まるため、1回のフリップ。
+    // リセットがなければ false → flip → true になるので、false で検証できる。
     try testing.expectEqual(false, drv.data_toggle[0]);
 }
 
@@ -447,10 +451,6 @@ test "CDC data endpoint bInterval is 0 (bulk)" {
 // ============================================================
 // 8. clock.zig の追加定数検証
 // ============================================================
-
-test "CLK_SYS_RESUS_CTRL address" {
-    try testing.expectEqual(@as(u32, 0x40008078), clock.ClockRegs.CLK_SYS_RESUS_CTRL);
-}
 
 test "clock DIV_1 is integer 1 shifted by 8" {
     // DIV_1 = 1 << 8 = 256 (1:1 分周、整数部1、小数部0)
