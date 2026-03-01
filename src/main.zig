@@ -99,28 +99,35 @@ pub const startup = if (is_freestanding) struct {
     fn main() !void {
         // クロックツリー初期化（XOSC, PLL, システムクロック設定）
         clock.init();
-
         // GPIO ペリフェラルのリセット解除（IO_BANK0, PADS_BANK0）
         gpio.init();
-
         // UART0 デバッグ出力初期化（GP0 = TX, 115200bps, 8N1）
         uart.init();
-        uart.print("{s} firmware started\n", .{build_options.KEYBOARD});
+
+        uart.print("[BOOT] clock.init() done\n", .{});
+        uart.print("[BOOT] gpio.init() done\n", .{});
+        uart.print("[BOOT] uart.init() done\n", .{});
 
         // キーボードマトリックス初期化
         matrix = MatrixType.init(kb_mod.matrixConfig());
+        uart.print("[BOOT] matrix.init() done\n", .{});
 
         // USB HID 初期化
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
+        uart.print("[BOOT] usb.init() done\n", .{});
 
         // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
         eeprom_mod.init();
+        uart.print("[BOOT] eeprom.init() done\n", .{});
 
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
         keyboard.getTestKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
+        uart.print("[BOOT] keyboard.init() done\n", .{});
+
+        uart.print("[BOOT] {s} firmware ready, entering main loop\n", .{build_options.KEYBOARD});
 
         // メインループ
         while (true) {
