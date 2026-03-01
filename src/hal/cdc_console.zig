@@ -5,14 +5,10 @@
 //!
 //! USB CDC 仮想シリアルポート経由でデバッグログを出力する。
 //! macOS では /dev/tty.usbmodemXXXX として認識される。
-//!
-//! UART との共通インターフェースを提供し、UARTとCDCの両方に
-//! ログを出力するデュアル出力をサポートする。
 
 const std = @import("std");
 const builtin = @import("builtin");
 const usb_mod = @import("usb.zig");
-const uart = @import("uart.zig");
 
 const is_freestanding = builtin.os.tag == .freestanding;
 
@@ -24,12 +20,8 @@ pub fn init(drv: *usb_mod.UsbDriver) void {
     usb_driver = drv;
 }
 
-/// Write raw data to CDC (and UART)
+/// Write raw data to CDC
 pub fn write(data: []const u8) void {
-    // Always output to UART
-    uart.write(data);
-
-    // Also output to CDC if USB is configured and DTR is active
     if (usb_driver) |drv| {
         if (drv.isConfigured() and drv.cdcDtrActive()) {
             drv.cdcWrite(data);
@@ -37,12 +29,8 @@ pub fn write(data: []const u8) void {
     }
 }
 
-/// Formatted print to CDC (and UART)
+/// Formatted print to CDC
 pub fn print(comptime fmt: []const u8, args: anytype) void {
-    // Always output to UART
-    uart.print(fmt, args);
-
-    // Also output to CDC if USB is configured and DTR is active
     if (usb_driver) |drv| {
         if (drv.isConfigured() and drv.cdcDtrActive()) {
             drv.cdcPrint(fmt, args);
