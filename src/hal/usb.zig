@@ -483,7 +483,7 @@ pub const UsbDriver = struct {
         if (self.cdc_tx_head == self.cdc_tx_tail) return;
 
         // Calculate how much data is in the ring buffer
-        const available: u16 = @as(u16, self.cdc_tx_head) -% @as(u16, self.cdc_tx_tail);
+        const available: u16 = @as(u16, self.cdc_tx_head -% self.cdc_tx_tail);
         if (available == 0) return;
 
         const max_packet: u16 = usb_descriptors.CDC_DATA_ENDPOINT_SIZE;
