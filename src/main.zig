@@ -81,6 +81,7 @@ pub const startup = if (is_freestanding) struct {
         }
     }
 
+    const gpio = @import("hal/gpio.zig");
     const usb = @import("hal/usb.zig");
     const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
@@ -97,6 +98,9 @@ pub const startup = if (is_freestanding) struct {
     fn main() !void {
         // クロックツリー初期化（XOSC, PLL, システムクロック設定）
         clock.init();
+
+        // GPIO ペリフェラルのリセット解除（IO_BANK0, PADS_BANK0）
+        gpio.init();
 
         // キーボードマトリックス初期化
         matrix = MatrixType.init(kb_mod.matrixConfig());
