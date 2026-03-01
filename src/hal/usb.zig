@@ -509,6 +509,13 @@ pub const UsbDriver = struct {
         }
 
         if (is_freestanding) {
+            // Check if previous packet is still pending (AVAILABLE=1).
+            // If so, skip this flush to avoid blocking the main loop.
+            const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE +
+                @as(u32, usb_descriptors.CDC_DATA_ENDPOINT) * 8;
+            const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
+            if (buf_ctrl.* & BufCtrl.AVAILABLE != 0) return;
+
             self.hwSendCdcData(packet[0..send_len]);
         } else {
             // Mock: just advance data_toggle
@@ -850,8 +857,7 @@ pub const UsbDriver = struct {
         const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
         const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
 
-        // Wait for previous packet to be consumed
-        while (buf_ctrl.* & BufCtrl.AVAILABLE != 0) {}
+        // Caller (cdcFlush) guarantees AVAILABLE=0 before calling this function.
 
         const buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP5_IN_BUF));
         const len = @min(data.len, 64);
