@@ -181,6 +181,8 @@ pub const UsbDriver = struct {
     mock_setup_packet: ?SetupPacket = null,
     /// Mock BUFF_STATUS value (for testing handleBuffStatus)
     mock_buff_status: u32 = 0,
+    /// Small reply buffer for 1-byte EP0 IN responses (GET_CONFIGURATION, GET_PROTOCOL)
+    ep0_reply_buf: [1]u8 = .{0},
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -316,6 +318,11 @@ pub const UsbDriver = struct {
                 self.configuration = @truncate(setup.wValue);
                 if (self.configuration > 0) {
                     self.state = .configured;
+                    // Reset data toggle for EP1-EP3 to DATA0 (USB 2.0 spec requires
+                    // data toggle reset on SET_CONFIGURATION)
+                    self.data_toggle[1] = false;
+                    self.data_toggle[2] = false;
+                    self.data_toggle[3] = false;
                     if (is_freestanding) {
                         self.hwConfigureEndpoints();
                     }
@@ -325,7 +332,11 @@ pub const UsbDriver = struct {
                 self.sendStatusStageZlp();
             },
             Request.GET_CONFIGURATION => {
-                // Would send self.configuration back
+                self.ep0_reply_buf[0] = self.configuration;
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = 1;
+                self.sendEp0InPacket();
             },
             Request.GET_DESCRIPTOR => {
                 // Descriptor type is in high byte of wValue
@@ -368,7 +379,19 @@ pub const UsbDriver = struct {
                 self.sendStatusStageZlp();
             },
             HidRequest.GET_PROTOCOL => {
-                // Would send protocol value back
+                const iface: u8 = @truncate(setup.wIndex);
+                if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
+                    self.ep0_reply_buf[0] = @intFromEnum(self.keyboard_protocol);
+                } else if (iface == usb_descriptors.MOUSE_INTERFACE) {
+                    self.ep0_reply_buf[0] = @intFromEnum(self.mouse_protocol);
+                } else {
+                    self.stallEndpoint0();
+                    return;
+                }
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = 1;
+                self.sendEp0InPacket();
             },
             else => self.stallEndpoint0(),
         }
@@ -1398,4 +1421,58 @@ test "handleBuffStatus applies pending_address after ZLP" {
 
     // pending_address should be consumed
     try testing.expect(drv.pending_address == null);
+}
+
+test "SET_CONFIGURATION resets EP1-EP3 data toggle to DATA0" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Simulate some data toggle activity on EP1-EP3
+    drv.data_toggle[1] = true;
+    drv.data_toggle[2] = true;
+    drv.data_toggle[3] = true;
+
+    // Set configuration
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    // EP1-EP3 data toggles should be reset to DATA0 (false)
+    try testing.expectEqual(false, drv.data_toggle[1]);
+    try testing.expectEqual(false, drv.data_toggle[2]);
+    try testing.expectEqual(false, drv.data_toggle[3]);
+}
+
+test "SET_CONFIGURATION re-configuration resets EP1-EP3 data toggle" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // First configuration
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    try testing.expectEqual(DeviceState.configured, drv.state);
+
+    // Simulate data toggle activity after first configuration
+    drv.data_toggle[1] = true;
+    drv.data_toggle[2] = true;
+    drv.data_toggle[3] = true;
+
+    // Re-configuration (SET_CONFIGURATION again)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    // EP1-EP3 data toggles should be reset again
+    try testing.expectEqual(false, drv.data_toggle[1]);
+    try testing.expectEqual(false, drv.data_toggle[2]);
+    try testing.expectEqual(false, drv.data_toggle[3]);
 }
