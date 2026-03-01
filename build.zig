@@ -55,7 +55,13 @@ pub fn build(b: *std.Build) void {
     });
 
     firmware.setLinkerScript(b.path("src/hal/rp2040_linker.ld"));
-    b.installArtifact(firmware);
+    const install_firmware = b.addInstallArtifact(firmware, .{});
+
+    // ELF ファイルサイズ表示（zig build のデフォルトステップに接続）
+    const elf_name = b.fmt("{s}_{s}", .{ keyboard, keymap });
+    const elf_size_step = addFileSizeStep(b, b.getInstallPath(.bin, elf_name), elf_name);
+    elf_size_step.dependOn(&install_firmware.step);
+    b.getInstallStep().dependOn(elf_size_step);
 
     // Optional boot2 binary path (required for booting on real hardware)
     // Obtain from pico-sdk: boot_stage2/boot2_w25q080.bin (or appropriate variant)
@@ -66,10 +72,17 @@ pub fn build(b: *std.Build) void {
     const uf2_install = addUf2Step(b, firmware, native_target, keyboard, keymap, boot2_path);
     uf2_step.dependOn(&uf2_install.step);
 
+    // UF2 ファイルサイズ表示
+    const uf2_name = b.fmt("{s}_{s}.uf2", .{ keyboard, keymap });
+    const uf2_size_step = addFileSizeStep(b, b.getInstallPath(.prefix, uf2_name), uf2_name);
+    uf2_size_step.dependOn(&uf2_install.step);
+    uf2_step.dependOn(uf2_size_step);
+
     // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
     const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
     const flash_run = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
     flash_step.dependOn(&flash_run.step);
+    flash_step.dependOn(uf2_size_step);
 
     // Test module
     const test_mod = b.createModule(.{
@@ -159,3 +172,48 @@ fn addUf2Step(
 
     return b.addInstallFile(uf2_output, b.fmt("{s}_{s}.uf2", .{ keyboard, keymap }));
 }
+
+/// ファイルサイズを表示するカスタムビルドステップを追加
+fn addFileSizeStep(b: *std.Build, file_path: []const u8, display_name: []const u8) *std.Build.Step {
+    const print_step = FileSizeStep.create(b, file_path, display_name);
+    return &print_step.step;
+}
+
+const FileSizeStep = struct {
+    step: std.Build.Step,
+    file_path: []const u8,
+    display_name: []const u8,
+
+    fn create(b: *std.Build, file_path: []const u8, display_name: []const u8) *FileSizeStep {
+        const self = b.allocator.create(FileSizeStep) catch @panic("OOM");
+        self.* = .{
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = b.fmt("file-size ({s})", .{display_name}),
+                .owner = b,
+                .makeFn = make,
+            }),
+            .file_path = file_path,
+            .display_name = display_name,
+        };
+        return self;
+    }
+
+    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
+        const self: *FileSizeStep = @fieldParentPtr("step", step);
+        const stat = std.fs.cwd().statFile(self.file_path) catch |err| {
+            std.debug.print("  {s}: could not stat file ({s})\n", .{ self.display_name, @errorName(err) });
+            return;
+        };
+        const size = stat.size;
+        if (size >= 1024) {
+            std.debug.print("  {s}: {d:.1} KB ({d} bytes)\n", .{
+                self.display_name,
+                @as(f64, @floatFromInt(size)) / 1024.0,
+                size,
+            });
+        } else {
+            std.debug.print("  {s}: {d} bytes\n", .{ self.display_name, size });
+        }
+    }
+};
