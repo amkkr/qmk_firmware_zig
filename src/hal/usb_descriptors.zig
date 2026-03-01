@@ -98,10 +98,10 @@ pub const EXTRA_ENDPOINT_SIZE: u8 = 8;
 pub const CDC_NOTIFICATION_ENDPOINT_SIZE: u8 = 8;
 pub const CDC_DATA_ENDPOINT_SIZE: u8 = 64;
 
-pub const KEYBOARD_INTERVAL: u8 = 10; // ms
-pub const MOUSE_INTERVAL: u8 = 10;
-pub const EXTRA_INTERVAL: u8 = 10;
-pub const CDC_NOTIFICATION_INTERVAL: u8 = 16;
+pub const KEYBOARD_INTERVAL: u8 = 1; // ms (C版: USB_POLLING_INTERVAL_MS, default 1)
+pub const MOUSE_INTERVAL: u8 = 1;
+pub const EXTRA_INTERVAL: u8 = 1;
+pub const CDC_NOTIFICATION_INTERVAL: u8 = 255; // C版: 0xFF
 
 // ============================================================
 // CDC Definitions
