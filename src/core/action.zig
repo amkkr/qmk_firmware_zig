@@ -151,8 +151,8 @@ pub fn isTapAction(act: Action) bool {
 
 /// タッピング判定中に修飾キー/レイヤーキーのリリースを遅延すべきか判定する。
 /// C版 process_tapping() の "Modifier/Layer should be retained till end of this tapping" ロジックに相当。
-/// tapping_tap_count: 現在のタッピングキーの tap.count（tapping_key.tap.count）
-pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tapping_tap_count: u8) bool {
+/// tap_count: リリースされるキーの tap.count（keyp->tap.count）
+pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tap_count: u8) bool {
     const act = resolveAction(event);
     const kind = act.kind.id;
     switch (kind) {
@@ -161,7 +161,7 @@ pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tapping_tap_count: u8) 
             if (act.key.code >= 0xE0 and act.key.code <= 0xE7) return true;
         },
         .mods_tap, .rmods_tap => {
-            if (act.key.mods != 0 and tapping_tap_count == 0) return true;
+            if (act.key.mods != 0 and tap_count == 0) return true;
             if (act.key.code >= 0xE0 and act.key.code <= 0xE7) return true;
         },
         .layer_tap, .layer_tap_ext => {
@@ -169,7 +169,7 @@ pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tapping_tap_count: u8) 
             if (code < OP_TAP_TOGGLE) return true;
             // C版: OP_TAP_TOGGLE は tapping_key.tap.count == 0 の時のみ保持
             // (break = retain, fall-through = process immediately)
-            if (code == OP_TAP_TOGGLE and tapping_tap_count == 0) return true;
+            if (code == OP_TAP_TOGGLE and tap_count == 0) return true;
             if (code == OP_ON_OFF or code == OP_OFF_ON or code == OP_SET_CLEAR) return true;
         },
         else => {},
