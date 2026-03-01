@@ -71,9 +71,11 @@ pub fn vectorTable(reset_handler: *const fn () callconv(.naked) noreturn) Vector
 
 const testing = @import("std").testing;
 
-test "VectorTable size is 48 entries (192 bytes)" {
-    // ARM Cortex-M0+ vector table: 16 system + 26 IRQ + padding = correct layout
-    try testing.expectEqual(@as(usize, 192), @sizeOf(VectorTable));
+test "VectorTable has 42 entries" {
+    // 1(SP) + 1(Reset) + 1(NMI) + 1(HardFault) + 7(reserved1) + 1(SVCall) +
+    // 2(reserved2) + 1(PendSV) + 1(SysTick) + 26(IRQ) = 42 entries
+    const ptr_size = @sizeOf(*anyopaque);
+    try testing.expectEqual(42 * ptr_size, @sizeOf(VectorTable));
 }
 
 test "VectorTable reserved entries are non-zero (filled with defaultHandler)" {
@@ -114,18 +116,19 @@ test "VectorTable all IRQ entries default to defaultHandler" {
     }
 }
 
-test "VectorTable field offsets match ARM Cortex-M0+ specification" {
-    // ARM Architecture Reference Manual: Cortex-M0+ vector table layout
-    try testing.expectEqual(@as(usize, 0x00), @offsetOf(VectorTable, "initial_sp"));
-    try testing.expectEqual(@as(usize, 0x04), @offsetOf(VectorTable, "reset"));
-    try testing.expectEqual(@as(usize, 0x08), @offsetOf(VectorTable, "nmi"));
-    try testing.expectEqual(@as(usize, 0x0C), @offsetOf(VectorTable, "hard_fault"));
-    try testing.expectEqual(@as(usize, 0x10), @offsetOf(VectorTable, "reserved1"));
-    try testing.expectEqual(@as(usize, 0x2C), @offsetOf(VectorTable, "svcall"));
-    try testing.expectEqual(@as(usize, 0x30), @offsetOf(VectorTable, "reserved2"));
-    try testing.expectEqual(@as(usize, 0x38), @offsetOf(VectorTable, "pendsv"));
-    try testing.expectEqual(@as(usize, 0x3C), @offsetOf(VectorTable, "systick"));
-    try testing.expectEqual(@as(usize, 0x40), @offsetOf(VectorTable, "irq"));
+test "VectorTable field offsets are sequential" {
+    // Offsets are pointer-size dependent (4 bytes on ARM, 8 bytes on x86-64)
+    const P = @sizeOf(*anyopaque);
+    try testing.expectEqual(@as(usize, P * 0), @offsetOf(VectorTable, "initial_sp"));
+    try testing.expectEqual(@as(usize, P * 1), @offsetOf(VectorTable, "reset"));
+    try testing.expectEqual(@as(usize, P * 2), @offsetOf(VectorTable, "nmi"));
+    try testing.expectEqual(@as(usize, P * 3), @offsetOf(VectorTable, "hard_fault"));
+    try testing.expectEqual(@as(usize, P * 4), @offsetOf(VectorTable, "reserved1"));
+    try testing.expectEqual(@as(usize, P * 11), @offsetOf(VectorTable, "svcall"));
+    try testing.expectEqual(@as(usize, P * 12), @offsetOf(VectorTable, "reserved2"));
+    try testing.expectEqual(@as(usize, P * 14), @offsetOf(VectorTable, "pendsv"));
+    try testing.expectEqual(@as(usize, P * 15), @offsetOf(VectorTable, "systick"));
+    try testing.expectEqual(@as(usize, P * 16), @offsetOf(VectorTable, "irq"));
 }
 
 test "Irq enum covers all 26 RP2040 IRQs" {
