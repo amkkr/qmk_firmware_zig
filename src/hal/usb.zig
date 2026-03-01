@@ -71,6 +71,10 @@ pub const DPRAM = struct {
     pub const EP0_BUF: u32 = 0x100; // ep0_buf_a: EP0 data stage buffer (IN/OUT shared)
     pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
+    // EP1: 0x180, EP2: 0x1C0, EP3: 0x200 (existing HID endpoints)
+    pub const EP4_BUF: u32 = 0x240; // CDC notification IN
+    pub const EP5_IN_BUF: u32 = 0x280; // CDC data IN
+    pub const EP5_OUT_BUF: u32 = 0x2C0; // CDC data OUT
 };
 
 /// Buffer control bits
@@ -90,6 +94,7 @@ pub const EpCtrl = struct {
     pub const ENABLE: u32 = 1 << 31;
     pub const INTERRUPT_PER_BUFF: u32 = 1 << 29;
     pub const ENDPOINT_TYPE_SHIFT: u5 = 26;
+    pub const EP_TYPE_BULK: u32 = 2 << ENDPOINT_TYPE_SHIFT;
     pub const EP_TYPE_INTERRUPT: u32 = 3 << ENDPOINT_TYPE_SHIFT;
     pub const BUFFER_ADDRESS_MASK: u32 = 0xFFFF;
 };
@@ -165,8 +170,8 @@ pub const UsbDriver = struct {
     mouse_protocol: HidProtocol = .report,
     keyboard_idle: u8 = 0,
     keyboard_leds: u8 = 0,
-    /// Data toggle tracking per endpoint (IN)
-    data_toggle: [4]bool = .{ false, false, false, false },
+    /// Data toggle tracking per endpoint (IN): EP0-EP5
+    data_toggle: [6]bool = .{ false, false, false, false, false, false },
     /// EP0 IN multi-packet transfer state
     ep0_in_data: ?[]const u8 = null,
     ep0_in_offset: u16 = 0,
@@ -181,6 +186,16 @@ pub const UsbDriver = struct {
     mock_setup_packet: ?SetupPacket = null,
     /// Mock BUFF_STATUS value (for testing handleBuffStatus)
     mock_buff_status: u32 = 0,
+    /// CDC Line Coding (default: 115200/8N1)
+    cdc_line_coding: usb_descriptors.LineCoding = .{},
+    /// CDC DTR/RTS control line state
+    cdc_control_line_state: u16 = 0,
+    /// CDC TX ring buffer
+    cdc_tx_buf: [256]u8 = undefined,
+    cdc_tx_head: u8 = 0,
+    cdc_tx_tail: u8 = 0,
+    /// Small reply buffer for EP0 IN responses (up to 7 bytes for LineCoding)
+    ep0_reply_buf: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -191,11 +206,15 @@ pub const UsbDriver = struct {
         self.mouse_protocol = .report;
         self.keyboard_idle = 0;
         self.keyboard_leds = 0;
-        self.data_toggle = .{ false, false, false, false };
+        self.data_toggle = .{ false, false, false, false, false, false };
         self.ep0_in_data = null;
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
         self.pending_address = null;
+        self.cdc_line_coding = .{};
+        self.cdc_control_line_state = 0;
+        self.cdc_tx_head = 0;
+        self.cdc_tx_tail = 0;
         self.mock_ep0_out_data = 0;
         self.mock_ints = 0;
         self.mock_setup_packet = null;
@@ -267,6 +286,11 @@ pub const UsbDriver = struct {
         if ((ints & IntBit.BUFF_STATUS) != 0) {
             self.handleBuffStatus();
         }
+
+        // Flush CDC TX buffer if data is pending and device is configured
+        if (self.isConfigured()) {
+            self.cdcFlush();
+        }
     }
 
     /// Handle USB bus reset event
@@ -287,8 +311,10 @@ pub const UsbDriver = struct {
         self.address = 0;
         self.configuration = 0;
         self.state = .default_state;
-        self.data_toggle = .{ false, false, false, false };
+        self.data_toggle = .{ false, false, false, false, false, false };
         self.pending_address = null;
+        self.cdc_tx_head = 0;
+        self.cdc_tx_tail = 0;
     }
 
     /// Process a setup packet (called from interrupt handler or poll)
@@ -314,11 +340,13 @@ pub const UsbDriver = struct {
             },
             Request.SET_CONFIGURATION => {
                 self.configuration = @truncate(setup.wValue);
-                // Reset data toggle for EP1-EP3 to DATA0 (USB 2.0 spec §9.4.7:
+                // Reset data toggle for EP1-EP5 to DATA0 (USB 2.0 spec §9.4.7:
                 // data toggle bits for all endpoints shall be reset on SET_CONFIGURATION)
                 self.data_toggle[1] = false;
                 self.data_toggle[2] = false;
                 self.data_toggle[3] = false;
+                self.data_toggle[4] = false;
+                self.data_toggle[5] = false;
                 if (self.configuration > 0) {
                     self.state = .configured;
                     if (is_freestanding) {
@@ -343,13 +371,18 @@ pub const UsbDriver = struct {
     }
 
     fn handleClassRequest(self: *UsbDriver, setup: *const SetupPacket) void {
+        const iface: u8 = @truncate(setup.wIndex);
+        // Route CDC class requests to the CDC handler
+        if (iface == usb_descriptors.CDC_COMM_INTERFACE or iface == usb_descriptors.CDC_DATA_INTERFACE) {
+            self.handleCdcClassRequest(setup);
+            return;
+        }
         switch (setup.bRequest) {
             HidRequest.SET_IDLE => {
                 self.keyboard_idle = @truncate(setup.wValue >> 8);
                 self.sendStatusStageZlp();
             },
             HidRequest.SET_PROTOCOL => {
-                const iface: u8 = @truncate(setup.wIndex);
                 const protocol: u8 = @truncate(setup.wValue);
                 if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
                     self.keyboard_protocol = @enumFromInt(protocol & 1);
@@ -377,6 +410,105 @@ pub const UsbDriver = struct {
             },
             else => self.stallEndpoint0(),
         }
+    }
+
+    /// Handle CDC ACM class-specific requests
+    fn handleCdcClassRequest(self: *UsbDriver, setup: *const SetupPacket) void {
+        switch (setup.bRequest) {
+            usb_descriptors.CdcRequest.SET_LINE_CODING => {
+                // Host sends 7-byte LineCoding struct in data phase (EP0 OUT)
+                if (is_freestanding) {
+                    const ep0_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP0_BUF));
+                    var buf: [7]u8 = undefined;
+                    for (0..7) |i| {
+                        buf[i] = ep0_buf[i];
+                    }
+                    self.cdc_line_coding = @bitCast(buf);
+                } else {
+                    // Mock: use ep0_reply_buf as mock data source
+                    self.cdc_line_coding = @bitCast(self.ep0_reply_buf);
+                }
+                self.sendStatusStageZlp();
+            },
+            usb_descriptors.CdcRequest.GET_LINE_CODING => {
+                // Send current LineCoding struct (7 bytes) to host
+                self.ep0_reply_buf = @bitCast(self.cdc_line_coding);
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(7, setup.wLength);
+                self.sendEp0InPacket();
+            },
+            usb_descriptors.CdcRequest.SET_CONTROL_LINE_STATE => {
+                // wValue contains DTR (bit 0) and RTS (bit 1)
+                self.cdc_control_line_state = setup.wValue;
+                self.sendStatusStageZlp();
+            },
+            else => self.stallEndpoint0(),
+        }
+    }
+
+    // ============================================================
+    // CDC TX Ring Buffer
+    // ============================================================
+
+    /// Write data to the CDC TX ring buffer
+    pub fn cdcWrite(self: *UsbDriver, data: []const u8) void {
+        for (data) |byte| {
+            const next_head = self.cdc_tx_head +% 1;
+            if (next_head == self.cdc_tx_tail) {
+                // Buffer full, drop data
+                return;
+            }
+            self.cdc_tx_buf[self.cdc_tx_head] = byte;
+            self.cdc_tx_head = next_head;
+        }
+    }
+
+    /// Formatted print to CDC TX buffer
+    pub fn cdcPrint(self: *UsbDriver, comptime fmt: []const u8, args: anytype) void {
+        const CdcWriter = struct {
+            drv: *UsbDriver,
+
+            pub fn write(ctx: @This(), data: []const u8) error{}!usize {
+                ctx.drv.cdcWrite(data);
+                return data.len;
+            }
+        };
+        const writer = std.io.GenericWriter(CdcWriter, error{}, CdcWriter.write){ .context = .{ .drv = self } };
+        std.fmt.format(writer, fmt, args) catch {};
+    }
+
+    /// Flush CDC TX ring buffer to EP5 IN
+    pub fn cdcFlush(self: *UsbDriver) void {
+        if (self.cdc_tx_head == self.cdc_tx_tail) return;
+
+        // Calculate how much data is in the ring buffer
+        const available: u16 = @as(u16, self.cdc_tx_head) -% @as(u16, self.cdc_tx_tail);
+        if (available == 0) return;
+
+        const max_packet: u16 = usb_descriptors.CDC_DATA_ENDPOINT_SIZE;
+        const send_len: u16 = @min(available, max_packet);
+
+        // Collect data from ring buffer into a contiguous array
+        var packet: [64]u8 = undefined;
+        for (0..send_len) |i| {
+            packet[i] = self.cdc_tx_buf[self.cdc_tx_tail +% @as(u8, @intCast(i))];
+        }
+
+        if (is_freestanding) {
+            self.hwSendCdcData(packet[0..send_len]);
+        } else {
+            // Mock: just advance data_toggle
+            self.data_toggle[usb_descriptors.CDC_DATA_ENDPOINT] =
+                !self.data_toggle[usb_descriptors.CDC_DATA_ENDPOINT];
+        }
+
+        self.cdc_tx_tail +%= @intCast(send_len);
+    }
+
+    /// Check if DTR is asserted (host has opened the serial port)
+    pub fn cdcDtrActive(self: *const UsbDriver) bool {
+        return (self.cdc_control_line_state & 0x01) != 0;
     }
 
     const EP0_MAX_PACKET_SIZE: u16 = 64;
@@ -613,30 +745,59 @@ pub const UsbDriver = struct {
         addr_endp.* = addr;
     }
 
-    /// Configure EP1-EP3 endpoint control registers in DPRAM.
+    /// Configure EP1-EP5 endpoint control registers in DPRAM.
     /// Called on SET_CONFIGURATION when configuration > 0.
-    /// Sets endpoint type (Interrupt), buffer address, and interrupt-per-buffer for each IN endpoint.
+    /// Sets endpoint type, buffer address, and interrupt-per-buffer for each endpoint.
     fn hwConfigureEndpoints(self: *UsbDriver) void {
         _ = self;
-        const endpoints = [_]u8{
+        // EP1-EP3: HID Interrupt IN endpoints
+        const hid_endpoints = [_]u8{
             usb_descriptors.KEYBOARD_ENDPOINT,
             usb_descriptors.MOUSE_ENDPOINT,
             usb_descriptors.EXTRA_ENDPOINT,
         };
 
-        for (endpoints) |ep| {
-            // EP control register address: EP_IN_CTRL_BASE + (ep - 1) * 8
-            // EP0 has no control register; EP1 starts at offset 0x08
+        for (hid_endpoints) |ep| {
             const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep) - 1) * 8;
             const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
-
-            // Buffer address in DPRAM (relative to DPRAM base): EP_BUF_BASE + (ep - 1) * 64
             const buf_offset = DPRAM.EP_BUF_BASE + (@as(u32, ep) - 1) * 64;
-
             ctrl_reg.* = EpCtrl.ENABLE |
                 EpCtrl.INTERRUPT_PER_BUFF |
                 EpCtrl.EP_TYPE_INTERRUPT |
                 (buf_offset & EpCtrl.BUFFER_ADDRESS_MASK);
+        }
+
+        // EP4: CDC Notification IN (Interrupt)
+        {
+            const ep4 = usb_descriptors.CDC_NOTIFICATION_ENDPOINT;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep4) - 1) * 8;
+            const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
+            ctrl_reg.* = EpCtrl.ENABLE |
+                EpCtrl.INTERRUPT_PER_BUFF |
+                EpCtrl.EP_TYPE_INTERRUPT |
+                (DPRAM.EP4_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
+        }
+
+        // EP5 IN: CDC Data IN (Bulk)
+        {
+            const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep5) - 1) * 8;
+            const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
+            ctrl_reg.* = EpCtrl.ENABLE |
+                EpCtrl.INTERRUPT_PER_BUFF |
+                EpCtrl.EP_TYPE_BULK |
+                (DPRAM.EP5_IN_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
+        }
+
+        // EP5 OUT: CDC Data OUT (Bulk)
+        {
+            const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_OUT_CTRL_BASE + (@as(u32, ep5) - 1) * 8;
+            const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
+            ctrl_reg.* = EpCtrl.ENABLE |
+                EpCtrl.INTERRUPT_PER_BUFF |
+                EpCtrl.EP_TYPE_BULK |
+                (DPRAM.EP5_OUT_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
         }
     }
 
@@ -667,6 +828,31 @@ pub const UsbDriver = struct {
         }
         self.data_toggle[ep] = !self.data_toggle[ep];
 
+        buf_ctrl.* = ctrl;
+    }
+
+    /// Send data on CDC Data IN endpoint (EP5)
+    fn hwSendCdcData(self: *UsbDriver, data: []const u8) void {
+        const ep: u8 = usb_descriptors.CDC_DATA_ENDPOINT;
+        const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
+        const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
+
+        // Wait for previous packet to be consumed
+        while (buf_ctrl.* & BufCtrl.AVAILABLE != 0) {}
+
+        const buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP5_IN_BUF));
+        const len = @min(data.len, 64);
+
+        for (data[0..len], 0..) |byte, i| {
+            buf[i] = byte;
+        }
+
+        var ctrl: u32 = @as(u32, @intCast(len)) & BufCtrl.LEN_MASK;
+        ctrl |= BufCtrl.FULL | BufCtrl.LAST | BufCtrl.AVAILABLE;
+        if (self.data_toggle[ep]) {
+            ctrl |= BufCtrl.DATA_PID;
+        }
+        self.data_toggle[ep] = !self.data_toggle[ep];
         buf_ctrl.* = ctrl;
     }
 
@@ -836,7 +1022,7 @@ test "UsbDriver handleBusReset resets state" {
     try testing.expectEqual(@as(u8, 1), drv.configuration);
 
     // Simulate some data toggle activity
-    drv.data_toggle = .{ true, false, true, false };
+    drv.data_toggle = .{ true, false, true, false, false, false };
 
     // Bus reset
     drv.handleBusReset();
@@ -844,7 +1030,7 @@ test "UsbDriver handleBusReset resets state" {
     try testing.expectEqual(DeviceState.default_state, drv.state);
     try testing.expectEqual(@as(u8, 0), drv.address);
     try testing.expectEqual(@as(u8, 0), drv.configuration);
-    try testing.expectEqual([4]bool{ false, false, false, false }, drv.data_toggle);
+    try testing.expectEqual([6]bool{ false, false, false, false, false, false }, drv.data_toggle);
 }
 
 test "UsbDriver task dispatches BUS_RESET" {
@@ -1488,4 +1674,154 @@ test "SET_CONFIGURATION with value 0 also resets EP1-EP3 data toggle" {
     try testing.expectEqual(false, drv.data_toggle[1]);
     try testing.expectEqual(false, drv.data_toggle[2]);
     try testing.expectEqual(false, drv.data_toggle[3]);
+}
+
+// ============================================================
+// CDC Tests
+// ============================================================
+
+test "CDC SET_LINE_CODING stores line coding" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Mock: set LineCoding data in ep0_reply_buf (used as mock source)
+    const lc = usb_descriptors.LineCoding{
+        .dwDTERate = 9600,
+        .bCharFormat = 1,
+        .bParityType = 2,
+        .bDataBits = 7,
+    };
+    drv.ep0_reply_buf = @bitCast(lc);
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21, // Host-to-Device, Class, Interface
+        .bRequest = usb_descriptors.CdcRequest.SET_LINE_CODING,
+        .wValue = 0,
+        .wIndex = usb_descriptors.CDC_COMM_INTERFACE,
+        .wLength = 7,
+    });
+
+    try testing.expectEqual(@as(u32, 9600), drv.cdc_line_coding.dwDTERate);
+    try testing.expectEqual(@as(u8, 1), drv.cdc_line_coding.bCharFormat);
+    try testing.expectEqual(@as(u8, 2), drv.cdc_line_coding.bParityType);
+    try testing.expectEqual(@as(u8, 7), drv.cdc_line_coding.bDataBits);
+    // ZLP sent
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "CDC GET_LINE_CODING returns current line coding" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Default line coding should be 115200/8N1
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1, // Device-to-Host, Class, Interface
+        .bRequest = usb_descriptors.CdcRequest.GET_LINE_CODING,
+        .wValue = 0,
+        .wIndex = usb_descriptors.CDC_COMM_INTERFACE,
+        .wLength = 7,
+    });
+
+    try testing.expectEqual(@as(u16, 7), drv.ep0_in_total_len);
+    // ep0_reply_buf should contain the default line coding
+    const reply_lc: usb_descriptors.LineCoding = @bitCast(drv.ep0_reply_buf);
+    try testing.expectEqual(@as(u32, 115200), reply_lc.dwDTERate);
+    try testing.expectEqual(@as(u8, 0), reply_lc.bCharFormat);
+    try testing.expectEqual(@as(u8, 0), reply_lc.bParityType);
+    try testing.expectEqual(@as(u8, 8), reply_lc.bDataBits);
+}
+
+test "CDC SET_CONTROL_LINE_STATE stores DTR/RTS" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = usb_descriptors.CdcRequest.SET_CONTROL_LINE_STATE,
+        .wValue = 0x03, // DTR + RTS
+        .wIndex = usb_descriptors.CDC_COMM_INTERFACE,
+        .wLength = 0,
+    });
+
+    try testing.expectEqual(@as(u16, 0x03), drv.cdc_control_line_state);
+    try testing.expect(drv.cdcDtrActive());
+    // ZLP sent
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "CDC DTR inactive by default" {
+    var drv = UsbDriver{};
+    drv.init();
+    try testing.expect(!drv.cdcDtrActive());
+}
+
+test "CDC TX ring buffer write and flush" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Configure device so flush works
+    drv.state = .configured;
+
+    drv.cdcWrite("Hello");
+    try testing.expectEqual(@as(u8, 5), drv.cdc_tx_head);
+    try testing.expectEqual(@as(u8, 0), drv.cdc_tx_tail);
+
+    drv.cdcFlush();
+
+    // After flush, tail should catch up to head
+    try testing.expectEqual(@as(u8, 5), drv.cdc_tx_tail);
+    // EP5 data toggle should have been flipped
+    try testing.expect(drv.data_toggle[usb_descriptors.CDC_DATA_ENDPOINT]);
+}
+
+test "CDC TX ring buffer handles empty flush" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+
+    // Flush with no data should not crash or change toggle
+    drv.cdcFlush();
+    try testing.expect(!drv.data_toggle[usb_descriptors.CDC_DATA_ENDPOINT]);
+}
+
+test "CDC print formatted output" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.cdcPrint("test {d}\n", .{42});
+
+    // Check that data was written to buffer
+    const expected = "test 42\n";
+    try testing.expectEqual(@as(u8, @intCast(expected.len)), drv.cdc_tx_head);
+    for (expected, 0..) |c, i| {
+        try testing.expectEqual(c, drv.cdc_tx_buf[i]);
+    }
+}
+
+test "handleBusReset clears CDC TX buffer" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.cdcWrite("hello");
+    try testing.expect(drv.cdc_tx_head != drv.cdc_tx_tail);
+
+    drv.handleBusReset();
+
+    try testing.expectEqual(@as(u8, 0), drv.cdc_tx_head);
+    try testing.expectEqual(@as(u8, 0), drv.cdc_tx_tail);
+}
+
+test "EP4/EP5 DPRAM buffer offsets" {
+    try testing.expectEqual(@as(u32, 0x240), DPRAM.EP4_BUF);
+    try testing.expectEqual(@as(u32, 0x280), DPRAM.EP5_IN_BUF);
+    try testing.expectEqual(@as(u32, 0x2C0), DPRAM.EP5_OUT_BUF);
+    // No overlap with EP3 buffer (EP3 at 0x200, 64 bytes -> 0x240)
+    try testing.expect(DPRAM.EP4_BUF >= DPRAM.EP_BUF_BASE + 3 * 64);
+    try testing.expect(DPRAM.EP5_IN_BUF >= DPRAM.EP4_BUF + 64);
+    try testing.expect(DPRAM.EP5_OUT_BUF >= DPRAM.EP5_IN_BUF + 64);
+}
+
+test "EpCtrl bulk type value" {
+    // Bulk type = 2 << 26 = 0x08000000
+    try testing.expectEqual(@as(u32, 0x08000000), EpCtrl.EP_TYPE_BULK);
 }

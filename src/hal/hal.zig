@@ -10,6 +10,7 @@ pub const eeprom = @import("eeprom.zig");
 pub const bootloader = @import("bootloader.zig");
 pub const clock = @import("clock.zig");
 pub const uart = @import("uart.zig");
+pub const cdc_console = @import("cdc_console.zig");
 
 /// Pin type alias
 pub const Pin = gpio.Pin;

@@ -84,6 +84,7 @@ pub const startup = if (is_freestanding) struct {
     const gpio = @import("hal/gpio.zig");
     const uart = @import("hal/uart.zig");
     const usb = @import("hal/usb.zig");
+    const cdc_console = @import("hal/cdc_console.zig");
     const eeprom_mod = @import("hal/eeprom.zig");
     const matrix_mod = @import("core/matrix.zig");
     const keyboard = @import("core/keyboard.zig");
@@ -114,9 +115,10 @@ pub const startup = if (is_freestanding) struct {
         matrix = MatrixType.init(kb_mod.matrixConfig());
         uart.print("[BOOT] matrix.init() done\n", .{});
 
-        // USB HID 初期化
+        // USB HID + CDC 初期化
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
+        cdc_console.init(&usb_driver);
         uart.print("[BOOT] usb.init() done\n", .{});
 
         // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
