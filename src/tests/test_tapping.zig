@@ -8,14 +8,14 @@
 //!
 //! upstream参照: tests/basic/test_tapping.cpp
 //!
-//! C版テスト対応（1-2, 5: C版と同一、3-4: Zig独自追加、6-7: 挙動差異あり）:
+//! C版テスト対応（1-7: C版互換、3-4: Zig独自追加）:
 //! 1. TapA_SHFT_T_KeyReportsKey      — SFT_T(KC_P) タップ → KC_P              [C版対応]
 //! 2. HoldA_SHFT_T_KeyReportsShift   — SFT_T(KC_P) ホールド → LSHIFT          [C版対応]
 //! 3. TapA_CTL_T_KeyReportsKey       — CTL_T(KC_P) タップ → KC_P              [Zig独自]
 //! 4. HoldA_CTL_T_KeyReportsCtrl     — CTL_T(KC_P) ホールド → LCTRL           [Zig独自]
 //! 5. ANewTapWithinTappingTermIsBuggy — 連続タップの既知バグ動作（issue #1478）[C版対応]
-//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ           [挙動差異]
-//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ         [挙動差異]
+//! 6. TapA_CTL_T_KeyWhileReleasingShift — シフト離し中のCTL_Tタップ           [C版互換]
+//! 7. TapA_CTL_T_KeyWhileReleasingLayer — レイヤー離し中のCTL_Tタップ         [C版互換]
 //!
 //! 追加テスト（C版にない拡張ケース）:
 //! 8.  TAPPING_TERM 境界値: ちょうど TAPPING_TERM でリリース → ホールド
@@ -69,7 +69,12 @@ const MockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
 //   (0,4) = MO(1)       → ACTION_LAYER_MOMENTARY(1) (layer test 用)
 //   (0,5) = LT(1, KC_B) → ACTION_LAYER_TAP_KEY(1, KC_B) (LT テスト用)
 
-fn testActionResolver(ev: KeyEvent) Action {
+/// ソースアクションキャッシュ: C版 source_layers_cache と同等。
+/// プレス時のアクションを記憶し、リリース時に同じアクションを返す。
+const no_action = Action{ .code = action_code.ACTION_NO };
+var source_action_cache: [1][6]Action = .{.{no_action} ** 6} ** 1;
+
+fn resolveCurrentAction(ev: KeyEvent) Action {
     if (ev.key.row == 0) {
         return switch (ev.key.col) {
             // SFT_T(KC_P): hold=LSHIFT, tap=KC_P
@@ -93,6 +98,21 @@ fn testActionResolver(ev: KeyEvent) Action {
     return .{ .code = action_code.ACTION_NO };
 }
 
+fn testActionResolver(ev: KeyEvent) Action {
+    if (ev.key.row < 1 and ev.key.col < 6) {
+        if (ev.pressed) {
+            // プレス時: 現在のレイヤー状態でアクションを解決し、キャッシュに保存
+            const act = resolveCurrentAction(ev);
+            source_action_cache[ev.key.row][ev.key.col] = act;
+            return act;
+        } else {
+            // リリース時: プレス時にキャッシュしたアクションを返す
+            return source_action_cache[ev.key.row][ev.key.col];
+        }
+    }
+    return resolveCurrentAction(ev);
+}
+
 // ============================================================
 // テストヘルパー
 // ============================================================
@@ -102,6 +122,7 @@ var mock_driver: MockDriver = .{};
 fn setup() *MockDriver {
     action.reset();
     mock_driver = .{};
+    source_action_cache = .{.{no_action} ** 6} ** 1;
     host_mod.setDriver(host_mod.HostDriver.from(&mock_driver));
     action.setActionResolver(testActionResolver);
     return &mock_driver;
@@ -369,11 +390,9 @@ test "ANewTapWithinTappingTermIsBuggy" {
 // 6. TapA_CTL_T_KeyWhileReleasingShift
 //    シフトキーを離しながら CTL_T(KC_P) をタップ
 //
-//    C版の期待動作:
-//      シフトリリースは tapping 中に遅延され、タップ後に (LSFT+P)→(P)→empty の順で送信される。
-//    Zig版の実際の動作:
-//      シフトリリースは遅延されず即時処理される（action_tapping.c との既知の挙動差異）。
-//      結果: (LSFT) → (empty) → (P) → (empty) の順で送信される。
+//    C版互換動作:
+//      シフトリリースは tapping 中に遅延され、タップ確定後にシフトが解除される。
+//      CTL_T タップ後にバッファ内のシフトリリースも処理される。
 // ============================================================
 
 test "TapA_CTL_T_KeyWhileReleasingShift" {
@@ -398,25 +417,16 @@ test "TapA_CTL_T_KeyWhileReleasingShift" {
     press(0, 1, 110);
     try testing.expectEqual(count_after_ctl_press, mock.keyboard_count);
 
-    // シフトをリリース → Zig版では即時処理（LSHIFT 解除）
-    // C版では tapping 中にシフトリリースが遅延される（既知挙動差異）
+    // シフトをリリース → C版互換: tapping 中はシフトリリースが遅延される
     release(0, 2, 120);
-    // LSHIFT が解除されている（最新レポートに LSHIFT なし）
-    const count_after_shift_release = mock.keyboard_count;
-    try testing.expect(count_after_shift_release > count_after_ctl_press);
-    var shift_still_held = false;
-    i = count_after_ctl_press;
-    while (i < count_after_shift_release) : (i += 1) {
-        if (mock.keyboard_reports[i].mods & report_mod.ModBit.LSHIFT != 0) {
-            shift_still_held = true;
-        }
-    }
-    try testing.expect(!shift_still_held); // シフトは即時解除済み
+    // シフトリリースはバッファに入れられ、レポートはまだ変化しない
+    try testing.expectEqual(count_after_ctl_press, mock.keyboard_count);
 
     // CTL_T をリリース → タップとして処理され KC_P が送信される
+    // バッファ内のシフトリリースも処理される
     release(0, 1, 150);
     var found_p = false;
-    i = count_after_shift_release;
+    i = count_after_ctl_press;
     while (i < mock.keyboard_count) : (i += 1) {
         if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
     }
@@ -428,11 +438,9 @@ test "TapA_CTL_T_KeyWhileReleasingShift" {
 // 7. TapA_CTL_T_KeyWhileReleasingLayer
 //    MO(1) キーを離しながら CTL_T をタップ（レイヤー遅延の検証）
 //
-//    C版の期待動作:
+//    C版互換動作:
 //      MO(1) リリースは tapping 中に遅延され、タップ時にレイヤー1のキー KC_Q が送信される。
-//    Zig版の実際の動作:
-//      MO(1) リリースは遅延されず即時処理される（action_tapping.c との既知の挙動差異）。
-//      結果: タップ時にはレイヤー0の CTL_T(KC_P) が解決されるため、KC_P が送信される。
+//      ソースアクションキャッシュにより、リリース時も同じレイヤーのアクションが使用される。
 // ============================================================
 
 test "TapA_CTL_T_KeyWhileReleasingLayer" {
@@ -448,26 +456,67 @@ test "TapA_CTL_T_KeyWhileReleasingLayer" {
     press(0, 1, 110);
     try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
 
-    // MO(1) をリリース → Zig版では即時レイヤー解除
-    // C版では tapping 中に MO(1) リリースが遅延される（既知挙動差異）
+    // MO(1) をリリース → C版互換: tapping 中はレイヤーリリースが遅延される
     release(0, 4, 120);
-    try testing.expect(!layer_mod.layerStateIs(1)); // レイヤー1は即時解除
+    // レイヤー1はまだアクティブ（リリースが遅延されている）
+    try testing.expect(layer_mod.layerStateIs(1));
 
     // CTL_T をリリース → タップとして処理
-    // Zig版: レイヤー0アクティブ状態で action を解決 → CTL_T(KC_P) → KC_P が送信される
-    // C版: レイヤー1のまま解決 → CTL_T(KC_Q) → KC_Q が送信される
+    // レイヤー1アクティブ中にアクション解決 → CTL_T(KC_Q) → KC_Q が送信される
+    // その後バッファ内の MO(1) リリースが処理され、レイヤー1が解除される
     release(0, 1, 150);
-    var found_p = false;
     var found_q = false;
     var i: usize = 0;
     while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) found_p = true; // KC_P
         if (mock.keyboard_reports[i].hasKey(0x14)) found_q = true; // KC_Q
     }
-    // Zig版では KC_P が送信される（レイヤー0でのアクション解決）
-    try testing.expect(found_p);
-    try testing.expect(!found_q);
+    // C版互換: レイヤー1の KC_Q が送信される
+    try testing.expect(found_q);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// ============================================================
+// shouldRetainReleaseDuringTapping の直接テスト
+// ============================================================
+
+test "shouldRetainReleaseDuringTapping: MO(1) release is retained" {
+    _ = setup();
+    defer teardown();
+
+    // MO(1) をプレスしてキャッシュを設定
+    press(0, 4, 100);
+    try testing.expect(layer_mod.layerStateIs(1));
+
+    // MO(1) リリースイベントで shouldRetainReleaseDuringTapping を直接テスト
+    const ev = KeyEvent.keyRelease(0, 4, 120);
+    const result = action.shouldRetainReleaseDuringTapping(ev, 0);
+    try testing.expect(result);
+}
+
+test "shouldRetainReleaseDuringTapping: LSFT release is retained" {
+    _ = setup();
+    defer teardown();
+
+    // LSFT をプレスしてキャッシュを設定
+    press(0, 2, 100);
+
+    // LSFT リリースイベント
+    const ev = KeyEvent.keyRelease(0, 2, 120);
+    const result = action.shouldRetainReleaseDuringTapping(ev, 0);
+    try testing.expect(result);
+}
+
+test "shouldRetainReleaseDuringTapping: KC_A release is NOT retained" {
+    _ = setup();
+    defer teardown();
+
+    // KC_A をプレスしてキャッシュを設定
+    press(0, 3, 100);
+
+    // KC_A リリースイベント
+    const ev = KeyEvent.keyRelease(0, 3, 120);
+    const result = action.shouldRetainReleaseDuringTapping(ev, 0);
+    try testing.expect(!result);
 }
 
 // ============================================================
