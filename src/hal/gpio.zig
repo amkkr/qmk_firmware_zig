@@ -12,6 +12,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const is_freestanding = builtin.os.tag == .freestanding;
+const is_test = builtin.is_test;
 
 /// RP2040 GPIO pin (GP0-GP29)
 pub const Pin = u5;

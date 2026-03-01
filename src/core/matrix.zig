@@ -193,6 +193,15 @@ test "Matrix init" {
     for (0..4) |row| {
         try std.testing.expectEqual(@as(MatrixRow, 0), m.getRow(@intCast(row)));
     }
+
+    // COL2ROW: row_pins should be output, col_pins should be input with pull-up
+    for (row_pins) |pin| {
+        try std.testing.expect(gpio.mockIsOutput(pin));
+    }
+    for (col_pins) |pin| {
+        try std.testing.expect(!gpio.mockIsOutput(pin));
+        try std.testing.expect(gpio.mockHasPullUp(pin));
+    }
 }
 
 test "Matrix mock press/release" {
