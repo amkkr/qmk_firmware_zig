@@ -314,6 +314,11 @@ pub const UsbDriver = struct {
             },
             Request.SET_CONFIGURATION => {
                 self.configuration = @truncate(setup.wValue);
+                // Reset data toggle for EP1-EP3 to DATA0 (USB 2.0 spec §9.4.7:
+                // data toggle bits for all endpoints shall be reset on SET_CONFIGURATION)
+                self.data_toggle[1] = false;
+                self.data_toggle[2] = false;
+                self.data_toggle[3] = false;
                 if (self.configuration > 0) {
                     self.state = .configured;
                     if (is_freestanding) {
@@ -1398,4 +1403,89 @@ test "handleBuffStatus applies pending_address after ZLP" {
 
     // pending_address should be consumed
     try testing.expect(drv.pending_address == null);
+}
+
+test "SET_CONFIGURATION resets EP1-EP3 data toggle to DATA0" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Simulate some data toggle activity on EP1-EP3
+    drv.data_toggle[1] = true;
+    drv.data_toggle[2] = true;
+    drv.data_toggle[3] = true;
+
+    // Set configuration
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    // EP1-EP3 data toggles should be reset to DATA0 (false)
+    try testing.expectEqual(false, drv.data_toggle[1]);
+    try testing.expectEqual(false, drv.data_toggle[2]);
+    try testing.expectEqual(false, drv.data_toggle[3]);
+}
+
+test "SET_CONFIGURATION re-configuration resets EP1-EP3 data toggle" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // First configuration
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    try testing.expectEqual(DeviceState.configured, drv.state);
+
+    // Simulate data toggle activity after first configuration
+    drv.data_toggle[1] = true;
+    drv.data_toggle[2] = true;
+    drv.data_toggle[3] = true;
+
+    // Re-configuration (SET_CONFIGURATION again)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    // EP1-EP3 data toggles should be reset again
+    try testing.expectEqual(false, drv.data_toggle[1]);
+    try testing.expectEqual(false, drv.data_toggle[2]);
+    try testing.expectEqual(false, drv.data_toggle[3]);
+}
+
+test "SET_CONFIGURATION with value 0 also resets EP1-EP3 data toggle" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // First configure
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    try testing.expectEqual(DeviceState.configured, drv.state);
+
+    // Simulate data toggle activity
+    drv.data_toggle[1] = true;
+    drv.data_toggle[2] = true;
+    drv.data_toggle[3] = true;
+
+    // De-configure (SET_CONFIGURATION with value 0)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 0,
+    });
+
+    try testing.expectEqual(DeviceState.addressed, drv.state);
+    // EP1-EP3 data toggles should be reset even with configuration 0
+    try testing.expectEqual(false, drv.data_toggle[1]);
+    try testing.expectEqual(false, drv.data_toggle[2]);
+    try testing.expectEqual(false, drv.data_toggle[3]);
 }
