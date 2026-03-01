@@ -341,6 +341,19 @@ pub const UsbDriver = struct {
 
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
+            Request.GET_STATUS => {
+                // USB 2.0 spec §9.4.5: Return 2-byte status (self-powered=0, remote-wakeup=0)
+                self.ep0_reply_buf[0] = 0;
+                self.ep0_reply_buf[1] = 0;
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(2, setup.wLength);
+                self.sendEp0InPacket();
+            },
+            Request.CLEAR_FEATURE, Request.SET_FEATURE => {
+                // USB 2.0 spec §9.4.1/§9.4.9: Acknowledge feature requests with ZLP
+                self.sendStatusStageZlp();
+            },
             Request.SET_ADDRESS => {
                 const addr: u8 = @truncate(setup.wValue);
                 self.address = addr;
@@ -381,6 +394,18 @@ pub const UsbDriver = struct {
                 const desc_type: u8 = @truncate(setup.wValue >> 8);
                 const desc_index: u8 = @truncate(setup.wValue);
                 self.handleGetDescriptor(desc_type, desc_index, setup.wIndex, setup.wLength);
+            },
+            Request.SET_INTERFACE => {
+                // USB 2.0 spec §9.4.10: Acknowledge with ZLP
+                self.sendStatusStageZlp();
+            },
+            Request.GET_INTERFACE => {
+                // USB 2.0 spec §9.4.4: Return alternate setting 0
+                self.ep0_reply_buf[0] = 0;
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(1, setup.wLength);
+                self.sendEp0InPacket();
             },
             else => self.stallEndpoint0(),
         }
@@ -542,6 +567,15 @@ pub const UsbDriver = struct {
                 2 => &usb_descriptors.string_descriptor_product,
                 3 => &usb_descriptors.string_descriptor_serial,
                 else => null,
+            },
+            usb_descriptors.DescriptorType.HID => blk: {
+                const iface: u8 = @truncate(w_index);
+                break :blk switch (iface) {
+                    usb_descriptors.KEYBOARD_INTERFACE => &usb_descriptors.keyboard_hid_descriptor,
+                    usb_descriptors.MOUSE_INTERFACE => &usb_descriptors.mouse_hid_descriptor,
+                    usb_descriptors.EXTRA_INTERFACE => &usb_descriptors.extra_hid_descriptor,
+                    else => null,
+                };
             },
             usb_descriptors.DescriptorType.HID_REPORT => blk: {
                 const iface: u8 = @truncate(w_index);
@@ -750,6 +784,12 @@ pub const UsbDriver = struct {
     // ============================================================
 
     fn hwInit(self: *UsbDriver) void {
+        const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+
+        // Disconnect first: disable pull-up to signal disconnection to host
+        // (C版 init_usb_driver: usbDisconnectBus → usbStop → wait_ms(50) → usbStart → usbConnectBus)
+        sie_ctrl.* = 0;
+
         // Release USB peripheral from reset via RESETS register
         const resets_clr = @as(*volatile u32, @ptrFromInt(RESETS_CLR));
         resets_clr.* = RESETS_USBCTRL_BIT;
@@ -764,28 +804,38 @@ pub const UsbDriver = struct {
             dpram[i] = 0;
         }
 
-        // Enable USB controller
+        // Enable USB controller in device mode
         const main_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.MAIN_CTRL));
         main_ctrl.* = 1; // CONTROLLER_EN
 
-        // Configure muxing
+        // Configure muxing: connect to internal PHY with soft connect
         const usb_muxing = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.USB_MUXING));
         usb_muxing.* = (1 << 3) | (1 << 0); // SOFTCON | TO_PHY
 
-        // Configure power
+        // Configure power: override VBUS detection (board has no VBUS sense pin)
         const usb_pwr = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.USB_PWR));
-        usb_pwr.* = (1 << 3) | (1 << 2); // VBUS_DETECT_OVERRIDE | VBUS_DETECT
+        usb_pwr.* = (1 << 3) | (1 << 2); // VBUS_DETECT_OVERRIDE_EN | VBUS_DETECT
 
-        // Enable interrupts
+        // Enable interrupts: buffer status, bus reset, setup request
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
         inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
 
         // Initialize EP0 OUT buffer control to receive SETUP/OUT packets from host
         self.hwPrepareEp0Out();
 
-        // Enable pull-up to signal device connection
-        const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+        // Brief delay to ensure host sees disconnection before reconnection
+        // (equivalent to C版 wait_ms(50) between disconnect and connect)
+        {
+            var i: u32 = 0;
+            while (i < 6_250_000) : (i += 1) { // ~50ms at 125MHz
+                asm volatile ("nop");
+            }
+        }
+
+        // Enable pull-up on D+ to signal device connection to host
         sie_ctrl.* = 1 << 16; // PULLUP_EN
+
+        self.state = .attached;
     }
 
     /// Prepare EP0 OUT buffer control to receive the next OUT/SETUP packet from host.

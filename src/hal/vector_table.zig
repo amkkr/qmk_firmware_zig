@@ -48,9 +48,9 @@ pub const VectorTable = extern struct {
     reset: *const fn () callconv(.naked) noreturn,
     nmi: *const fn () callconv(.c) void = &defaultHandler,
     hard_fault: *const fn () callconv(.c) void = &defaultHandler,
-    reserved1: [7]u32 = .{0} ** 7,
+    reserved1: [7]*const fn () callconv(.c) void = .{&defaultHandler} ** 7,
     svcall: *const fn () callconv(.c) void = &defaultHandler,
-    reserved2: [2]u32 = .{0} ** 2,
+    reserved2: [2]*const fn () callconv(.c) void = .{&defaultHandler} ** 2,
     pendsv: *const fn () callconv(.c) void = &defaultHandler,
     systick: *const fn () callconv(.c) void = &defaultHandler,
     /// IRQ handlers indexed by Irq enum (26 entries: IRQ0-IRQ25)

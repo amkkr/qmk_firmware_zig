@@ -49,6 +49,7 @@ pub const startup = if (is_freestanding) struct {
     pub export fn _start() callconv(.naked) noreturn {
         @setRuntimeSafety(false);
         asm volatile (
+            \\cpsid i
             \\ldr r0, .Lstack_top_addr
             \\mov sp, r0
             \\ldr r0, .Lmain_addr
@@ -97,19 +98,74 @@ pub const startup = if (is_freestanding) struct {
     var usb_driver: usb.UsbDriver = .{};
     var matrix: MatrixType = undefined;
 
+    // 診断用: GP0 を直接レジスタ操作で出力ピンにする（gpio.init() 前に使用可能）
+    // マルチメーターで GP0 の電圧を確認して、どの init で停止しているか判別
+    // GP0=HIGH のまま → 次の init でハング
+    const DIAG_PIN: u32 = 0; // GP0
+
+    fn diagGpioInit() void {
+        // IO_BANK0 と PADS_BANK0 のリセット解除
+        const RESETS_CLR: u32 = 0x4000C000 + 0x3000;
+        const RESET_DONE: u32 = 0x4000C000 + 0x08;
+        const BITS: u32 = (1 << 5) | (1 << 8); // IO_BANK0 | PADS_BANK0
+        @as(*volatile u32, @ptrFromInt(RESETS_CLR)).* = BITS;
+        while (@as(*volatile u32, @ptrFromInt(RESET_DONE)).* & BITS != BITS) {}
+        // GP0 を SIO function (F5) に設定
+        @as(*volatile u32, @ptrFromInt(0x40014000 + DIAG_PIN * 8 + 4)).* = 5;
+        // GP0 を output enable
+        @as(*volatile u32, @ptrFromInt(0xD0000024)).* = @as(u32, 1) << DIAG_PIN;
+    }
+
+    /// ペリフェラルのリセットを解除し完了を待つ
+    fn unresetPeripherals(mask: u32) void {
+        const RESETS_BASE_ADDR: u32 = 0x4000C000;
+        const RESETS_CLR_ALIAS: u32 = RESETS_BASE_ADDR + 0x3000;
+        const RESET_DONE_ADDR: u32 = RESETS_BASE_ADDR + 0x08;
+        // リセットビットをクリア（リセット解除）
+        @as(*volatile u32, @ptrFromInt(RESETS_CLR_ALIAS)).* = mask;
+        // リセット解除完了を待つ
+        while (@as(*volatile u32, @ptrFromInt(RESET_DONE_ADDR)).* & mask != mask) {}
+    }
+
+    fn diagPulse() void {
+        // 短いパルス（LOW→HIGH）で段階を区切る
+        @as(*volatile u32, @ptrFromInt(0xD0000018)).* = @as(u32, 1) << DIAG_PIN;
+        var i: u32 = 0;
+        while (i < 1000) : (i += 1) {
+            asm volatile ("nop");
+        }
+        @as(*volatile u32, @ptrFromInt(0xD0000014)).* = @as(u32, 1) << DIAG_PIN;
+    }
+
     fn main() !void {
-        // クロックツリー初期化（XOSC, PLL, システムクロック設定）
+        // [DIAG] Stage 0: GP0 HIGH = zigMain に到達
+        diagGpioInit();
+        @as(*volatile u32, @ptrFromInt(0xD0000014)).* = @as(u32, 1) << DIAG_PIN;
+
+        // [DIAG] Stage 1: clock.init()
         clock.init();
-        // GPIO ペリフェラルのリセット解除（IO_BANK0, PADS_BANK0）
+
+        // ペリフェラルリセット解除（ChibiOS hal_lld_init() と同等）
+        // BUSCTRL(bit1), SYSCFG(bit18), SYSINFO(bit19) のリセット解除
+        unresetPeripherals(1 << 1); // BUSCTRL
+        unresetPeripherals(1 << 18); // SYSCFG
+        unresetPeripherals(1 << 19); // SYSINFO
+
+        diagPulse();
+
+        // [DIAG] Stage 2: gpio.init()
         gpio.init();
+        diagPulse();
 
-        // キーボードマトリックス初期化
+        // [DIAG] Stage 3: matrix.init()
         matrix = MatrixType.init(kb_mod.matrixConfig());
+        diagPulse();
 
-        // USB HID + CDC 初期化
+        // [DIAG] Stage 4: usb_driver.init()
         usb_driver.init();
         host_mod.setDriver(usb_driver.hostDriver());
         cdc_console.init(&usb_driver);
+        diagPulse();
 
         // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
         eeprom_mod.init();
