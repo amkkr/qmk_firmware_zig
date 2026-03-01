@@ -167,8 +167,9 @@ pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tapping_tap_count: u8) 
         .layer_tap, .layer_tap_ext => {
             const code = act.layer_tap.code;
             if (code < OP_TAP_TOGGLE) return true;
-            // C版: OP_TAP_TOGGLE は tapping_key.tap.count > 0 の時のみ保持
-            if (code == OP_TAP_TOGGLE and tapping_tap_count > 0) return true;
+            // C版: OP_TAP_TOGGLE は tapping_key.tap.count == 0 の時のみ保持
+            // (break = retain, fall-through = process immediately)
+            if (code == OP_TAP_TOGGLE and tapping_tap_count == 0) return true;
             if (code == OP_ON_OFF or code == OP_OFF_ON or code == OP_SET_CLEAR) return true;
         },
         else => {},
