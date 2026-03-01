@@ -119,7 +119,7 @@ fn processTapping(keyp: *KeyRecord) bool {
                 } else if (!ev.pressed and !waitingBufferTyped(ev)) {
                     // C版互換: タッピング開始前に押されたキーのリリース処理。
                     // 修飾キー/レイヤーキーはタッピング終了まで保持する。
-                    if (action.shouldRetainReleaseDuringTapping(ev, keyp.tap.count)) {
+                    if (action.shouldRetainReleaseDuringTapping(ev, tapping_key.tap.count)) {
                         return false;
                     }
                     action.processRecord(keyp);
