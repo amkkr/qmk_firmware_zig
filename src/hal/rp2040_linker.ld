@@ -8,8 +8,7 @@
  */
 MEMORY
 {
-    BOOT2  (rx)  : ORIGIN = 0x10000000, LENGTH = 256
-    FLASH  (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K - 256 - 4K
+    FLASH  (rx)  : ORIGIN = 0x10000000, LENGTH = 2048K - 4K
     RAM    (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
@@ -17,14 +16,13 @@ ENTRY(_start);
 
 SECTIONS
 {
-    /* Boot2 second stage bootloader (256 bytes at flash origin) */
-    .boot2 : {
-        KEEP(*(.boot2))
-        . = ORIGIN(BOOT2) + 0x100;
-    } > BOOT2
-
-    /* Vector table and code */
+    /* Boot2 + vector table + code in single FLASH region.
+     * Placing .boot2 and .text in the same memory region ensures they share
+     * a single LOAD segment with executable flag, which is required for
+     * Zig's objcopy to correctly include boot2 data in the raw binary. */
     .text : {
+        KEEP(*(.boot2))
+        . = ORIGIN(FLASH) + 0x100;
         KEEP(*(.vectors))
         *(.text*)
         *(.rodata*)
