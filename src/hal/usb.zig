@@ -181,6 +181,8 @@ pub const UsbDriver = struct {
     mock_setup_packet: ?SetupPacket = null,
     /// Mock BUFF_STATUS value (for testing handleBuffStatus)
     mock_buff_status: u32 = 0,
+    /// Small reply buffer for 1-byte EP0 IN responses (GET_CONFIGURATION, GET_PROTOCOL)
+    ep0_reply_buf: [1]u8 = .{0},
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -330,7 +332,11 @@ pub const UsbDriver = struct {
                 self.sendStatusStageZlp();
             },
             Request.GET_CONFIGURATION => {
-                // Would send self.configuration back
+                self.ep0_reply_buf[0] = self.configuration;
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(1, setup.wLength);
+                self.sendEp0InPacket();
             },
             Request.GET_DESCRIPTOR => {
                 // Descriptor type is in high byte of wValue
@@ -373,7 +379,19 @@ pub const UsbDriver = struct {
                 self.sendStatusStageZlp();
             },
             HidRequest.GET_PROTOCOL => {
-                // Would send protocol value back
+                const iface: u8 = @truncate(setup.wIndex);
+                if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
+                    self.ep0_reply_buf[0] = @intFromEnum(self.keyboard_protocol);
+                } else if (iface == usb_descriptors.MOUSE_INTERFACE) {
+                    self.ep0_reply_buf[0] = @intFromEnum(self.mouse_protocol);
+                } else {
+                    self.stallEndpoint0();
+                    return;
+                }
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(1, setup.wLength);
+                self.sendEp0InPacket();
             },
             else => self.stallEndpoint0(),
         }
@@ -1488,4 +1506,139 @@ test "SET_CONFIGURATION with value 0 also resets EP1-EP3 data toggle" {
     try testing.expectEqual(false, drv.data_toggle[1]);
     try testing.expectEqual(false, drv.data_toggle[2]);
     try testing.expectEqual(false, drv.data_toggle[3]);
+}
+
+test "GET_CONFIGURATION returns 0 when not configured" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_CONFIGURATION,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 1,
+    });
+
+    // 1-byte response should have been sent
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    // Value should be 0 (not configured)
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
+    // Single byte fits in one packet, transfer should be complete
+    try testing.expect(drv.ep0_in_data == null);
+    // Data toggle should have been flipped
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "GET_CONFIGURATION returns 1 after SET_CONFIGURATION" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set configuration first
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_CONFIGURATION,
+        .wValue = 1,
+    });
+    drv.data_toggle[0] = false; // Reset for clarity
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_CONFIGURATION,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 1), drv.ep0_reply_buf[0]);
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "GET_PROTOCOL returns report protocol by default for keyboard" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    // Default is report protocol (1)
+    try testing.expectEqual(@as(u8, 1), drv.ep0_reply_buf[0]);
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "GET_PROTOCOL returns boot protocol after SET_PROTOCOL" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set keyboard to boot protocol
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_PROTOCOL,
+        .wValue = 0, // boot protocol
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+    });
+    drv.data_toggle[0] = false;
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]); // boot = 0
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "GET_PROTOCOL returns mouse protocol" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set mouse to boot protocol
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21,
+        .bRequest = HidRequest.SET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = usb_descriptors.MOUSE_INTERFACE,
+    });
+    drv.data_toggle[0] = false;
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = usb_descriptors.MOUSE_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]); // boot = 0
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "GET_PROTOCOL stalls on unknown interface" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_PROTOCOL,
+        .wValue = 0,
+        .wIndex = 99, // Unknown interface
+        .wLength = 1,
+    });
+
+    // Should not start any transfer (stallEndpoint0 called)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
 }
