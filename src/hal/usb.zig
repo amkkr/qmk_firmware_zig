@@ -61,6 +61,12 @@ pub const SieStatus = struct {
     pub const BUS_RESET: u32 = 1 << 19;
 };
 
+/// SIE_CTRL register bits
+pub const SieCtrl = struct {
+    pub const PULLUP_EN: u32 = 1 << 16;
+    pub const EP0_INT_1BUF: u32 = 1 << 29;
+};
+
 /// DPRAM endpoint buffer control offsets
 pub const DPRAM = struct {
     pub const SETUP_PACKET: u32 = 0x00;
@@ -673,6 +679,11 @@ pub const UsbDriver = struct {
     /// Read setup packet from DPRAM and dispatch to handleSetup.
     /// On freestanding, clears SETUP_REC in SIE_STATUS (W1C).
     fn handleSetupFromHw(self: *UsbDriver) void {
+        // USB 2.0 spec: After receiving a SETUP token, the data toggle for EP0 IN
+        // and OUT must be reset to DATA1 (the first data packet after SETUP uses DATA1).
+        // C版 (ChibiOS): reset_ep0() sets next_pid = 1 for both IN and OUT.
+        self.data_toggle[0] = true;
+
         if (is_freestanding) {
             // Read setup packet from DPRAM first (volatile: USB controller writes asynchronously)
             // Per RP2040 TRM: read the 8-byte setup packet, then clear SETUP_REC
@@ -816,6 +827,10 @@ pub const UsbDriver = struct {
         const usb_pwr = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.USB_PWR));
         usb_pwr.* = (1 << 3) | (1 << 2); // VBUS_DETECT_OVERRIDE_EN | VBUS_DETECT
 
+        // Enable an interrupt per EP0 transaction (C版: USB_SIE_CTRL_EP0_INT_1BUF)
+        // This is required for EP0 BUFF_STATUS events to fire on transfer completion.
+        sie_ctrl.* = SieCtrl.EP0_INT_1BUF;
+
         // Enable interrupts: buffer status, bus reset, setup request
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
         inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
@@ -833,7 +848,7 @@ pub const UsbDriver = struct {
         }
 
         // Enable pull-up on D+ to signal device connection to host
-        sie_ctrl.* = 1 << 16; // PULLUP_EN
+        sie_ctrl.* = SieCtrl.EP0_INT_1BUF | SieCtrl.PULLUP_EN;
 
         self.state = .attached;
     }
