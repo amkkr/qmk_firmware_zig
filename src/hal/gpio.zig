@@ -52,13 +52,13 @@ const ResetsRegs = struct {
 
 /// MMIO揮発性レジスタ読み出し
 inline fn regRead(address: u32) u32 {
-    if (is_test) return 0;
+    if (!is_freestanding) return 0;
     return @as(*volatile u32, @ptrFromInt(address)).*;
 }
 
 /// MMIO揮発性レジスタ書き込み
 inline fn regWrite(address: u32, value: u32) void {
-    if (is_test) return;
+    if (!is_freestanding) return;
     @as(*volatile u32, @ptrFromInt(address)).* = value;
 }
 

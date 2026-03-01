@@ -12,6 +12,12 @@
 //! device, configuration, interface, HID, endpoint, and report descriptors.
 
 const std = @import("std");
+const build_options = @import("build_options");
+
+const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
+    @import("../keyboards/madbd34.zig")
+else
+    @import("../keyboards/madbd5.zig");
 
 // ============================================================
 // USB Descriptor Type Constants
@@ -55,11 +61,11 @@ pub const EndpointTransfer = struct {
 };
 
 // ============================================================
-// USB IDs and Version
+// USB IDs and Version (from keyboard definition)
 // ============================================================
 
-pub const USB_VID: u16 = 0xFEED;
-pub const USB_PID: u16 = 0x6060;
+pub const USB_VID: u16 = kb.usb_vid;
+pub const USB_PID: u16 = kb.usb_pid;
 pub const DEVICE_VERSION: u16 = 0x0001;
 
 // ============================================================
@@ -462,8 +468,8 @@ pub const string_descriptor_0 = [4]u8{
     0x09, 0x04, // wLANGID (English US)
 };
 
-pub const string_descriptor_manufacturer = stringDescriptor("QMK");
-pub const string_descriptor_product = stringDescriptor("QMK Keyboard");
+pub const string_descriptor_manufacturer = stringDescriptor(kb.manufacturer);
+pub const string_descriptor_product = stringDescriptor(kb.name);
 pub const string_descriptor_serial = stringDescriptor("000000000000");
 
 // ============================================================
@@ -526,7 +532,15 @@ test "string descriptor format" {
     try testing.expectEqual(DescriptorType.STRING, string_descriptor_manufacturer[1]);
     try testing.expectEqual(@as(u8, string_descriptor_manufacturer.len), string_descriptor_manufacturer[0]);
 
-    // First char should be 'Q' in UTF-16LE
-    try testing.expectEqual(@as(u8, 'Q'), string_descriptor_manufacturer[2]);
+    // First char should be manufacturer name's first char in UTF-16LE
+    try testing.expectEqual(kb.manufacturer[0], string_descriptor_manufacturer[2]);
     try testing.expectEqual(@as(u8, 0), string_descriptor_manufacturer[3]);
+}
+
+test "string descriptors match keyboard definition" {
+    // Manufacturer string length: 2 (header) + manufacturer.len * 2 (UTF-16LE)
+    try testing.expectEqual(@as(usize, 2 + kb.manufacturer.len * 2), string_descriptor_manufacturer.len);
+
+    // Product string length: 2 (header) + name.len * 2 (UTF-16LE)
+    try testing.expectEqual(@as(usize, 2 + kb.name.len * 2), string_descriptor_product.len);
 }
