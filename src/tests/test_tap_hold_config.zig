@@ -926,16 +926,18 @@ test "HoldOnOtherKeyPressPerKey: per_key_hold_on_other_key_press" {
     try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
 }
 
-// QuickTapTermPerKey: 特定キーに短い quick tap term を設定
-// quick tap term を 50ms に設定 → 60ms 後の再プレスではタップ連続にならない
-test "QuickTapTermPerKey: short_quick_tap_term_prevents_repeat" {
+// QuickTapTermPerKey: quick tap term を 0 に設定 → 連続タップが発動せずホールドになる
+// デフォルト (QUICK_TAP_TERM=200ms) なら 60ms 後の再プレスは即座にタップ扱い(tap.count=2)。
+// per-key で 0ms にすると withinQuickTapTerm が常に false になり、
+// 2回目はホールドの新サイクルとして扱われる。
+test "QuickTapTermPerKey: zero_quick_tap_term_causes_hold_on_repress" {
     const mock = setup();
     defer teardown();
 
-    // (0,0) のみ quick tap term を 50ms に設定
+    // (0,0) のみ quick tap term を 0 に設定（連続タップ無効）
     tapping_mod.TestOverrides.quick_tap_term_fn = &struct {
         fn f(record: *const event_mod.KeyRecord) u16 {
-            if (record.event.key.row == 0 and record.event.key.col == 0) return 50;
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 0;
             return QUICK_TAP_TERM;
         }
     }.f;
@@ -948,16 +950,48 @@ test "QuickTapTermPerKey: short_quick_tap_term_prevents_repeat" {
     try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 
-    // 60ms 後に再プレス（quick tap term 50ms を超えているため、新しいタップサイクル開始）
+    // 60ms 後に再プレス（デフォルトなら QUICK_TAP_TERM=200 以内で連続タップ、
+    // per-key 0ms では withinQuickTapTerm=false のため新サイクル開始）
     const count_before = mock.keyboard_count;
     press(0, 0, 180);
 
-    // 新しいタップサイクルとして開始される（連続タップではない）
-    // TAPPING_TERM まで待機してホールドにするか、リリースしてタップにする
-    // ここでリリースすればタップとして処理される
-    release(0, 0, 200);
+    // TAPPING_TERM 超過まで保持 → 新サイクルとしてホールド（LSHIFT）になる
+    tick(180 + TAPPING_TERM + 1);
 
-    // KC_P が再度タップとして送信される
+    // LSHIFT が送信される（ホールド動作）
+    try testing.expect(findReportWithMods(mock, count_before, report_mod.ModBit.LSHIFT));
+    // KC_P はこの時点では送信されない（ホールド動作中）
+    try testing.expect(!findReportWithKey(mock, count_before, @truncate(KC.P)));
+
+    release(0, 0, 180 + TAPPING_TERM + 50);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// QuickTapTermPerKey: デフォルト quick tap term では連続タップが発動する（対照テスト）
+test "QuickTapTermPerKey: default_quick_tap_term_allows_repeat_tap" {
+    const mock = setup();
+    defer teardown();
+
+    // オーバーライドなし（デフォルト QUICK_TAP_TERM=200ms）
+
+    // 1回目のタップ
+    press(0, 0, 100);
+    release(0, 0, 120);
+
+    // KC_P が送信される
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    // 60ms 後に再プレス（QUICK_TAP_TERM=200ms 以内なので連続タップ）
+    const count_before = mock.keyboard_count;
+    press(0, 0, 180);
+
+    // 連続タップ: 即座に KC_P が送信される（tap.count が 2 に増加）
     try testing.expect(findReportWithKey(mock, count_before, @truncate(KC.P)));
+
+    // TAPPING_TERM 超過しても LSHIFT にはならない（連続タップモード）
+    try testing.expect(!findReportWithMods(mock, count_before, report_mod.ModBit.LSHIFT));
+
+    release(0, 0, 180 + TAPPING_TERM + 50);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }
