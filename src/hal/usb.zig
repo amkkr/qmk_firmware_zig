@@ -52,17 +52,22 @@ pub const Reg = struct {
 pub const IntBit = struct {
     pub const BUFF_STATUS: u32 = 1 << 4;
     pub const BUS_RESET: u32 = 1 << 12;
+    pub const DEV_SUSPEND: u32 = 1 << 13;
+    pub const DEV_RESUME_FROM_HOST: u32 = 1 << 15;
     pub const SETUP_REQ: u32 = 1 << 16;
 };
 
 /// SIE_STATUS register bits
 pub const SieStatus = struct {
+    pub const SUSPENDED: u32 = 1 << 4;
+    pub const RESUME: u32 = 1 << 11;
     pub const SETUP_REC: u32 = 1 << 17;
     pub const BUS_RESET: u32 = 1 << 19;
 };
 
 /// SIE_CTRL register bits
 pub const SieCtrl = struct {
+    pub const RESUME: u32 = 1 << 1;
     pub const PULLUP_EN: u32 = 1 << 16;
     pub const EP0_INT_1BUF: u32 = 1 << 29;
 };
@@ -215,6 +220,10 @@ pub const UsbDriver = struct {
     cdc_tx_tail: u8 = 0,
     /// Small reply buffer for EP0 IN responses (up to 7 bytes for LineCoding)
     ep0_reply_buf: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
+    /// Remote Wakeup enabled by host (SET_FEATURE DEVICE_REMOTE_WAKEUP)
+    remote_wakeup_enabled: bool = false,
+    /// Device state before entering suspended (to restore on resume)
+    pre_suspend_state: DeviceState = .disconnected,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -236,6 +245,8 @@ pub const UsbDriver = struct {
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
         self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
+        self.remote_wakeup_enabled = false;
+        self.pre_suspend_state = .disconnected;
         self.mock_ep0_out_data = 0;
         self.mock_ep0_out_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
         self.mock_ints = 0;
@@ -327,6 +338,12 @@ pub const UsbDriver = struct {
         if ((ints & IntBit.BUFF_STATUS) != 0) {
             self.handleBuffStatus();
         }
+        if ((ints & IntBit.DEV_SUSPEND) != 0) {
+            self.handleDevSuspend();
+        }
+        if ((ints & IntBit.DEV_RESUME_FROM_HOST) != 0) {
+            self.handleDevResume();
+        }
 
         // Flush CDC TX buffer if data is pending and device is configured
         if (self.isConfigured()) {
@@ -357,6 +374,45 @@ pub const UsbDriver = struct {
         self.ep0_out_pending = .none;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
+        self.remote_wakeup_enabled = false;
+    }
+
+    /// Handle USB device suspend event (DEV_SUSPEND interrupt)
+    pub fn handleDevSuspend(self: *UsbDriver) void {
+        if (is_freestanding) {
+            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
+            sie_status.* = SieStatus.SUSPENDED;
+        }
+        if (self.state != .suspended) {
+            self.pre_suspend_state = self.state;
+            self.state = .suspended;
+        }
+    }
+
+    /// Handle USB device resume event (DEV_RESUME_FROM_HOST interrupt)
+    pub fn handleDevResume(self: *UsbDriver) void {
+        if (is_freestanding) {
+            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
+            sie_status.* = SieStatus.RESUME;
+        }
+        if (self.state == .suspended) {
+            self.state = self.pre_suspend_state;
+        }
+    }
+
+    /// Check if device is in suspended state
+    pub fn isSuspended(self: *const UsbDriver) bool {
+        return self.state == .suspended;
+    }
+
+    /// Initiate remote wakeup signaling on the USB bus
+    pub fn remoteWakeup(self: *UsbDriver) void {
+        if (!self.remote_wakeup_enabled) return;
+        if (!self.isSuspended()) return;
+        if (is_freestanding) {
+            const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+            sie_ctrl.* = sie_ctrl.* | SieCtrl.RESUME;
+        }
     }
 
     /// Process a setup packet (called from interrupt handler or poll)
@@ -372,16 +428,24 @@ pub const UsbDriver = struct {
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             Request.GET_STATUS => {
-                // USB 2.0 spec §9.4.5: Return 2-byte status (self-powered=0, remote-wakeup=0)
-                self.ep0_reply_buf[0] = 0;
+                // USB 2.0 spec §9.4.5: Bit 0: Self-Powered, Bit 1: Remote Wakeup
+                self.ep0_reply_buf[0] = if (self.remote_wakeup_enabled) 0x02 else 0x00;
                 self.ep0_reply_buf[1] = 0;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
                 self.ep0_in_total_len = @min(2, setup.wLength);
                 self.sendEp0InPacket();
             },
-            Request.CLEAR_FEATURE, Request.SET_FEATURE => {
-                // USB 2.0 spec §9.4.1/§9.4.9: Acknowledge feature requests with ZLP
+            Request.CLEAR_FEATURE => {
+                if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
+                    self.remote_wakeup_enabled = false;
+                }
+                self.sendStatusStageZlp();
+            },
+            Request.SET_FEATURE => {
+                if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
+                    self.remote_wakeup_enabled = true;
+                }
                 self.sendStatusStageZlp();
             },
             Request.SET_ADDRESS => {
@@ -859,7 +923,7 @@ pub const UsbDriver = struct {
 
         // Enable interrupts: buffer status, bus reset, setup request
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
-        inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
+        inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ | IntBit.DEV_SUSPEND | IntBit.DEV_RESUME_FROM_HOST;
 
         // Initialize EP0 OUT buffer control to receive SETUP/OUT packets from host
         self.hwPrepareEp0Out();
@@ -2335,4 +2399,109 @@ test "GET_DESCRIPTOR HID type unknown interface returns null" {
     });
 
     try testing.expect(drv.ep0_in_data == null);
+}
+
+test "DEV_SUSPEND interrupt transitions to suspended state" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.mock_ints = IntBit.DEV_SUSPEND;
+    drv.task();
+    try testing.expectEqual(DeviceState.suspended, drv.state);
+    try testing.expectEqual(DeviceState.configured, drv.pre_suspend_state);
+    try testing.expect(drv.isSuspended());
+}
+
+test "DEV_RESUME_FROM_HOST restores pre-suspend state" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.mock_ints = IntBit.DEV_SUSPEND;
+    drv.task();
+    try testing.expectEqual(DeviceState.suspended, drv.state);
+    drv.mock_ints = IntBit.DEV_RESUME_FROM_HOST;
+    drv.task();
+    try testing.expectEqual(DeviceState.configured, drv.state);
+    try testing.expect(!drv.isSuspended());
+}
+
+test "SET_FEATURE DEVICE_REMOTE_WAKEUP enables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    try testing.expect(!drv.remote_wakeup_enabled);
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(drv.remote_wakeup_enabled);
+}
+
+test "CLEAR_FEATURE DEVICE_REMOTE_WAKEUP disables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.CLEAR_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(!drv.remote_wakeup_enabled);
+}
+
+test "GET_STATUS reflects remote wakeup state" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
+    drv.remote_wakeup_enabled = true;
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+}
+
+test "BUS_RESET clears remote_wakeup_enabled" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleBusReset();
+    try testing.expect(!drv.remote_wakeup_enabled);
+}
+
+test "suspend does not overwrite pre_suspend_state on double suspend" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.handleDevSuspend();
+    try testing.expectEqual(DeviceState.configured, drv.pre_suspend_state);
+    drv.handleDevSuspend();
+    try testing.expectEqual(DeviceState.configured, drv.pre_suspend_state);
+}
+
+test "suspend/resume register bit definitions" {
+    try testing.expectEqual(@as(u32, 1 << 13), IntBit.DEV_SUSPEND);
+    try testing.expectEqual(@as(u32, 1 << 15), IntBit.DEV_RESUME_FROM_HOST);
+    try testing.expectEqual(@as(u32, 1 << 4), SieStatus.SUSPENDED);
+    try testing.expectEqual(@as(u32, 1 << 11), SieStatus.RESUME);
+    try testing.expectEqual(@as(u32, 1 << 1), SieCtrl.RESUME);
 }
