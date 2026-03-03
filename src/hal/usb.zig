@@ -276,6 +276,7 @@ pub const UsbDriver = struct {
     /// 将来の NKRO 対応時にレポートサイズが変わる可能性があるため明示的に分岐する。
     pub fn sendKeyboard(self: *UsbDriver, r: KeyboardReport) void {
         if (!self.isConfigured()) return;
+        self.last_keyboard_report = r;
         if (self.keyboard_protocol == .boot) {
             // Boot Protocol: mods から 8 バイト（Report ID なし）
             const bytes = std.mem.asBytes(&r);
