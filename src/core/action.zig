@@ -93,7 +93,6 @@ pub fn actionExec(record: *KeyRecord) void {
     if (host.oneshot_timeout > 0) {
         if (host.hasOneshotModsTimedOut()) {
             host.clearOneshotMods();
-            host.clearOneshotLockedMods();
             host.sendKeyboardReport();
         }
         if (host.hasOneshotLayerTimedOut()) {
@@ -493,10 +492,6 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
             }
         } else {
             // ホールドリリース: 修飾キーを解除
-            // C版互換: ホールド解除時に oneshot_locked_mods に追加
-            if (oneshot_tap_toggle > 0) {
-                host.addOneshotLockedMods(mods_hid);
-            }
             host.delMods(mods_hid);
             host.sendKeyboardReport();
         }

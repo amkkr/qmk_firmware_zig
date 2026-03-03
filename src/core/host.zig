@@ -273,9 +273,8 @@ pub fn unregisterMods(mods: u8) void {
 /// 前回送信したレポートと比較し、変更がある場合のみ送信する。
 pub fn sendKeyboardReport() void {
     // ONESHOT_TIMEOUT: タイムアウトチェック
-    if (oneshot_timeout > 0 and oneshot_mods != 0 and hasOneshotModsTimedOut()) {
+    if (oneshot_timeout > 0 and hasOneshotModsTimedOut()) {
         clearOneshotMods();
-        clearOneshotLockedMods();
     }
 
     keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods | oneshot_locked_mods) & ~suppressed_override_mods;
@@ -362,6 +361,7 @@ pub fn getOneshotMods() u8 {
 /// ワンショットモッドがタイムアウトしたかチェックする
 pub fn hasOneshotModsTimedOut() bool {
     if (oneshot_timeout == 0) return false;
+    if (oneshot_mods == 0) return false;
     return timer.elapsed(oneshot_time) >= oneshot_timeout;
 }
 
@@ -457,6 +457,7 @@ pub fn isOneshotLayerActive() bool {
 /// TOGGLED 状態の場合はタイムアウトしない
 pub fn hasOneshotLayerTimedOut() bool {
     if (oneshot_timeout == 0) return false;
+    if (getOneshotLayerState() == 0) return false;
     if (getOneshotLayerState() == OneshotState.TOGGLED) return false;
     return timer.elapsed(oneshot_layer_time) >= oneshot_timeout;
 }
