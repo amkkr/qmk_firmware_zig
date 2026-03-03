@@ -218,6 +218,8 @@ pub const UsbDriver = struct {
     /// Last sent keyboard report (GET_REPORT 応答用)
     /// C版 usb_report_handling.c の report storage に相当
     last_keyboard_report: KeyboardReport = .{},
+    /// Remote Wakeup enabled by host (SET_FEATURE DEVICE_REMOTE_WAKEUP)
+    remote_wakeup_enabled: bool = false,
 
     /// Initialize USB peripheral
     pub fn init(self: *UsbDriver) void {
@@ -240,6 +242,7 @@ pub const UsbDriver = struct {
         self.cdc_tx_tail = 0;
         self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0, 0 };
         self.last_keyboard_report = .{};
+        self.remote_wakeup_enabled = false;
         self.mock_ep0_out_data = 0;
         self.mock_ep0_out_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
         self.mock_ints = 0;
@@ -360,6 +363,7 @@ pub const UsbDriver = struct {
         self.data_toggle = .{ false, false, false, false, false, false };
         self.pending_address = null;
         self.ep0_out_pending = .none;
+        self.remote_wakeup_enabled = false;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
     }
@@ -377,16 +381,29 @@ pub const UsbDriver = struct {
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             Request.GET_STATUS => {
-                // USB 2.0 spec §9.4.5: Return 2-byte status (self-powered=0, remote-wakeup=0)
-                self.ep0_reply_buf[0] = 0;
+                // USB 2.0 spec §9.4.5: Device status bits
+                // Bit 0: Self-Powered, Bit 1: Remote Wakeup (Device recipient only)
+                // Interface/Endpoint recipients return different status.
+                const recipient = setup.bmRequestType & 0x1F;
+                self.ep0_reply_buf[0] = if (recipient == 0 and self.remote_wakeup_enabled) 0x02 else 0x00;
                 self.ep0_reply_buf[1] = 0;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
                 self.ep0_in_total_len = @min(2, setup.wLength);
                 self.sendEp0InPacket();
             },
-            Request.CLEAR_FEATURE, Request.SET_FEATURE => {
-                // USB 2.0 spec §9.4.1/§9.4.9: Acknowledge feature requests with ZLP
+            Request.CLEAR_FEATURE => {
+                // USB 2.0 spec §9.4.1: wValue=1 (DEVICE_REMOTE_WAKEUP), recipient=Device
+                if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
+                    self.remote_wakeup_enabled = false;
+                }
+                self.sendStatusStageZlp();
+            },
+            Request.SET_FEATURE => {
+                // USB 2.0 spec §9.4.9: wValue=1 (DEVICE_REMOTE_WAKEUP), recipient=Device
+                if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
+                    self.remote_wakeup_enabled = true;
+                }
                 self.sendStatusStageZlp();
             },
             Request.SET_ADDRESS => {
@@ -2241,6 +2258,85 @@ test "GET_STATUS returns 2-byte zero status" {
     try testing.expectEqual(@as(u16, 2), drv.ep0_in_total_len);
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[1]);
+}
+
+test "SET_FEATURE DEVICE_REMOTE_WAKEUP enables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    try testing.expect(!drv.remote_wakeup_enabled);
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(drv.remote_wakeup_enabled);
+}
+
+test "CLEAR_FEATURE DEVICE_REMOTE_WAKEUP disables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.CLEAR_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(!drv.remote_wakeup_enabled);
+}
+
+test "GET_STATUS reflects remote wakeup state" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
+    drv.remote_wakeup_enabled = true;
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+}
+
+test "GET_STATUS for non-Device recipient does not set remote wakeup bit" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    // Interface recipient (bmRequestType & 0x1F == 1)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
+}
+
+test "BUS_RESET clears remote_wakeup_enabled" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleBusReset();
+    try testing.expect(!drv.remote_wakeup_enabled);
 }
 
 test "GET_STATUS clamps to wLength" {
