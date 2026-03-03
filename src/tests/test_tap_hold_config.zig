@@ -1007,6 +1007,7 @@ test "TappingTermPerKey: different_terms_per_key" {
     press(0, 3, 400);
     release(0, 3, 650);
     try testing.expect(findReportWithKey(mock, count_before, @truncate(KC.A)));
+    try testing.expect(!findReportWithMods(mock, count_before, report_mod.ModBit.RSHIFT));
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }
 
@@ -1058,6 +1059,7 @@ test "TappingTermPerKey: hold_then_press_other_key" {
     release(0, 1, 260);
     release(0, 0, 280);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
 }
 
 // HoldOnOtherKeyPressPerKey: callback returns false -> default behavior
