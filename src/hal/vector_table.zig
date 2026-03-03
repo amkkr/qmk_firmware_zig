@@ -3,6 +3,9 @@
 
 //! ARM Cortex-M0+ Vector Table for RP2040
 
+const builtin = @import("builtin");
+const is_freestanding = builtin.os.tag == .freestanding;
+
 extern var _stack_top: anyopaque;
 
 /// Default handler: infinite loop with breakpoint
@@ -12,34 +15,145 @@ fn defaultHandler() callconv(.c) void {
     }
 }
 
-/// RP2040 IRQ numbers (RP2040 Datasheet §2.3.2)
+// ============================================================
+// HardFault Debug Info
+// ============================================================
+
+/// Cortex-M0+ exception stack frame (automatically pushed by hardware on fault)
+/// ARM Architecture Reference Manual: B1.5.6
+pub const ExceptionFrame = extern struct {
+    r0: u32,
+    r1: u32,
+    r2: u32,
+    r3: u32,
+    r12: u32,
+    lr: u32, // Link Register (return address before fault)
+    pc: u32, // Program Counter (faulting instruction)
+    xpsr: u32, // Program Status Register
+};
+
+/// Crash information saved to RAM for post-mortem debugging.
+/// Placed at a known RAM address so it survives soft reset (Watchdog reset).
+pub const CrashInfo = extern struct {
+    magic: u32 = 0,
+    /// Exception stack frame registers
+    r0: u32 = 0,
+    r1: u32 = 0,
+    r2: u32 = 0,
+    r3: u32 = 0,
+    r12: u32 = 0,
+    lr: u32 = 0,
+    pc: u32 = 0,
+    xpsr: u32 = 0,
+    /// EXC_RETURN value (LR on exception entry, indicates MSP/PSP)
+    exc_return: u32 = 0,
+
+    pub const MAGIC: u32 = 0xDEAD_FA17; // "DEAD FAULT"
+
+    pub fn isValid(self: *const CrashInfo) bool {
+        return self.magic == MAGIC;
+    }
+
+    pub fn clear(self: *CrashInfo) void {
+        self.* = .{};
+    }
+};
+
+/// RAM address for crash info storage.
+/// Uses the last bytes of scratch RAM (before stack top at 0x20042000).
+/// This area survives Watchdog soft resets.
+const CRASH_INFO_ADDR: u32 = 0x20042000 - @sizeOf(CrashInfo);
+
+/// Get pointer to the crash info in RAM (freestanding only)
+pub fn getCrashInfo() *volatile CrashInfo {
+    if (is_freestanding) {
+        return @ptrFromInt(CRASH_INFO_ADDR);
+    } else {
+        return &test_crash_info;
+    }
+}
+
+var test_crash_info: CrashInfo = .{};
+
+/// HardFault handler entry point (naked).
+/// Determines whether MSP or PSP was in use and passes the correct
+/// stack pointer to hardFaultHandlerC.
+///
+/// Cortex-M0+ EXC_RETURN (LR on exception entry):
+///   bit 2 = 0: MSP was in use (handler mode / main stack)
+///   bit 2 = 1: PSP was in use (thread mode / process stack)
+fn hardFaultHandler() callconv(.naked) noreturn {
+    if (is_freestanding) {
+        asm volatile (
+            \\mov r1, lr
+            \\movs r0, #4
+            \\tst r0, r1
+            \\beq 1f
+            \\mrs r0, psp
+            \\b 2f
+            \\1:
+            \\mrs r0, msp
+            \\2:
+            \\bl hardFaultHandlerC
+        );
+    }
+    while (true) {
+        asm volatile ("");
+    }
+}
+
+/// HardFault handler C implementation.
+/// Called from hardFaultHandler with the faulting stack pointer and EXC_RETURN.
+export fn hardFaultHandlerC(stack_frame: *const ExceptionFrame, exc_return: u32) callconv(.c) noreturn {
+    const info = getCrashInfo();
+    info.magic = CrashInfo.MAGIC;
+    info.r0 = stack_frame.r0;
+    info.r1 = stack_frame.r1;
+    info.r2 = stack_frame.r2;
+    info.r3 = stack_frame.r3;
+    info.r12 = stack_frame.r12;
+    info.lr = stack_frame.lr;
+    info.pc = stack_frame.pc;
+    info.xpsr = stack_frame.xpsr;
+    info.exc_return = exc_return;
+
+    while (true) {
+        asm volatile ("bkpt #0");
+    }
+}
+
+// ============================================================
+// IRQ and Vector Table
+// ============================================================
+
+/// RP2040 IRQ numbers (RP2040 Datasheet section 2.3.2)
 pub const Irq = enum(u5) {
-    TIMER_IRQ_0    = 0,
-    TIMER_IRQ_1    = 1,
-    TIMER_IRQ_2    = 2,
-    TIMER_IRQ_3    = 3,
-    PWM_IRQ_WRAP   = 4,
-    USBCTRL_IRQ    = 5,
-    XIP_IRQ        = 6,
-    PIO0_IRQ_0     = 7,
-    PIO0_IRQ_1     = 8,
-    PIO1_IRQ_0     = 9,
-    PIO1_IRQ_1     = 10,
-    DMA_IRQ_0      = 11,
-    DMA_IRQ_1      = 12,
-    IO_IRQ_BANK0   = 13,
-    IO_IRQ_QSPI    = 14,
-    SIO_IRQ_PROC0  = 15,
-    SIO_IRQ_PROC1  = 16,
-    CLOCKS_IRQ     = 17,
-    SPI0_IRQ       = 18,
-    SPI1_IRQ       = 19,
-    UART0_IRQ      = 20,
-    UART1_IRQ      = 21,
-    ADC_IRQ_FIFO   = 22,
-    I2C0_IRQ       = 23,
-    I2C1_IRQ       = 24,
-    RTC_IRQ        = 25,
+    TIMER_IRQ_0 = 0,
+    TIMER_IRQ_1 = 1,
+    TIMER_IRQ_2 = 2,
+    TIMER_IRQ_3 = 3,
+    PWM_IRQ_WRAP = 4,
+    USBCTRL_IRQ = 5,
+    XIP_IRQ = 6,
+    PIO0_IRQ_0 = 7,
+    PIO0_IRQ_1 = 8,
+    PIO1_IRQ_0 = 9,
+    PIO1_IRQ_1 = 10,
+    DMA_IRQ_0 = 11,
+    DMA_IRQ_1 = 12,
+    IO_IRQ_BANK0 = 13,
+    IO_IRQ_QSPI = 14,
+    SIO_IRQ_PROC0 = 15,
+    SIO_IRQ_PROC1 = 16,
+    CLOCKS_IRQ = 17,
+    SPI0_IRQ = 18,
+    SPI1_IRQ = 19,
+    UART0_IRQ = 20,
+    UART1_IRQ = 21,
+    ADC_IRQ_FIFO = 22,
+    I2C0_IRQ = 23,
+    I2C1_IRQ = 24,
+    RTC_IRQ = 25,
 };
 
 /// Cortex-M0+ vector table layout
@@ -47,7 +161,7 @@ pub const VectorTable = extern struct {
     initial_sp: *anyopaque,
     reset: *const fn () callconv(.naked) noreturn,
     nmi: *const fn () callconv(.c) void = &defaultHandler,
-    hard_fault: *const fn () callconv(.c) void = &defaultHandler,
+    hard_fault: *const anyopaque = @ptrCast(&defaultHandler),
     reserved1: [7]*const fn () callconv(.c) void = .{&defaultHandler} ** 7,
     svcall: *const fn () callconv(.c) void = &defaultHandler,
     reserved2: [2]*const fn () callconv(.c) void = .{&defaultHandler} ** 2,
@@ -62,6 +176,7 @@ pub fn vectorTable(reset_handler: *const fn () callconv(.naked) noreturn) Vector
     return .{
         .initial_sp = @ptrCast(&_stack_top),
         .reset = reset_handler,
+        .hard_fault = @ptrCast(&hardFaultHandler),
     };
 }
 
@@ -89,12 +204,10 @@ test "VectorTable reserved entries are non-zero (filled with defaultHandler)" {
         .reset = &dummy_reset,
     };
 
-    // reserved1 (7 entries) should all be non-zero (defaultHandler address)
     for (vt.reserved1) |entry| {
         try testing.expect(@intFromPtr(entry) != 0);
     }
 
-    // reserved2 (2 entries) should all be non-zero
     for (vt.reserved2) |entry| {
         try testing.expect(@intFromPtr(entry) != 0);
     }
@@ -117,7 +230,6 @@ test "VectorTable all IRQ entries default to defaultHandler" {
 }
 
 test "VectorTable field offsets are sequential" {
-    // Offsets are pointer-size dependent (4 bytes on ARM, 8 bytes on x86-64)
     const P = @sizeOf(*anyopaque);
     try testing.expectEqual(@as(usize, P * 0), @offsetOf(VectorTable, "initial_sp"));
     try testing.expectEqual(@as(usize, P * 1), @offsetOf(VectorTable, "reset"));
@@ -135,4 +247,66 @@ test "Irq enum covers all 26 RP2040 IRQs" {
     try testing.expectEqual(@as(u5, 0), @intFromEnum(Irq.TIMER_IRQ_0));
     try testing.expectEqual(@as(u5, 5), @intFromEnum(Irq.USBCTRL_IRQ));
     try testing.expectEqual(@as(u5, 25), @intFromEnum(Irq.RTC_IRQ));
+}
+
+test "ExceptionFrame is 32 bytes (8 registers x 4 bytes)" {
+    try testing.expectEqual(@as(usize, 32), @sizeOf(ExceptionFrame));
+}
+
+test "CrashInfo struct layout" {
+    try testing.expectEqual(@as(usize, 40), @sizeOf(CrashInfo));
+    try testing.expectEqual(@as(usize, 0), @offsetOf(CrashInfo, "magic"));
+    try testing.expectEqual(@as(usize, 4), @offsetOf(CrashInfo, "r0"));
+    try testing.expectEqual(@as(usize, 32), @offsetOf(CrashInfo, "pc"));
+    try testing.expectEqual(@as(usize, 36), @offsetOf(CrashInfo, "exc_return"));
+}
+
+test "CrashInfo magic validation" {
+    var info = CrashInfo{};
+    try testing.expect(!info.isValid());
+
+    info.magic = CrashInfo.MAGIC;
+    try testing.expect(info.isValid());
+
+    info.clear();
+    try testing.expect(!info.isValid());
+}
+
+test "getCrashInfo saves registers correctly" {
+    test_crash_info.clear();
+
+    const frame = ExceptionFrame{
+        .r0 = 0x1000_0001,
+        .r1 = 0x2000_0002,
+        .r2 = 0x3000_0003,
+        .r3 = 0x4000_0004,
+        .r12 = 0xC000_000C,
+        .lr = 0x0800_1234,
+        .pc = 0x0800_5678,
+        .xpsr = 0x6100_0000,
+    };
+
+    const info = getCrashInfo();
+    info.magic = CrashInfo.MAGIC;
+    info.r0 = frame.r0;
+    info.r1 = frame.r1;
+    info.r2 = frame.r2;
+    info.r3 = frame.r3;
+    info.r12 = frame.r12;
+    info.lr = frame.lr;
+    info.pc = frame.pc;
+    info.xpsr = frame.xpsr;
+    info.exc_return = 0xFFFF_FFFD;
+
+    try testing.expect(info.isValid());
+    try testing.expectEqual(@as(u32, 0x0800_5678), info.pc);
+    try testing.expectEqual(@as(u32, 0x0800_1234), info.lr);
+    try testing.expectEqual(@as(u32, 0x1000_0001), info.r0);
+    try testing.expectEqual(@as(u32, 0xFFFF_FFFD), info.exc_return);
+}
+
+test "CRASH_INFO_ADDR is at end of scratch RAM" {
+    try testing.expectEqual(@as(u32, 0x20042000 - @sizeOf(CrashInfo)), CRASH_INFO_ADDR);
+    try testing.expect(CRASH_INFO_ADDR >= 0x20040000);
+    try testing.expect(CRASH_INFO_ADDR + @sizeOf(CrashInfo) <= 0x20042000);
 }
