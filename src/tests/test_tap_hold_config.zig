@@ -801,3 +801,163 @@ test "ModTapTwoModsSequential" {
     try testing.expect(mock.lastKeyboardReport().isEmpty());
     try testing.expectEqual(@as(u8, 0), mock.lastKeyboardReport().mods);
 }
+
+// ============================================================
+// Per-key コールバックテスト (TAPPING_TERM_PER_KEY 等)
+// C版: tests/tap_hold_configurations/tapping_term_per_key/ 等に相当
+// ============================================================
+// TestOverrides を使用して per-key コールバック経路を検証する。
+
+// TappingTermPerKey: 特定キーに短い tapping term を設定
+// (0,0) SFT_T に 100ms の tapping term を設定 → 110ms ホールドでホールド判定
+test "TappingTermPerKey: short_tapping_term_causes_hold" {
+    const mock = setup();
+    defer teardown();
+
+    // (0,0) のみ tapping term を 100ms に設定
+    tapping_mod.TestOverrides.tapping_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 100;
+            return TAPPING_TERM;
+        }
+    }.f;
+
+    // SFT_T(KC_P) をプレス
+    press(0, 0, 100);
+    // 100ms + 1 後 → per-key tapping term 超過でホールド
+    tick(201);
+
+    // LSHIFT が送信される（ホールド動作）
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+
+    release(0, 0, 250);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// TappingTermPerKey: 特定キーに長い tapping term を設定
+// (0,0) SFT_T に 500ms の tapping term を設定 → 300ms ではまだタップ判定可能
+test "TappingTermPerKey: long_tapping_term_allows_tap" {
+    const mock = setup();
+    defer teardown();
+
+    // (0,0) のみ tapping term を 500ms に設定
+    tapping_mod.TestOverrides.tapping_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 500;
+            return TAPPING_TERM;
+        }
+    }.f;
+
+    // SFT_T(KC_P) をプレス
+    press(0, 0, 100);
+    // 300ms 後にリリース（デフォルト 200ms なら超過だが、per-key 500ms ではタップ）
+    release(0, 0, 400);
+
+    // KC_P がタップとして送信される
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
+    try testing.expect(!findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// PermissiveHoldPerKey: 特定キーのみ permissive hold を有効化
+test "PermissiveHoldPerKey: per_key_permissive_hold_on_specific_key" {
+    const mock = setup();
+    defer teardown();
+
+    // グローバル permissive_hold は無効のまま
+    tapping_mod.permissive_hold = false;
+
+    // (0,0) のみ permissive hold を有効化
+    tapping_mod.TestOverrides.permissive_hold_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) bool {
+            return record.event.key.row == 0 and record.event.key.col == 0;
+        }
+    }.f;
+
+    // SFT_T(KC_P) をプレス
+    press(0, 0, 100);
+    // KC_A をプレス
+    press(0, 1, 110);
+    // KC_A をリリース → per-key permissive hold: SFT_T がホールドとして確定
+    release(0, 1, 160);
+
+    // LSHIFT が送信される
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.A)));
+
+    // SFT_T をリリース
+    release(0, 0, 180);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+    // KC_P は送信されない（ホールド動作）
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+}
+
+// HoldOnOtherKeyPressPerKey: 特定キーのみ hold_on_other_key_press を有効化
+test "HoldOnOtherKeyPressPerKey: per_key_hold_on_other_key_press" {
+    const mock = setup();
+    defer teardown();
+
+    // グローバル hold_on_other_key_press は無効のまま
+    tapping_mod.hold_on_other_key_press = false;
+
+    // (0,0) のみ hold_on_other_key_press を有効化
+    tapping_mod.TestOverrides.hold_on_other_key_press_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) bool {
+            return record.event.key.row == 0 and record.event.key.col == 0;
+        }
+    }.f;
+
+    // SFT_T(KC_P) をプレス
+    press(0, 0, 100);
+    try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
+
+    // KC_A をプレス → per-key hold_on_other_key_press: SFT_T がホールドとして即座に確定
+    press(0, 1, 110);
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+
+    // KC_A をリリース
+    release(0, 1, 160);
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.A)));
+
+    // SFT_T をリリース
+    release(0, 0, 180);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+}
+
+// QuickTapTermPerKey: 特定キーに短い quick tap term を設定
+// quick tap term を 50ms に設定 → 60ms 後の再プレスではタップ連続にならない
+test "QuickTapTermPerKey: short_quick_tap_term_prevents_repeat" {
+    const mock = setup();
+    defer teardown();
+
+    // (0,0) のみ quick tap term を 50ms に設定
+    tapping_mod.TestOverrides.quick_tap_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 50;
+            return QUICK_TAP_TERM;
+        }
+    }.f;
+
+    // 1回目のタップ
+    press(0, 0, 100);
+    release(0, 0, 120);
+
+    // KC_P が送信される
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    // 60ms 後に再プレス（quick tap term 50ms を超えているため、新しいタップサイクル開始）
+    const count_before = mock.keyboard_count;
+    press(0, 0, 180);
+
+    // 新しいタップサイクルとして開始される（連続タップではない）
+    // TAPPING_TERM まで待機してホールドにするか、リリースしてタップにする
+    // ここでリリースすればタップとして処理される
+    release(0, 0, 200);
+
+    // KC_P が再度タップとして送信される
+    try testing.expect(findReportWithKey(mock, count_before, @truncate(KC.P)));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}

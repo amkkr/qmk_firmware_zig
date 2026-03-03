@@ -13,6 +13,7 @@
 //!   3. タップキー解放後状態
 
 const std = @import("std");
+const builtin = @import("builtin");
 const action = @import("action.zig");
 const event_mod = @import("event.zig");
 const host = @import("host.zig");
@@ -73,11 +74,40 @@ fn initWaitingBuffer() [WAITING_BUFFER_SIZE]KeyRecord {
 // キーボード定義モジュール(kb)に対応する関数が定義されていれば、
 // @hasDecl で comptime 検出して呼び出す。
 // 未定義の場合はグローバル設定値を使用する。
+//
+// 注意: C版との引数の差異
+// C版のコールバックシグネチャは (uint16_t keycode, keyrecord_t *record) で
+// キーコードが第一引数として渡されるが、Zig版は (*const KeyRecord) で record のみ。
+// KeyRecord からはキー位置（row/col）を取得でき、キーボード定義側で
+// 位置ベースの分岐が可能。キーコードベースで分岐したい場合は、
+// キーボード定義側で action resolver を経由して解決する必要がある。
+// これは意図的な設計選択であり、action_tapping モジュールが keymap/action 解決に
+// 依存しないようにする分離を維持するためである。
+
+/// テスト用 per-key コールバックオーバーライド（テスト時のみ有効）
+/// テストコードから TestOverrides のフィールドを設定して
+/// per-key コールバック経路の検証を可能にする。
+pub const TestOverrides = if (builtin.is_test) struct {
+    pub var tapping_term_fn: ?*const fn (*const KeyRecord) u16 = null;
+    pub var quick_tap_term_fn: ?*const fn (*const KeyRecord) u16 = null;
+    pub var permissive_hold_fn: ?*const fn (*const KeyRecord) bool = null;
+    pub var hold_on_other_key_press_fn: ?*const fn (*const KeyRecord) bool = null;
+
+    pub fn clear() void {
+        tapping_term_fn = null;
+        quick_tap_term_fn = null;
+        permissive_hold_fn = null;
+        hold_on_other_key_press_fn = null;
+    }
+} else struct {};
 
 /// tapping_key に対する tapping term を取得する。
 /// C版 GET_TAPPING_TERM(keycode, record) に相当。
 /// kb.get_tapping_term(*const KeyRecord) が定義されていれば呼び出す。
 fn getTappingTermForKey(record: *const KeyRecord) u16 {
+    if (builtin.is_test) {
+        if (TestOverrides.tapping_term_fn) |f| return f(record);
+    }
     if (@hasDecl(kb, "get_tapping_term")) {
         return kb.get_tapping_term(record);
     }
@@ -87,6 +117,9 @@ fn getTappingTermForKey(record: *const KeyRecord) u16 {
 /// tapping_key に対する quick tap term を取得する。
 /// C版 GET_QUICK_TAP_TERM(keycode, record) に相当。
 fn getQuickTapTermForKey(record: *const KeyRecord) u16 {
+    if (builtin.is_test) {
+        if (TestOverrides.quick_tap_term_fn) |f| return f(record);
+    }
     if (@hasDecl(kb, "get_quick_tap_term")) {
         return kb.get_quick_tap_term(record);
     }
@@ -96,6 +129,9 @@ fn getQuickTapTermForKey(record: *const KeyRecord) u16 {
 /// tapping_key に対する permissive hold 設定を取得する。
 /// C版 get_permissive_hold(keycode, record) に相当。
 fn getPermissiveHoldForKey(record: *const KeyRecord) bool {
+    if (builtin.is_test) {
+        if (TestOverrides.permissive_hold_fn) |f| return f(record);
+    }
     if (@hasDecl(kb, "get_permissive_hold")) {
         return kb.get_permissive_hold(record);
     }
@@ -105,6 +141,9 @@ fn getPermissiveHoldForKey(record: *const KeyRecord) bool {
 /// tapping_key に対する hold on other key press 設定を取得する。
 /// C版 get_hold_on_other_key_press(keycode, record) に相当。
 fn getHoldOnOtherKeyPressForKey(record: *const KeyRecord) bool {
+    if (builtin.is_test) {
+        if (TestOverrides.hold_on_other_key_press_fn) |f| return f(record);
+    }
     if (@hasDecl(kb, "get_hold_on_other_key_press")) {
         return kb.get_hold_on_other_key_press(record);
     }
@@ -351,6 +390,9 @@ pub fn reset() void {
     waiting_buffer_head = 0;
     waiting_buffer_tail = 0;
     tapping_term = DEFAULT_TAPPING_TERM;
+    if (builtin.is_test) {
+        TestOverrides.clear();
+    }
 }
 
 test {
