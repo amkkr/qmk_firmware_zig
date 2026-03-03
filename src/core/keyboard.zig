@@ -31,6 +31,7 @@ const space_cadet = @import("space_cadet.zig");
 const key_override = @import("key_override.zig");
 const autocorrect = @import("autocorrect.zig");
 const secure = @import("secure.zig");
+const mousekey = @import("mousekey.zig");
 const magic = @import("magic.zig");
 const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
 const unicode = @import("unicode.zig");
@@ -226,6 +227,9 @@ pub fn task() void {
 
     // Secure タイムアウト処理
     secure.task();
+
+    // Mousekey 速度制御・レポート送信
+    mousekey.task();
 
     // Layer Lock タイムアウト・レイヤー状態同期処理
     layer_lock.task();
