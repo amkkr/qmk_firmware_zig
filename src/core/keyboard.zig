@@ -31,6 +31,7 @@ const space_cadet = @import("space_cadet.zig");
 const key_override = @import("key_override.zig");
 const autocorrect = @import("autocorrect.zig");
 const secure = @import("secure.zig");
+const extrakey = @import("extrakey.zig");
 const mousekey = @import("mousekey.zig");
 const magic = @import("magic.zig");
 const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
@@ -108,6 +109,7 @@ pub fn init() void {
     key_override.reset();
     autocorrect.reset();
     secure.reset();
+    extrakey.resetExtrakeyState();
     unicode.reset();
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
