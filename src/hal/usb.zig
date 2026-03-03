@@ -381,8 +381,11 @@ pub const UsbDriver = struct {
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             Request.GET_STATUS => {
-                // USB 2.0 spec §9.4.5: Bit 0: Self-Powered, Bit 1: Remote Wakeup
-                self.ep0_reply_buf[0] = if (self.remote_wakeup_enabled) 0x02 else 0x00;
+                // USB 2.0 spec §9.4.5: Device status bits
+                // Bit 0: Self-Powered, Bit 1: Remote Wakeup (Device recipient only)
+                // Interface/Endpoint recipients return different status.
+                const recipient = setup.bmRequestType & 0x1F;
+                self.ep0_reply_buf[0] = if (recipient == 0 and self.remote_wakeup_enabled) 0x02 else 0x00;
                 self.ep0_reply_buf[1] = 0;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
@@ -2309,6 +2312,22 @@ test "GET_STATUS reflects remote wakeup state" {
         .wLength = 2,
     });
     try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+}
+
+test "GET_STATUS for non-Device recipient does not set remote wakeup bit" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    // Interface recipient (bmRequestType & 0x1F == 1)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
 }
 
 test "BUS_RESET clears remote_wakeup_enabled" {
