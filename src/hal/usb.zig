@@ -490,7 +490,13 @@ pub const UsbDriver = struct {
             },
             HidRequest.GET_REPORT => {
                 // C版 usb_report_handling.c の usb_get_report_cb() に相当。
-                // キーボードインターフェースのみ対応し、最後に送信したレポートを返す。
+                // USB HID 1.11 §7.2.1: wValue = (ReportType << 8) | ReportID
+                // Report Type: 1=Input, 2=Output, 3=Feature。Input のみ対応。
+                const report_type: u8 = @truncate(setup.wValue >> 8);
+                if (report_type != 0x01) {
+                    self.stallEndpoint0();
+                    return;
+                }
                 if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
                     const report_bytes = std.mem.asBytes(&self.last_keyboard_report);
                     @memcpy(self.ep0_reply_buf[0..report_bytes.len], report_bytes);
@@ -2435,6 +2441,24 @@ test "GET_REPORT stalls on non-keyboard interface" {
     });
 
     // Should have stalled (ep0_in_data remains null, no data sent)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_REPORT stalls on non-Input report type" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_REPORT,
+        .wValue = 0x0200, // Report Type: Output (2), not Input (1)
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 8,
+    });
+
+    // Should have stalled
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
 }
