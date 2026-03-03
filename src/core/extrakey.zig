@@ -171,6 +171,14 @@ pub inline fn actionUsageConsumer(usage: u10) u16 {
 }
 
 // ============================================================
+// Extrakey 差分チェック用状態
+// C版 host.c の last_system_usage / last_consumer_usage に相当
+// ============================================================
+
+var last_system_usage: u16 = 0;
+var last_consumer_usage: u16 = 0;
+
+// ============================================================
 // Extrakey処理
 // ============================================================
 
@@ -194,15 +202,39 @@ pub fn processUsageAction(ev: event_mod.KeyEvent, act_code: u16) void {
 }
 
 /// System Control レポートを送信
+/// C版 host_system_send() に相当。前回と同じ usage なら送信をスキップする。
 pub fn hostSystemSend(usage: u16) void {
+    if (usage == last_system_usage) return;
+    last_system_usage = usage;
     const r = ExtraReport.system(usage);
     host.sendExtra(&r);
 }
 
 /// Consumer Control レポートを送信
+/// C版 host_consumer_send() に相当。前回と同じ usage なら送信をスキップする。
 pub fn hostConsumerSend(usage: u16) void {
+    if (usage == last_consumer_usage) return;
+    last_consumer_usage = usage;
     const r = ExtraReport.consumer(usage);
     host.sendExtra(&r);
+}
+
+/// 前回の System usage を取得する
+/// C版 host_last_system_usage() に相当
+pub fn lastSystemUsage() u16 {
+    return last_system_usage;
+}
+
+/// 前回の Consumer usage を取得する
+/// C版 host_last_consumer_usage() に相当
+pub fn lastConsumerUsage() u16 {
+    return last_consumer_usage;
+}
+
+/// Extrakey の差分チェック状態をリセットする（テスト用）
+pub fn resetExtrakeyState() void {
+    last_system_usage = 0;
+    last_consumer_usage = 0;
 }
 
 /// register_code() から呼ばれる Extrakey 登録処理
@@ -311,6 +343,7 @@ test "actionUsageConsumer" {
 }
 
 test "processUsageAction system press and release" {
+    resetExtrakeyState();
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -333,6 +366,7 @@ test "processUsageAction system press and release" {
 }
 
 test "processUsageAction consumer press and release" {
+    resetExtrakeyState();
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -355,6 +389,7 @@ test "processUsageAction consumer press and release" {
 }
 
 test "registerExtrakey and unregisterExtrakey system" {
+    resetExtrakeyState();
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -372,6 +407,7 @@ test "registerExtrakey and unregisterExtrakey system" {
 }
 
 test "registerExtrakey and unregisterExtrakey consumer" {
+    resetExtrakeyState();
     var mock = MockExtraDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
@@ -386,4 +422,42 @@ test "registerExtrakey and unregisterExtrakey consumer" {
     unregisterExtrakey(@truncate(KC.AUDIO_VOL_UP));
     try testing.expectEqual(@as(usize, 2), mock.extra_count);
     try testing.expectEqual(@as(u16, 0), mock.last_extra.usage);
+}
+
+test "hostSystemSend skips duplicate usage" {
+    resetExtrakeyState();
+    var mock = MockExtraDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // 最初の送信: usage=0x81 -> 送信される
+    hostSystemSend(SystemUsage.POWER_DOWN);
+    try testing.expectEqual(@as(usize, 1), mock.extra_count);
+
+    // 同じ usage を再送信 -> スキップされる
+    hostSystemSend(SystemUsage.POWER_DOWN);
+    try testing.expectEqual(@as(usize, 1), mock.extra_count);
+
+    // 異なる usage -> 送信される
+    hostSystemSend(0);
+    try testing.expectEqual(@as(usize, 2), mock.extra_count);
+}
+
+test "hostConsumerSend skips duplicate usage" {
+    resetExtrakeyState();
+    var mock = MockExtraDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // 最初の送信: Audio Mute -> 送信される
+    hostConsumerSend(ConsumerUsage.AUDIO_MUTE);
+    try testing.expectEqual(@as(usize, 1), mock.extra_count);
+
+    // 同じ usage を再送信 -> スキップされる
+    hostConsumerSend(ConsumerUsage.AUDIO_MUTE);
+    try testing.expectEqual(@as(usize, 1), mock.extra_count);
+
+    // 異なる usage -> 送信される
+    hostConsumerSend(0);
+    try testing.expectEqual(@as(usize, 2), mock.extra_count);
 }

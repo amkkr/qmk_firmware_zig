@@ -91,6 +91,9 @@ pub const HostDriver = struct {
 
 var current_driver: ?HostDriver = null;
 var keyboard_report: KeyboardReport = .{};
+/// 前回送信したキーボードレポート（差分チェック用）
+/// C版 action_util.c の send_6kro_report() 内 static last_report に相当
+var last_keyboard_report: KeyboardReport = .{};
 var real_mods: u8 = 0;
 var weak_mods: u8 = 0;
 /// Key Override 用: 置換キーに付与する弱い修飾キー
@@ -249,8 +252,9 @@ pub fn unregisterMods(mods: u8) void {
 }
 
 /// Send the current keyboard report to the host
-/// C版 send_keyboard_report() に相当。
+/// C版 send_keyboard_report() / send_6kro_report() に相当。
 /// oneshot_mods は一時的にレポートに含め、キーが送信されていたらクリアする。
+/// 前回送信したレポートと比較し、変更がある場合のみ送信する。
 pub fn sendKeyboardReport() void {
     keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods) & ~suppressed_override_mods;
     // oneshot_mods が設定されており、かつキーが登録されていればクリアする
@@ -259,22 +263,35 @@ pub fn sendKeyboardReport() void {
         oneshot_mods = 0;
     }
     if (current_driver) |driver| {
-        driver.sendKeyboard(&keyboard_report);
+        // 前回のレポートと比較し、変更がある場合のみ送信する
+        // C版 action_util.c の send_6kro_report() 内 memcmp に相当
+        const current: [8]u8 = @bitCast(keyboard_report);
+        const last: [8]u8 = @bitCast(last_keyboard_report);
+        if (!std.mem.eql(u8, &current, &last)) {
+            last_keyboard_report = keyboard_report;
+            driver.sendKeyboard(&keyboard_report);
+        }
     }
 }
 
 /// Clear the keyboard state and send an empty report
+/// C版 clear_keyboard() に相当。差分チェックをバイパスして強制送信する。
 pub fn clearKeyboard() void {
     keyboard_report.clear();
     real_mods = 0;
     weak_mods = 0;
     weak_override_mods = 0;
     suppressed_override_mods = 0;
-    sendKeyboardReport();
+    keyboard_report.mods = 0;
+    last_keyboard_report = keyboard_report;
+    if (current_driver) |driver| {
+        driver.sendKeyboard(&keyboard_report);
+    }
 }
 
 pub fn hostReset() void {
     keyboard_report.clear();
+    last_keyboard_report = .{};
     real_mods = 0;
     weak_mods = 0;
     weak_override_mods = 0;
@@ -519,4 +536,49 @@ test "clearKeyboard" {
     clearKeyboard();
     try testing.expect(mock.lastKeyboardReport().isEmpty());
     try testing.expectEqual(@as(u8, 0), getMods());
+}
+
+test "sendKeyboardReport skips duplicate reports" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    // 最初の送信: キーAを押す -> 送信される
+    registerCode(0x04); // KC_A
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
+
+    // 同じレポートを再送信 -> スキップされる
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
+
+    // キーBを追加 -> 変更があるので送信される
+    registerCode(0x05); // KC_B
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 2), mock.keyboard_count);
+
+    // キーBを解除 -> 変更があるので送信される
+    unregisterCode(0x05);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 3), mock.keyboard_count);
+
+    // 再度同じレポート -> スキップされる
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 3), mock.keyboard_count);
+}
+
+test "clearKeyboard always sends report" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    // 初期状態で空レポートを送信（clearKeyboardは常に送信）
+    clearKeyboard();
+    try testing.expectEqual(@as(usize, 1), mock.keyboard_count);
+
+    // もう一度clearKeyboard -> 差分チェックバイパスなので送信される
+    clearKeyboard();
+    try testing.expectEqual(@as(usize, 2), mock.keyboard_count);
 }
