@@ -14,6 +14,14 @@ const std = @import("std");
 const keycode = @import("keycode.zig");
 const action_code = @import("action_code.zig");
 const Keycode = keycode.Keycode;
+const build_options = @import("build_options");
+
+/// キーボード定義モジュール（comptime 選択）
+/// layer_state_set_kb / default_layer_state_set_kb コールバックの解決に使用
+const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
+    @import("../keyboards/madbd34.zig")
+else
+    @import("../keyboards/madbd5.zig");
 
 pub const MAX_LAYERS: u5 = 16;
 pub const LayerState = u32;
@@ -59,8 +67,19 @@ pub fn layerStateCmp(state: LayerState, layer: u5) bool {
 // ============================================================
 
 /// Set the layer state directly
+/// C版 layer_state_set() 相当: コールバックチェーンを通してから反映する
+/// コールバック: kb.layer_state_set_kb(state) -> state を返す（未定義なら素通し）
 pub fn layerStateSet(state: LayerState) void {
-    layer_state = state;
+    layer_state = layerStateSetCallback(state);
+}
+
+/// コールバックチェーンを実行してレイヤー状態を変換する
+/// C版: state = layer_state_set_kb(state) で kb がデフォルトで user を呼ぶ
+fn layerStateSetCallback(state: LayerState) LayerState {
+    if (@hasDecl(kb, "layer_state_set_kb")) {
+        return kb.layer_state_set_kb(state);
+    }
+    return state;
 }
 
 /// Turn on a specific layer
@@ -108,23 +127,39 @@ pub fn layerXor(state: LayerState) void {
 // ============================================================
 
 /// Set the default layer state
+/// C版 default_layer_set() 相当: コールバックチェーンを通してから反映する
 pub fn defaultLayerSet(state: LayerState) void {
-    default_layer_state = state;
+    defaultLayerStateSet(state);
 }
 
 /// OR bits into default layer state
 pub fn defaultLayerOr(state: LayerState) void {
-    default_layer_state |= state;
+    defaultLayerStateSet(default_layer_state | state);
 }
 
 /// AND bits with default layer state
 pub fn defaultLayerAnd(state: LayerState) void {
-    default_layer_state &= state;
+    defaultLayerStateSet(default_layer_state & state);
 }
 
 /// XOR bits with default layer state
 pub fn defaultLayerXor(state: LayerState) void {
-    default_layer_state ^= state;
+    defaultLayerStateSet(default_layer_state ^ state);
+}
+
+/// デフォルトレイヤー状態をコールバック経由で設定する
+/// C版 static default_layer_state_set() 相当
+fn defaultLayerStateSet(state: LayerState) void {
+    default_layer_state = defaultLayerStateSetCallback(state);
+}
+
+/// デフォルトレイヤーのコールバックチェーンを実行
+/// C版: state = default_layer_state_set_kb(state)
+fn defaultLayerStateSetCallback(state: LayerState) LayerState {
+    if (@hasDecl(kb, "default_layer_state_set_kb")) {
+        return kb.default_layer_state_set_kb(state);
+    }
+    return state;
 }
 
 // ============================================================
@@ -154,7 +189,6 @@ pub fn getHighestLayer(state: LayerState) u5 {
 // so that on release the same layer is used (prevents stuck keys
 // when layers change while a key is held).
 
-const build_options = @import("build_options");
 const MATRIX_ROWS: u8 = build_options.MATRIX_ROWS;
 const MATRIX_COLS: u8 = build_options.MATRIX_COLS;
 const CACHE_ENTRIES = MATRIX_ROWS * MATRIX_COLS;
@@ -445,4 +479,18 @@ test "defaultLayerAnd and defaultLayerXor" {
 
     defaultLayerXor(0b1100);
     try testing.expectEqual(@as(LayerState, 0b0110), default_layer_state);
+}
+
+test "layerStateSetCallback: コールバック未定義時は状態がそのまま反映される" {
+    resetState();
+    // kb にはコールバックが定義されていないので、状態がそのまま反映される
+    layerStateSet(0b1010);
+    try testing.expectEqual(@as(LayerState, 0b1010), layer_state);
+}
+
+test "defaultLayerStateSetCallback: コールバック未定義時は状態がそのまま反映される" {
+    resetState();
+    // kb にはコールバックが定義されていないので、状態がそのまま反映される
+    defaultLayerSet(@as(LayerState, 1) << 3);
+    try testing.expectEqual(@as(LayerState, 1) << 3, default_layer_state);
 }
