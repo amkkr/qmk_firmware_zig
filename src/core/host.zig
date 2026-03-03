@@ -277,7 +277,9 @@ pub fn sendKeyboardReport() void {
 }
 
 /// Clear the keyboard state and send an empty report
-/// C版 clear_keyboard() に相当。差分チェックをバイパスして強制送信する。
+/// ホスト側のクリーン状態を保証するため差分チェックをバイパスして強制送信する。
+/// C版 clear_keyboard() は host_keyboard_send() → send_6kro_report() を経由するため
+/// memcmp による差分チェックが適用されスキップされる場合がある。
 pub fn clearKeyboard() void {
     keyboard_report.clear();
     real_mods = 0;
