@@ -202,6 +202,9 @@ pub const UsbDriver = struct {
     mock_setup_packet: ?SetupPacket = null,
     /// Mock BUFF_STATUS value (for testing handleBuffStatus)
     mock_buff_status: u32 = 0,
+    /// Mock: last sendEndpoint call info (for testing send data size)
+    mock_last_send_ep: u8 = 0,
+    mock_last_send_len: usize = 0,
     /// CDC Line Coding (default: 115200/8N1)
     cdc_line_coding: usb_descriptors.LineCoding = .{},
     /// CDC DTR/RTS control line state
@@ -238,6 +241,8 @@ pub const UsbDriver = struct {
         self.mock_ints = 0;
         self.mock_setup_packet = null;
         self.mock_buff_status = 0;
+        self.mock_last_send_ep = 0;
+        self.mock_last_send_len = 0;
 
         if (is_freestanding) {
             self.hwInit();
@@ -260,13 +265,32 @@ pub const UsbDriver = struct {
     }
 
     /// Send a keyboard report
+    /// C版 usb_main.c の send_keyboard() に相当。
+    /// Boot Protocol 時: Report ID なし、mods から 8 バイト送信。
+    /// Report Protocol 時: レポート全体を送信。
+    /// 現在の 6KRO KeyboardReport は 8 バイトで Boot Protocol と同一フォーマットだが、
+    /// 将来の NKRO 対応時にレポートサイズが変わる可能性があるため明示的に分岐する。
     pub fn sendKeyboard(self: *UsbDriver, r: KeyboardReport) void {
         if (!self.isConfigured()) return;
-        self.sendEndpoint(
-            usb_descriptors.KEYBOARD_ENDPOINT,
-            std.mem.asBytes(&r),
-        );
+        if (self.keyboard_protocol == .boot) {
+            // Boot Protocol: mods から 8 バイト（Report ID なし）
+            const bytes = std.mem.asBytes(&r);
+            self.sendEndpoint(
+                usb_descriptors.KEYBOARD_ENDPOINT,
+                bytes[0..BOOT_KEYBOARD_REPORT_SIZE],
+            );
+        } else {
+            // Report Protocol: レポート全体を送信
+            self.sendEndpoint(
+                usb_descriptors.KEYBOARD_ENDPOINT,
+                std.mem.asBytes(&r),
+            );
+        }
     }
+
+    /// Boot Protocol キーボードレポートサイズ（8バイト固定）
+    /// C版 USB HID Boot Protocol 仕様: mods(1) + reserved(1) + keys[6] = 8 バイト
+    pub const BOOT_KEYBOARD_REPORT_SIZE: usize = 8;
 
     /// Send a mouse report
     pub fn sendMouse(self: *UsbDriver, r: MouseReport) void {
@@ -785,8 +809,10 @@ pub const UsbDriver = struct {
         if (is_freestanding) {
             self.hwSendEndpoint(ep, data);
         } else {
-            // Mock: track data toggle
+            // Mock: track data toggle and last send info
             self.data_toggle[ep] = !self.data_toggle[ep];
+            self.mock_last_send_ep = ep;
+            self.mock_last_send_len = data.len;
         }
     }
 
@@ -1129,6 +1155,47 @@ test "UsbDriver send does nothing when not configured" {
     drv.sendKeyboard(r);
     drv.sendMouse(MouseReport{});
     drv.sendExtra(ExtraReport{});
+}
+
+test "sendKeyboard sends boot protocol report (8 bytes) in boot mode" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.keyboard_protocol = .boot;
+
+    const r = KeyboardReport{ .mods = 0x02, .keys = .{ 0x04, 0, 0, 0, 0, 0 } };
+    drv.sendKeyboard(r);
+
+    // Boot Protocol: 8 bytes from mods field
+    try testing.expectEqual(usb_descriptors.KEYBOARD_ENDPOINT, drv.mock_last_send_ep);
+    try testing.expectEqual(UsbDriver.BOOT_KEYBOARD_REPORT_SIZE, drv.mock_last_send_len);
+}
+
+test "sendKeyboard sends full report in report protocol mode" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.keyboard_protocol = .report;
+
+    const r = KeyboardReport{ .mods = 0x02, .keys = .{ 0x04, 0, 0, 0, 0, 0 } };
+    drv.sendKeyboard(r);
+
+    // Report Protocol: full KeyboardReport size
+    try testing.expectEqual(usb_descriptors.KEYBOARD_ENDPOINT, drv.mock_last_send_ep);
+    try testing.expectEqual(@sizeOf(KeyboardReport), drv.mock_last_send_len);
+}
+
+test "sendKeyboard default protocol is report" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+
+    // Default protocol should be report
+    try testing.expectEqual(HidProtocol.report, drv.keyboard_protocol);
+
+    const r = KeyboardReport{};
+    drv.sendKeyboard(r);
+    try testing.expectEqual(@sizeOf(KeyboardReport), drv.mock_last_send_len);
 }
 
 test "UsbDriver hostDriver interface" {
