@@ -504,7 +504,11 @@ pub const UsbDriver = struct {
             },
             HidRequest.GET_IDLE => {
                 // C版 usb_report_handling.c の usb_get_idle_cb() に相当。
-                // 現在の idle rate を 1 バイトで返す。
+                // 現在の idle rate を 1 バイトで返す。キーボードインターフェースのみ対応。
+                if (iface != usb_descriptors.KEYBOARD_INTERFACE) {
+                    self.stallEndpoint0();
+                    return;
+                }
                 self.ep0_reply_buf[0] = self.keyboard_idle;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
@@ -2480,4 +2484,22 @@ test "GET_IDLE returns zero when idle rate not set" {
 
     try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
+}
+
+test "GET_IDLE stalls on non-keyboard interface" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_IDLE,
+        .wValue = 0,
+        .wIndex = 99, // Unknown interface
+        .wLength = 1,
+    });
+
+    // Should have stalled (ep0_in_data remains null, no data sent)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
 }
