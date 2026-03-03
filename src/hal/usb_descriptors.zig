@@ -318,6 +318,7 @@ pub const mouse_report_descriptor = blk: {
 };
 
 /// Extra (system/consumer) HID report descriptor
+/// C版 usb_descriptor.c の EXTRAKEY_ENABLE セクションに相当
 pub const extra_report_descriptor = blk: {
     break :blk
     // --- System Control ---
@@ -325,16 +326,13 @@ pub const extra_report_descriptor = blk: {
         hidUsage(0x80) ++ // System Control
         hidCollection(0x01) ++
         hidReportId(3) ++ // System
-        hidUsageMin(0x81) ++ // System Power Down
-        hidUsageMax(0x83) ++ // System Wake Up
-        hidLogicalMin(0) ++
-        hidLogicalMax(1) ++
-        hidReportCount(3) ++
-        hidReportSize(1) ++
-        hidInput(DATA_VAR_ABS) ++
+        hidUsageMin(0x01) ++ // Pointer
+        hidUsageMaxU16(0x00B7) ++ // System Display LCD Autoscale
+        hidLogicalMin(0x01) ++
+        hidLogicalMaxU16(0x00B7) ++
         hidReportCount(1) ++
-        hidReportSize(5) ++
-        hidInput(CONST) ++
+        hidReportSize(16) ++
+        hidInput(DATA_ARR_ABS) ++
         hidEndCollection() ++
 
         // --- Consumer Control ---
@@ -342,13 +340,13 @@ pub const extra_report_descriptor = blk: {
         hidUsage(0x01) ++ // Consumer Control
         hidCollection(0x01) ++
         hidReportId(4) ++ // Consumer
-        hidUsageMin(0) ++
-        hidUsageMaxU16(0x02FF) ++
-        hidLogicalMin(0) ++
-        hidLogicalMaxU16(0x02FF) ++
+        hidUsageMin(0x01) ++ // Consumer Control
+        hidUsageMaxU16(0x02A0) ++ // AC Desktop Show All Applications
+        hidLogicalMin(0x01) ++
+        hidLogicalMaxU16(0x02A0) ++
         hidReportCount(1) ++
         hidReportSize(16) ++
-        hidInput(DATA_VAR_ABS) ++
+        hidInput(DATA_ARR_ABS) ++
         hidEndCollection();
 };
 
@@ -736,6 +734,64 @@ test "mouse report descriptor size" {
 test "extra report descriptor size" {
     try testing.expect(extra_report_descriptor.len > 0);
     try testing.expect(extra_report_descriptor.len < 256);
+}
+
+test "extra report descriptor uses Array type for System and Consumer" {
+    const desc = extra_report_descriptor;
+    var system_input_flags: ?u8 = null;
+    var consumer_input_flags: ?u8 = null;
+    var in_system = false;
+    var in_consumer = false;
+    var i: usize = 0;
+    while (i < desc.len - 1) : (i += 1) {
+        if (desc[i] == 0x85) { // Report ID tag
+            if (desc[i + 1] == 3) { in_system = true; in_consumer = false; }
+            if (desc[i + 1] == 4) { in_system = false; in_consumer = true; }
+        }
+        if (desc[i] == 0x81) { // Input tag
+            if (in_system and system_input_flags == null) {
+                system_input_flags = desc[i + 1];
+            }
+            if (in_consumer and consumer_input_flags == null) {
+                consumer_input_flags = desc[i + 1];
+            }
+        }
+    }
+    try testing.expectEqual(@as(u8, DATA_ARR_ABS), system_input_flags.?);
+    try testing.expectEqual(@as(u8, DATA_ARR_ABS), consumer_input_flags.?);
+}
+
+test "extra report descriptor System Control Usage range matches C version" {
+    const desc = extra_report_descriptor;
+    var found_usage_min = false;
+    var found_usage_max = false;
+    var i: usize = 0;
+    while (i < desc.len - 1) : (i += 1) {
+        if (desc[i] == 0x19 and desc[i + 1] == 0x01) {
+            found_usage_min = true;
+        }
+        if (i + 2 < desc.len and desc[i] == 0x2A and
+            desc[i + 1] == 0xB7 and desc[i + 2] == 0x00)
+        {
+            found_usage_max = true;
+        }
+    }
+    try testing.expect(found_usage_min);
+    try testing.expect(found_usage_max);
+}
+
+test "extra report descriptor Consumer Control Usage range matches C version" {
+    const desc = extra_report_descriptor;
+    var found_usage_max_consumer = false;
+    var i: usize = 0;
+    while (i < desc.len - 1) : (i += 1) {
+        if (i + 2 < desc.len and desc[i] == 0x2A and
+            desc[i + 1] == 0xA0 and desc[i + 2] == 0x02)
+        {
+            found_usage_max_consumer = true;
+        }
+    }
+    try testing.expect(found_usage_max_consumer);
 }
 
 test "string descriptor format" {
