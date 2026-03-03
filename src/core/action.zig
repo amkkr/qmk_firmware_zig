@@ -464,7 +464,7 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
         if (keyp.tap.count > 0) {
             // ONESHOT_TAP_TOGGLE: タップ回数がしきい値に達したらロック
             // C版 action.c の ONESHOT_TAP_TOGGLE 処理に相当
-            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle) {
+            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
                 host.addOneshotLockedMods(mods_hid);
                 host.sendKeyboardReport();
             } else if (keyp.tap.count == 1) {
@@ -484,7 +484,7 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
     } else {
         if (keyp.tap.count > 0) {
             // タップリリース: OSMは次キーまで保持（レポート送信不要）
-            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle) {
+            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
                 // タップトグルでロック: リリース時は何もしない
             } else if (keyp.tap.count > 1) {
                 host.delMods(mods_hid);
@@ -705,14 +705,14 @@ fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
     if (ev.pressed) {
         // ONESHOT_TAP_TOGGLE: タップ回数がしきい値に達したらトグル
         // C版 action.c の ONESHOT_TAP_TOGGLE 処理に相当
-        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle) {
+        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
             // TOGGLED 状態: レイヤーをロック（タイムアウトしない）
             host.setOneshotLayer(l, host.OneshotState.TOGGLED);
         } else {
             host.setOneshotLayer(l, host.OneshotState.START);
         }
     } else {
-        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle) {
+        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
             // TOGGLED リリース: 何もしない（レイヤーはロックされたまま）
         } else {
             host.clearOneshotLayerState(host.OneshotState.PRESSED);
