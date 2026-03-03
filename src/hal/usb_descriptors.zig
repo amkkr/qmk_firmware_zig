@@ -765,15 +765,22 @@ test "extra report descriptor System Control Usage range matches C version" {
     const desc = extra_report_descriptor;
     var found_usage_min = false;
     var found_usage_max = false;
+    var in_system = false;
     var i: usize = 0;
     while (i < desc.len - 1) : (i += 1) {
-        if (desc[i] == 0x19 and desc[i + 1] == 0x01) {
-            found_usage_min = true;
+        // Report ID でセクションを追跡
+        if (desc[i] == 0x85) { // Report ID tag
+            in_system = (desc[i + 1] == 3);
         }
-        if (i + 2 < desc.len and desc[i] == 0x2A and
-            desc[i + 1] == 0xB7 and desc[i + 2] == 0x00)
-        {
-            found_usage_max = true;
+        if (in_system) {
+            if (desc[i] == 0x19 and desc[i + 1] == 0x01) { // Usage Minimum (0x01)
+                found_usage_min = true;
+            }
+            if (i + 2 < desc.len and desc[i] == 0x2A and
+                desc[i + 1] == 0xB7 and desc[i + 2] == 0x00) // Usage Maximum (0x00B7)
+            {
+                found_usage_max = true;
+            }
         }
     }
     try testing.expect(found_usage_min);
@@ -782,16 +789,28 @@ test "extra report descriptor System Control Usage range matches C version" {
 
 test "extra report descriptor Consumer Control Usage range matches C version" {
     const desc = extra_report_descriptor;
-    var found_usage_max_consumer = false;
+    var found_usage_min = false;
+    var found_usage_max = false;
+    var in_consumer = false;
     var i: usize = 0;
     while (i < desc.len - 1) : (i += 1) {
-        if (i + 2 < desc.len and desc[i] == 0x2A and
-            desc[i + 1] == 0xA0 and desc[i + 2] == 0x02)
-        {
-            found_usage_max_consumer = true;
+        // Report ID でセクションを追跡
+        if (desc[i] == 0x85) { // Report ID tag
+            in_consumer = (desc[i + 1] == 4);
+        }
+        if (in_consumer) {
+            if (desc[i] == 0x19 and desc[i + 1] == 0x01) { // Usage Minimum (0x01)
+                found_usage_min = true;
+            }
+            if (i + 2 < desc.len and desc[i] == 0x2A and
+                desc[i + 1] == 0xA0 and desc[i + 2] == 0x02) // Usage Maximum (0x02A0)
+            {
+                found_usage_max = true;
+            }
         }
     }
-    try testing.expect(found_usage_max_consumer);
+    try testing.expect(found_usage_min);
+    try testing.expect(found_usage_max);
 }
 
 test "string descriptor format" {
