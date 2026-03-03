@@ -585,7 +585,7 @@ test "GET_LINE_CODING after SET_LINE_CODING reflects updated values" {
     });
 
     try testing.expectEqual(@as(u16, 7), drv.ep0_in_total_len);
-    const reply_lc: usb_descriptors.LineCoding = @bitCast(drv.ep0_reply_buf);
+    const reply_lc: usb_descriptors.LineCoding = @bitCast(drv.ep0_reply_buf[0..7].*);
     try testing.expectEqual(@as(u32, 9600), reply_lc.dwDTERate);
 }
 

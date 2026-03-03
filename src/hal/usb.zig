@@ -218,8 +218,11 @@ pub const UsbDriver = struct {
     cdc_tx_buf: [256]u8 = undefined,
     cdc_tx_head: u8 = 0,
     cdc_tx_tail: u8 = 0,
-    /// Small reply buffer for EP0 IN responses (up to 7 bytes for LineCoding)
-    ep0_reply_buf: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
+    /// Small reply buffer for EP0 IN responses (up to 8 bytes for KeyboardReport / LineCoding)
+    ep0_reply_buf: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    /// Last sent keyboard report (GET_REPORT 応答用)
+    /// C版 usb_report_handling.c の report storage に相当
+    last_keyboard_report: KeyboardReport = .{},
     /// Remote Wakeup enabled by host (SET_FEATURE DEVICE_REMOTE_WAKEUP)
     remote_wakeup_enabled: bool = false,
     /// Device state before entering suspended (to restore on resume)
@@ -244,7 +247,8 @@ pub const UsbDriver = struct {
         self.cdc_control_line_state = 0;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
-        self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0 };
+        self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0, 0 };
+        self.last_keyboard_report = .{};
         self.remote_wakeup_enabled = false;
         self.pre_suspend_state = .disconnected;
         self.mock_ep0_out_data = 0;
@@ -283,6 +287,7 @@ pub const UsbDriver = struct {
     /// 将来の NKRO 対応時にレポートサイズが変わる可能性があるため明示的に分岐する。
     pub fn sendKeyboard(self: *UsbDriver, r: KeyboardReport) void {
         if (!self.isConfigured()) return;
+        self.last_keyboard_report = r;
         if (self.keyboard_protocol == .boot) {
             // Boot Protocol: mods から 8 バイト（Report ID なし）
             const bytes = std.mem.asBytes(&r);
@@ -372,6 +377,7 @@ pub const UsbDriver = struct {
         self.data_toggle = .{ false, false, false, false, false, false };
         self.pending_address = null;
         self.ep0_out_pending = .none;
+        self.remote_wakeup_enabled = false;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
         self.remote_wakeup_enabled = false;
@@ -432,8 +438,11 @@ pub const UsbDriver = struct {
     fn handleStandardRequest(self: *UsbDriver, setup: *const SetupPacket) void {
         switch (setup.bRequest) {
             Request.GET_STATUS => {
-                // USB 2.0 spec §9.4.5: Bit 0: Self-Powered, Bit 1: Remote Wakeup
-                self.ep0_reply_buf[0] = if (self.remote_wakeup_enabled) 0x02 else 0x00;
+                // USB 2.0 spec §9.4.5: Device status bits
+                // Bit 0: Self-Powered, Bit 1: Remote Wakeup (Device recipient only)
+                // Interface/Endpoint recipients return different status.
+                const recipient = setup.bmRequestType & 0x1F;
+                self.ep0_reply_buf[0] = if (recipient == 0 and self.remote_wakeup_enabled) 0x02 else 0x00;
                 self.ep0_reply_buf[1] = 0;
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
@@ -441,12 +450,14 @@ pub const UsbDriver = struct {
                 self.sendEp0InPacket();
             },
             Request.CLEAR_FEATURE => {
+                // USB 2.0 spec §9.4.1: wValue=1 (DEVICE_REMOTE_WAKEUP), recipient=Device
                 if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
                     self.remote_wakeup_enabled = false;
                 }
                 self.sendStatusStageZlp();
             },
             Request.SET_FEATURE => {
+                // USB 2.0 spec §9.4.9: wValue=1 (DEVICE_REMOTE_WAKEUP), recipient=Device
                 if (setup.wValue == 1 and (setup.bmRequestType & 0x1F) == 0) {
                     self.remote_wakeup_enabled = true;
                 }
@@ -551,6 +562,39 @@ pub const UsbDriver = struct {
                 self.ep0_in_total_len = @min(1, setup.wLength);
                 self.sendEp0InPacket();
             },
+            HidRequest.GET_REPORT => {
+                // C版 usb_report_handling.c の usb_get_report_cb() に相当。
+                // USB HID 1.11 §7.2.1: wValue = (ReportType << 8) | ReportID
+                // Report Type: 1=Input, 2=Output, 3=Feature。Input のみ対応。
+                const report_type: u8 = @truncate(setup.wValue >> 8);
+                if (report_type != 0x01) {
+                    self.stallEndpoint0();
+                    return;
+                }
+                if (iface == usb_descriptors.KEYBOARD_INTERFACE) {
+                    const report_bytes = std.mem.asBytes(&self.last_keyboard_report);
+                    @memcpy(self.ep0_reply_buf[0..report_bytes.len], report_bytes);
+                    self.ep0_in_data = &self.ep0_reply_buf;
+                    self.ep0_in_offset = 0;
+                    self.ep0_in_total_len = @min(@as(u16, @intCast(report_bytes.len)), setup.wLength);
+                    self.sendEp0InPacket();
+                } else {
+                    self.stallEndpoint0();
+                }
+            },
+            HidRequest.GET_IDLE => {
+                // C版 usb_report_handling.c の usb_get_idle_cb() に相当。
+                // 現在の idle rate を 1 バイトで返す。キーボードインターフェースのみ対応。
+                if (iface != usb_descriptors.KEYBOARD_INTERFACE) {
+                    self.stallEndpoint0();
+                    return;
+                }
+                self.ep0_reply_buf[0] = self.keyboard_idle;
+                self.ep0_in_data = &self.ep0_reply_buf;
+                self.ep0_in_offset = 0;
+                self.ep0_in_total_len = @min(1, setup.wLength);
+                self.sendEp0InPacket();
+            },
             else => self.stallEndpoint0(),
         }
     }
@@ -565,7 +609,8 @@ pub const UsbDriver = struct {
             },
             usb_descriptors.CdcRequest.GET_LINE_CODING => {
                 // Send current LineCoding struct (7 bytes) to host
-                self.ep0_reply_buf = @bitCast(self.cdc_line_coding);
+                const lc_bytes: [7]u8 = @bitCast(self.cdc_line_coding);
+                @memcpy(self.ep0_reply_buf[0..7], &lc_bytes);
                 self.ep0_in_data = &self.ep0_reply_buf;
                 self.ep0_in_offset = 0;
                 self.ep0_in_total_len = @min(7, setup.wLength);
@@ -2018,7 +2063,7 @@ test "CDC GET_LINE_CODING returns current line coding" {
 
     try testing.expectEqual(@as(u16, 7), drv.ep0_in_total_len);
     // ep0_reply_buf should contain the default line coding
-    const reply_lc: usb_descriptors.LineCoding = @bitCast(drv.ep0_reply_buf);
+    const reply_lc: usb_descriptors.LineCoding = @bitCast(drv.ep0_reply_buf[0..7].*);
     try testing.expectEqual(@as(u32, 115200), reply_lc.dwDTERate);
     try testing.expectEqual(@as(u8, 0), reply_lc.bCharFormat);
     try testing.expectEqual(@as(u8, 0), reply_lc.bParityType);
@@ -2272,6 +2317,85 @@ test "GET_STATUS returns 2-byte zero status" {
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[1]);
 }
 
+test "SET_FEATURE DEVICE_REMOTE_WAKEUP enables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    try testing.expect(!drv.remote_wakeup_enabled);
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.SET_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(drv.remote_wakeup_enabled);
+}
+
+test "CLEAR_FEATURE DEVICE_REMOTE_WAKEUP disables remote wakeup" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x00,
+        .bRequest = Request.CLEAR_FEATURE,
+        .wValue = 1,
+        .wIndex = 0,
+        .wLength = 0,
+    });
+    try testing.expect(!drv.remote_wakeup_enabled);
+}
+
+test "GET_STATUS reflects remote wakeup state" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
+    drv.remote_wakeup_enabled = true;
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0x80,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+}
+
+test "GET_STATUS for non-Device recipient does not set remote wakeup bit" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    // Interface recipient (bmRequestType & 0x1F == 1)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
+}
+
+test "BUS_RESET clears remote_wakeup_enabled" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    drv.handleBusReset();
+    try testing.expect(!drv.remote_wakeup_enabled);
+}
+
 test "GET_STATUS clamps to wLength" {
     var drv = UsbDriver{};
     drv.init();
@@ -2508,4 +2632,156 @@ test "suspend/resume register bit definitions" {
     try testing.expectEqual(@as(u32, 1 << 4), SieStatus.SUSPENDED);
     try testing.expectEqual(@as(u32, 1 << 11), SieStatus.RESUME);
     try testing.expectEqual(@as(u32, 1 << 4), SieCtrl.RESUME);
+}
+
+test "GET_REPORT returns last keyboard report for keyboard interface" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+
+    // Send a keyboard report with some data
+    var r = KeyboardReport{};
+    r.mods = 0x02; // LSHIFT
+    _ = r.addKey(0x04); // KC_A
+    drv.sendKeyboard(r);
+
+    // GET_REPORT
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1, // Device-to-host, Class, Interface
+        .bRequest = HidRequest.GET_REPORT,
+        .wValue = 0x0100, // Report Type: Input (1), Report ID: 0
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 8,
+    });
+
+    try testing.expectEqual(@as(u16, 8), drv.ep0_in_total_len);
+    // Verify report data: mods=0x02, reserved=0, keys[0]=0x04
+    try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[1]);
+    try testing.expectEqual(@as(u8, 0x04), drv.ep0_reply_buf[2]);
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "GET_REPORT returns empty report when no report has been sent" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // GET_REPORT without having sent any keyboard report
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_REPORT,
+        .wValue = 0x0100,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 8,
+    });
+
+    try testing.expectEqual(@as(u16, 8), drv.ep0_in_total_len);
+    // All zeroes
+    for (0..8) |i| {
+        try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[i]);
+    }
+}
+
+test "GET_REPORT stalls on non-keyboard interface" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_REPORT,
+        .wValue = 0x0100,
+        .wIndex = 99, // Unknown interface
+        .wLength = 8,
+    });
+
+    // Should have stalled (ep0_in_data remains null, no data sent)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_REPORT stalls on non-Input report type" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_REPORT,
+        .wValue = 0x0200, // Report Type: Output (2), not Input (1)
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 8,
+    });
+
+    // Should have stalled
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "GET_IDLE returns current idle rate" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Set idle rate via SET_IDLE
+    drv.handleSetup(&.{
+        .bmRequestType = 0x21, // Host-to-device, Class, Interface
+        .bRequest = HidRequest.SET_IDLE,
+        .wValue = 4 << 8, // idle rate = 4 (duration in upper byte)
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+    });
+    try testing.expectEqual(@as(u8, 4), drv.keyboard_idle);
+
+    // GET_IDLE
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_IDLE,
+        .wValue = 0,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 4), drv.ep0_reply_buf[0]);
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expect(drv.data_toggle[0] == true);
+}
+
+test "GET_IDLE returns zero when idle rate not set" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // GET_IDLE without SET_IDLE (default idle = 0)
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_IDLE,
+        .wValue = 0,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 1,
+    });
+
+    try testing.expectEqual(@as(u16, 1), drv.ep0_in_total_len);
+    try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[0]);
+}
+
+test "GET_IDLE stalls on non-keyboard interface" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.data_toggle[0] = false;
+    drv.handleSetup(&.{
+        .bmRequestType = 0xA1,
+        .bRequest = HidRequest.GET_IDLE,
+        .wValue = 0,
+        .wIndex = 99, // Unknown interface
+        .wLength = 1,
+    });
+
+    // Should have stalled (ep0_in_data remains null, no data sent)
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
 }
