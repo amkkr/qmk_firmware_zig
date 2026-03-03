@@ -201,12 +201,10 @@ pub const startup = if (is_freestanding) struct {
                 }
                 if (any_key_pressed) {
                     usb_driver.remoteWakeup();
-                    if (USB_SUSPEND_WAKEUP_DELAY > 0) {
-                        timer.waitMs(USB_SUSPEND_WAKEUP_DELAY);
-                        _ = matrix.scan();
-                        for (0..kb_mod.rows) |row| {
-                            keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
-                        }
+                    timer.waitMs(USB_SUSPEND_WAKEUP_DELAY);
+                    _ = matrix.scan();
+                    for (0..kb_mod.rows) |row| {
+                        keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
                     }
                 } else {
                     asm volatile ("wfi");

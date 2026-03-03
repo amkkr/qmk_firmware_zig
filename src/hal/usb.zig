@@ -394,6 +394,10 @@ pub const UsbDriver = struct {
         if (is_freestanding) {
             const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
             sie_status.* = SieStatus.RESUME;
+            // Clear RESUME bit in SIE_CTRL to stop driving resume signaling
+            // (pico-sdk usb_device_resume() equivalent: hw_clear_bits)
+            const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+            sie_ctrl.* = sie_ctrl.* & ~SieCtrl.RESUME;
         }
         if (self.state == .suspended) {
             self.state = self.pre_suspend_state;
