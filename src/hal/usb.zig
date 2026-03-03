@@ -67,7 +67,7 @@ pub const SieStatus = struct {
 
 /// SIE_CTRL register bits
 pub const SieCtrl = struct {
-    pub const RESUME: u32 = 1 << 1;
+    pub const RESUME: u32 = 1 << 4;
     pub const PULLUP_EN: u32 = 1 << 16;
     pub const EP0_INT_1BUF: u32 = 1 << 29;
 };
@@ -2503,5 +2503,5 @@ test "suspend/resume register bit definitions" {
     try testing.expectEqual(@as(u32, 1 << 15), IntBit.DEV_RESUME_FROM_HOST);
     try testing.expectEqual(@as(u32, 1 << 4), SieStatus.SUSPENDED);
     try testing.expectEqual(@as(u32, 1 << 11), SieStatus.RESUME);
-    try testing.expectEqual(@as(u32, 1 << 1), SieCtrl.RESUME);
+    try testing.expectEqual(@as(u32, 1 << 4), SieCtrl.RESUME);
 }

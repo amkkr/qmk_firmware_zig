@@ -202,13 +202,7 @@ pub const startup = if (is_freestanding) struct {
                 if (any_key_pressed) {
                     usb_driver.remoteWakeup();
                     if (USB_SUSPEND_WAKEUP_DELAY > 0) {
-                        var delay: u32 = 0;
-                        while (delay < USB_SUSPEND_WAKEUP_DELAY) : (delay += 1) {
-                            var i: u32 = 0;
-                            while (i < 125_000) : (i += 1) {
-                                asm volatile ("nop");
-                            }
-                        }
+                        timer.waitMs(USB_SUSPEND_WAKEUP_DELAY);
                         _ = matrix.scan();
                         for (0..kb_mod.rows) |row| {
                             keyboard.setMatrixRow(@intCast(row), matrix.getRow(@intCast(row)));
