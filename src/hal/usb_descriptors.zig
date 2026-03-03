@@ -757,6 +757,8 @@ test "extra report descriptor uses Array type for System and Consumer" {
             }
         }
     }
+    try testing.expect(system_input_flags != null);
+    try testing.expect(consumer_input_flags != null);
     try testing.expectEqual(@as(u8, DATA_ARR_ABS), system_input_flags.?);
     try testing.expectEqual(@as(u8, DATA_ARR_ABS), consumer_input_flags.?);
 }
