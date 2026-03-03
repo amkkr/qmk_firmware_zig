@@ -73,12 +73,6 @@ pub fn layerStateSet(state: LayerState) void {
     layer_state = layerStateSetCallback(state);
 }
 
-/// テスト用: コールバックを通さずにレイヤー状態を直接設定する
-/// テストで特定のレイヤー状態を強制したい場合に使用
-pub fn layerStateSetRaw(state: LayerState) void {
-    layer_state = state;
-}
-
 /// コールバックチェーンを実行してレイヤー状態を変換する
 /// C版: state = layer_state_set_kb(state) で kb がデフォルトで user を呼ぶ
 fn layerStateSetCallback(state: LayerState) LayerState {
