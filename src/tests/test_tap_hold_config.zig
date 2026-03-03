@@ -806,7 +806,18 @@ test "ModTapTwoModsSequential" {
 // Per-key コールバックテスト (TAPPING_TERM_PER_KEY 等)
 // C版: tests/tap_hold_configurations/tapping_term_per_key/ 等に相当
 // ============================================================
+//
 // TestOverrides を使用して per-key コールバック経路を検証する。
+//
+// テスト戦略:
+// action_tapping.zig の getTappingTermForKey() 等は以下の優先順位で値を解決する:
+//   1. builtin.is_test 時: TestOverrides のコールバック (non-null なら使用)
+//   2. @hasDecl(kb, "get_tapping_term") 時: キーボード定義のコールバック
+//   3. フォールバック: グローバル設定値
+// @hasDecl パスは comptime で解決されるためランタイムテストでの分岐は不可能だが、
+// TestOverrides は @hasDecl パスと同一のコールバック呼び出し経路
+// (関数ポインタ -> record 引数 -> 値返却) を通るため、
+// per-key コールバックの動作検証として等価である。
 
 // TappingTermPerKey: 特定キーに短い tapping term を設定
 // (0,0) SFT_T に 100ms の tapping term を設定 → 110ms ホールドでホールド判定
@@ -964,6 +975,139 @@ test "QuickTapTermPerKey: zero_quick_tap_term_causes_hold_on_repress" {
     try testing.expect(!findReportWithKey(mock, count_before, @truncate(KC.P)));
 
     release(0, 0, 180 + TAPPING_TERM + 50);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// TappingTermPerKey: 異なるキーに異なる tapping term を設定
+// (0,0) SFT_T に 100ms、(0,3) RSFT_T に 500ms
+test "TappingTermPerKey: different_terms_per_key" {
+    const mock = setup();
+    defer teardown();
+
+    tapping_mod.TestOverrides.tapping_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 100;
+            if (record.event.key.row == 0 and record.event.key.col == 3) return 500;
+            return TAPPING_TERM;
+        }
+    }.f;
+
+    // (0,0) SFT_T(KC_P): 150ms hold -> hold (100ms exceeded)
+    press(0, 0, 100);
+    tick(251);
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+
+    release(0, 0, 300);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+
+    const count_before = mock.keyboard_count;
+
+    // (0,3) RSFT_T(KC_A): 250ms hold -> tap (500ms not reached)
+    press(0, 3, 400);
+    release(0, 3, 650);
+    try testing.expect(findReportWithKey(mock, count_before, @truncate(KC.A)));
+    try testing.expect(!findReportWithMods(mock, count_before, report_mod.ModBit.RSHIFT));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// TappingTermPerKey + PermissiveHold
+test "TappingTermPerKey: with_permissive_hold_interaction" {
+    const mock = setup();
+    defer teardown();
+
+    tapping_mod.TestOverrides.tapping_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 100;
+            return TAPPING_TERM;
+        }
+    }.f;
+    tapping_mod.permissive_hold = true;
+
+    press(0, 0, 100);
+    press(0, 1, 130);
+    release(0, 1, 170);
+
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.A)));
+
+    release(0, 0, 190);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+}
+
+// TappingTermPerKey: hold then press other key
+test "TappingTermPerKey: hold_then_press_other_key" {
+    const mock = setup();
+    defer teardown();
+
+    tapping_mod.TestOverrides.tapping_term_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) u16 {
+            if (record.event.key.row == 0 and record.event.key.col == 0) return 100;
+            return TAPPING_TERM;
+        }
+    }.f;
+
+    press(0, 0, 100);
+    tick(201);
+    try testing.expect(findReportWithMods(mock, 0, report_mod.ModBit.LSHIFT));
+
+    const count_before = mock.keyboard_count;
+    press(0, 1, 220);
+    try testing.expect(findReportWithKey(mock, count_before, @truncate(KC.A)));
+
+    release(0, 1, 260);
+    release(0, 0, 280);
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+    try testing.expect(!findReportWithKey(mock, 0, @truncate(KC.P)));
+}
+
+// HoldOnOtherKeyPressPerKey: callback returns false -> default behavior
+test "HoldOnOtherKeyPressPerKey: callback_returns_false_uses_default_behavior" {
+    const mock = setup();
+    defer teardown();
+
+    tapping_mod.hold_on_other_key_press = false;
+    tapping_mod.TestOverrides.hold_on_other_key_press_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) bool {
+            return record.event.key.row == 0 and record.event.key.col == 0;
+        }
+    }.f;
+
+    // LT(1, KC_P) at (0,2) -> callback returns false
+    press(0, 2, 100);
+    try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
+
+    press(0, 1, 110);
+    try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
+
+    release(0, 1, 160);
+    release(0, 2, 180);
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.A)));
+    try testing.expect(mock.lastKeyboardReport().isEmpty());
+}
+
+// PermissiveHoldPerKey: callback returns false -> default behavior
+test "PermissiveHoldPerKey: callback_returns_false_uses_default_behavior" {
+    const mock = setup();
+    defer teardown();
+
+    tapping_mod.permissive_hold = false;
+    tapping_mod.TestOverrides.permissive_hold_fn = &struct {
+        fn f(record: *const event_mod.KeyRecord) bool {
+            return record.event.key.row == 0 and record.event.key.col == 0;
+        }
+    }.f;
+
+    // LT(1, KC_P) at (0,2) -> callback returns false
+    press(0, 2, 100);
+    press(0, 1, 110);
+    release(0, 1, 160);
+    release(0, 2, 180);
+
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.P)));
+    try testing.expect(findReportWithKey(mock, 0, @truncate(KC.A)));
     try testing.expect(mock.lastKeyboardReport().isEmpty());
 }
 
