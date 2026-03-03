@@ -15,6 +15,8 @@
 const std = @import("std");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
+const timer = @import("../hal/timer.zig");
+const keymap_mod = @import("keymap.zig");
 const KeyboardReport = report_mod.KeyboardReport;
 const MouseReport = report_mod.MouseReport;
 const ExtraReport = report_mod.ExtraReport;
@@ -282,7 +284,6 @@ pub fn clearKeyboard() void {
     weak_mods = 0;
     weak_override_mods = 0;
     suppressed_override_mods = 0;
-    keyboard_report.mods = 0;
     last_keyboard_report = keyboard_report;
     if (current_driver) |driver| {
         driver.sendKeyboard(&keyboard_report);
