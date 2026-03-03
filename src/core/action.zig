@@ -51,6 +51,11 @@ var retro_tap_curr_key: event_mod.KeyPos = .{ .row = 0, .col = 0 };
 /// RETRO_TAPPING: 最後に押されたキーがそのまま離されたか（他キー割り込みなし）
 var retro_tap_primed: bool = false;
 
+/// ONESHOT_TAP_TOGGLE: OSM/OSL をロックするために必要なタップ回数
+/// C版 action.c の ONESHOT_TAP_TOGGLE に相当
+/// 0 の場合はタップトグル無効
+pub var oneshot_tap_toggle: u8 = 0;
+
 pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
@@ -83,6 +88,18 @@ pub const TAPPING_TOGGLE: u8 = 5;
 
 /// Main entry point: execute action for a key event
 pub fn actionExec(record: *KeyRecord) void {
+    // ONESHOT_TIMEOUT: タイムアウトチェック
+    // C版 action_exec() 冒頭の ONESHOT_TIMEOUT チェックに相当
+    if (host.oneshot_timeout > 0) {
+        if (host.hasOneshotModsTimedOut()) {
+            host.clearOneshotMods();
+            host.sendKeyboardReport();
+        }
+        if (host.hasOneshotLayerTimedOut()) {
+            host.clearOneshotLayerState(host.OneshotState.PRESSED | host.OneshotState.OTHER_KEY_PRESSED);
+        }
+    }
+
     // RETRO_TAPPING: 生のキーイベントに基づいて retro_tap_primed を追跡する。
     // C版 action_exec() 冒頭の retro_tap_curr_key / retro_tap_primed 更新に相当。
     if (tapping.retro_tapping and !record.event.isTick()) {
@@ -445,7 +462,12 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
 
     if (ev.pressed) {
         if (keyp.tap.count > 0) {
-            if (keyp.tap.count == 1) {
+            // ONESHOT_TAP_TOGGLE: タップ回数がしきい値に達したらロック
+            // C版 action.c の ONESHOT_TAP_TOGGLE 処理に相当
+            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
+                host.addOneshotLockedMods(mods_hid);
+                host.sendKeyboardReport();
+            } else if (keyp.tap.count == 1) {
                 // タップ: One-Shot Mods を設定（8ビットHIDmod形式で格納）
                 // C版互換: OSM設定時はレポートを送信しない（次キー押下時に適用）
                 host.addOneshotMods(mods_hid);
@@ -462,7 +484,9 @@ fn processOneShotModsAction(keyp: *KeyRecord, mods_hid: u8) void {
     } else {
         if (keyp.tap.count > 0) {
             // タップリリース: OSMは次キーまで保持（レポート送信不要）
-            if (keyp.tap.count > 1) {
+            if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
+                // タップトグルでロック: リリース時は何もしない
+            } else if (keyp.tap.count > 1) {
                 host.delMods(mods_hid);
                 host.sendKeyboardReport();
             }
@@ -678,14 +702,23 @@ fn processOneShotLayerAction(keyp: *KeyRecord, l: u5) void {
         return;
     }
 
-    // C版互換: tap_count をチェックせず、常に oneshot 挙動
-    // （ONESHOT_TAP_TOGGLE 未定義時の C版ロジックと等価）
     if (ev.pressed) {
-        host.setOneshotLayer(l, host.OneshotState.START);
+        // ONESHOT_TAP_TOGGLE: タップ回数がしきい値に達したらトグル
+        // C版 action.c の ONESHOT_TAP_TOGGLE 処理に相当
+        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
+            // TOGGLED 状態: レイヤーをロック（タイムアウトしない）
+            host.setOneshotLayer(l, host.OneshotState.TOGGLED);
+        } else {
+            host.setOneshotLayer(l, host.OneshotState.START);
+        }
     } else {
-        host.clearOneshotLayerState(host.OneshotState.PRESSED);
-        if (keyp.tap.count > 1) {
-            host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+        if (oneshot_tap_toggle > 0 and keyp.tap.count == oneshot_tap_toggle and !keyp.tap.interrupted) {
+            // TOGGLED リリース: 何もしない（レイヤーはロックされたまま）
+        } else {
+            host.clearOneshotLayerState(host.OneshotState.PRESSED);
+            if (keyp.tap.count > 1) {
+                host.clearOneshotLayerState(host.OneshotState.OTHER_KEY_PRESSED);
+            }
         }
     }
 }
@@ -706,6 +739,7 @@ pub fn reset() void {
     tapping.retro_tapping = false;
     retro_tap_primed = false;
     retro_tap_curr_key = .{ .row = 0, .col = 0 };
+    oneshot_tap_toggle = 0;
     auto_shift.reset();
     keymap_mod.keymap_config = .{};
     swap_hands.reset();

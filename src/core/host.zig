@@ -15,6 +15,8 @@
 const std = @import("std");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
+const timer = @import("../hal/timer.zig");
+const keymap_mod = @import("keymap.zig");
 const KeyboardReport = report_mod.KeyboardReport;
 const MouseReport = report_mod.MouseReport;
 const ExtraReport = report_mod.ExtraReport;
@@ -110,6 +112,20 @@ var oneshot_mods: u8 = 0;
 /// C版 action_util.c の oneshot_layer_data に相当
 /// 上位5ビット: レイヤー番号、下位3ビット: 状態フラグ
 var oneshot_layer_data: u8 = 0;
+
+/// One-Shot Locked Mods: ONESHOT_TAP_TOGGLE 回タップで恒久的にロックされた修飾キー
+/// C版 action_util.c の oneshot_locked_mods に相当
+var oneshot_locked_mods: u8 = 0;
+
+/// ONESHOT_TIMEOUT: ワンショットモッドのタイムアウト値（ミリ秒）
+/// 0 の場合はタイムアウト無効
+pub var oneshot_timeout: u16 = 0;
+
+/// ワンショットモッド設定時のタイマー
+var oneshot_time: u16 = 0;
+
+/// ワンショットレイヤー設定時のタイマー
+var oneshot_layer_time: u16 = 0;
 
 pub fn setDriver(driver: HostDriver) void {
     current_driver = driver;
@@ -256,7 +272,12 @@ pub fn unregisterMods(mods: u8) void {
 /// oneshot_mods は一時的にレポートに含め、キーが送信されていたらクリアする。
 /// 前回送信したレポートと比較し、変更がある場合のみ送信する。
 pub fn sendKeyboardReport() void {
-    keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods) & ~suppressed_override_mods;
+    // ONESHOT_TIMEOUT: タイムアウトチェック
+    if (oneshot_timeout > 0 and hasOneshotModsTimedOut()) {
+        clearOneshotMods();
+    }
+
+    keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods | oneshot_locked_mods) & ~suppressed_override_mods;
     // oneshot_mods が設定されており、かつキーが登録されていればクリアする
     // C版 get_mods_for_report() の has_anykey() チェックに相当
     if (oneshot_mods != 0 and keyboard_report.hasAnyKey()) {
@@ -299,6 +320,10 @@ pub fn hostReset() void {
     suppressed_override_mods = 0;
     oneshot_mods = 0;
     oneshot_layer_data = 0;
+    oneshot_locked_mods = 0;
+    oneshot_time = 0;
+    oneshot_layer_time = 0;
+    oneshot_timeout = 0;
 }
 
 // ============================================================
@@ -308,22 +333,60 @@ pub fn hostReset() void {
 
 /// One-Shot Mods を追加する
 pub fn addOneshotMods(mods: u8) void {
+    if ((oneshot_mods & mods) != mods) {
+        oneshot_time = timer.read();
+    }
     oneshot_mods |= mods;
 }
 
 /// One-Shot Mods から削除する
 pub fn delOneshotMods(mods: u8) void {
     oneshot_mods &= ~mods;
+    if (oneshot_mods == 0) {
+        oneshot_time = 0;
+    }
 }
 
 /// One-Shot Mods をクリアする
 pub fn clearOneshotMods() void {
     oneshot_mods = 0;
+    oneshot_time = 0;
 }
 
 /// 現在の One-Shot Mods を取得する
 pub fn getOneshotMods() u8 {
     return oneshot_mods;
+}
+
+/// ワンショットモッドがタイムアウトしたかチェックする
+pub fn hasOneshotModsTimedOut() bool {
+    if (oneshot_timeout == 0) return false;
+    if (oneshot_mods == 0) return false;
+    return timer.elapsed(oneshot_time) >= oneshot_timeout;
+}
+
+// ============================================================
+// One-Shot Locked Mods operations
+// ============================================================
+
+pub fn getOneshotLockedMods() u8 {
+    return oneshot_locked_mods;
+}
+
+pub fn setOneshotLockedMods(mods: u8) void {
+    oneshot_locked_mods = mods;
+}
+
+pub fn addOneshotLockedMods(mods: u8) void {
+    oneshot_locked_mods |= mods;
+}
+
+pub fn delOneshotLockedMods(mods: u8) void {
+    oneshot_locked_mods &= ~mods;
+}
+
+pub fn clearOneshotLockedMods() void {
+    oneshot_locked_mods = 0;
 }
 
 // ============================================================
@@ -343,14 +406,17 @@ pub const OneshotState = struct {
 /// One-Shot Layer を設定し、レイヤーを有効化する
 /// C版 set_oneshot_layer() に相当
 pub fn setOneshotLayer(l: u5, state: u3) void {
+    if (!keymap_mod.keymap_config.oneshot_enable) return;
     oneshot_layer_data = (@as(u8, l) << 3) | @as(u8, state);
     layer_mod.layerOn(l);
+    oneshot_layer_time = timer.read();
 }
 
 /// One-Shot Layer データをリセットする（レイヤー操作なし）
 /// C版 reset_oneshot_layer() に相当
 pub fn resetOneshotLayer() void {
     oneshot_layer_data = 0;
+    oneshot_layer_time = 0;
 }
 
 /// One-Shot Layer の状態フラグをクリアする
@@ -385,6 +451,15 @@ pub fn getOneshotLayerState() u3 {
 /// One-Shot Layer がアクティブかどうかを確認する
 pub fn isOneshotLayerActive() bool {
     return getOneshotLayerState() != 0;
+}
+
+/// ワンショットレイヤーがタイムアウトしたかチェックする
+/// TOGGLED 状態の場合はタイムアウトしない
+pub fn hasOneshotLayerTimedOut() bool {
+    if (oneshot_timeout == 0) return false;
+    if (getOneshotLayerState() == 0) return false;
+    if (getOneshotLayerState() == OneshotState.TOGGLED) return false;
+    return timer.elapsed(oneshot_layer_time) >= oneshot_timeout;
 }
 
 /// Convert 5-bit modifier encoding to 8-bit HID modifier bits
@@ -583,3 +658,77 @@ test "clearKeyboard always sends report" {
     clearKeyboard();
     try testing.expectEqual(@as(usize, 2), mock.keyboard_count);
 }
+
+test "oneshot locked mods included in report" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    addOneshotLockedMods(0x02); // LSHIFT
+    sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+
+    clearOneshotLockedMods();
+    sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+}
+
+test "oneshot mods timeout clears mods" {
+    hostReset();
+    timer.mockReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    oneshot_timeout = 500;
+    addOneshotMods(0x02); // LSHIFT
+
+    timer.mockAdvance(100);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
+
+    timer.mockAdvance(500);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x00), mock.lastKeyboardReport().mods);
+    try testing.expectEqual(@as(u8, 0), getOneshotMods());
+}
+
+test "hasOneshotModsTimedOut" {
+    hostReset();
+    timer.mockReset();
+    oneshot_timeout = 200;
+    addOneshotMods(0x01);
+
+    try testing.expect(!hasOneshotModsTimedOut());
+    timer.mockAdvance(199);
+    try testing.expect(!hasOneshotModsTimedOut());
+    timer.mockAdvance(1);
+    try testing.expect(hasOneshotModsTimedOut());
+}
+
+test "hasOneshotLayerTimedOut" {
+    hostReset();
+    timer.mockReset();
+    oneshot_timeout = 300;
+    keymap_mod.keymap_config.oneshot_enable = true;
+    defer { keymap_mod.keymap_config.oneshot_enable = false; }
+
+    setOneshotLayer(1, OneshotState.START);
+    try testing.expect(!hasOneshotLayerTimedOut());
+    timer.mockAdvance(300);
+    try testing.expect(hasOneshotLayerTimedOut());
+}
+
+test "hasOneshotLayerTimedOut TOGGLED state does not timeout" {
+    hostReset();
+    timer.mockReset();
+    oneshot_timeout = 100;
+    keymap_mod.keymap_config.oneshot_enable = true;
+    defer { keymap_mod.keymap_config.oneshot_enable = false; }
+
+    setOneshotLayer(1, OneshotState.TOGGLED);
+    timer.mockAdvance(200);
+    try testing.expect(!hasOneshotLayerTimedOut());
+}
+
