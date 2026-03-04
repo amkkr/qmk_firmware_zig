@@ -5,43 +5,58 @@
 //! Based on platforms/chibios/bootloader.c
 //!
 //! Provides bootloader_jump() to enter RP2040 BOOTSEL mode.
+//! Uses the ROM function `reset_usb_boot` ("UB") for pico-sdk compatible
+//! BOOTSEL mode transition (RP2040 datasheet S2.8.3).
 
+const std = @import("std");
 const builtin = @import("builtin");
 
 const is_freestanding = builtin.os.tag == .freestanding;
 
-// RP2040 watchdog registers for BOOTSEL reset
-const rp2040 = if (is_freestanding) struct {
-    const WATCHDOG_BASE: u32 = 0x40058000;
-    const WATCHDOG_CTRL: *volatile u32 = @ptrFromInt(WATCHDOG_BASE + 0x00);
-    const PSM_BASE: u32 = 0x40010000;
-    const PSM_WDSEL: *volatile u32 = @ptrFromInt(PSM_BASE + 0x08);
+// RP2040 ROM function table (freestanding only)
+const rom = if (is_freestanding) struct {
+    const ROM_TABLE_LOOKUP_ADDR: u32 = 0x00000018;
+    const ROM_FUNC_TABLE_ADDR: u32 = 0x00000014;
+
+    /// Look up a ROM function by its two-character code.
+    /// Same pattern as eeprom.zig romFuncLookup.
+    /// Must be inline so it is embedded in the caller, not placed in .text (flash).
+    inline fn romFuncLookup(code: [2]u8) usize {
+        const rom_table_lookup: *const fn (table: u16, code: u32) callconv(.c) usize =
+            @ptrFromInt(@as(u32, @as(*const u16, @ptrFromInt(ROM_TABLE_LOOKUP_ADDR)).*));
+        const func_table: u16 = @as(*const u16, @ptrFromInt(ROM_FUNC_TABLE_ADDR)).*;
+        return rom_table_lookup(func_table, @as(u32, code[0]) | (@as(u32, code[1]) << 8));
+    }
+
+    /// reset_usb_boot(gpio_activity_pin_mask: u32, disable_interface_mask: u32)
+    /// ROM function "UB": reboots into BOOTSEL (USB mass storage) mode.
+    inline fn resetUsbBoot(gpio_activity_pin_mask: u32, disable_interface_mask: u32) noreturn {
+        const func: *const fn (u32, u32) callconv(.c) noreturn =
+            @ptrFromInt(romFuncLookup("UB".*));
+        func(gpio_activity_pin_mask, disable_interface_mask);
+    }
 } else struct {};
 
 /// Jump to bootloader (RP2040 BOOTSEL mode)
-/// On real hardware: triggers watchdog reset into USB boot mode.
-/// In tests: no-op (or can be tracked via mock).
+/// On real hardware: calls ROM function reset_usb_boot ("UB") to enter
+/// USB mass storage mode. This is the pico-sdk compatible method.
+/// In tests: panics (bootloader jump should not be called in tests).
 pub fn jump() noreturn {
     if (is_freestanding) {
-        // RP2040 method: write magic to watchdog scratch registers
-        // and trigger a reset. The ROM bootloader checks for the magic
-        // value and enters BOOTSEL mode.
-        const WATCHDOG_SCRATCH0: *volatile u32 = @ptrFromInt(0x4005800C);
-        const WATCHDOG_SCRATCH4: *volatile u32 = @ptrFromInt(0x4005801C);
-
-        // Magic values recognized by RP2040 ROM bootloader
-        WATCHDOG_SCRATCH4.* = 0xB007C0D3;
-        WATCHDOG_SCRATCH0.* = 0; // Disable flash boot
-
-        // Trigger watchdog reset
-        rp2040.PSM_WDSEL.* = 0x0001FFFF;
-        rp2040.WATCHDOG_CTRL.* = 0x80000000 | 1; // Enable with very short timeout
-
-        while (true) {
-            asm volatile ("nop");
-        }
+        // Use ROM function "UB" (reset_usb_boot) for BOOTSEL mode.
+        // gpio_activity_pin_mask=0: no GPIO activity LED
+        // disable_interface_mask=0: enable both USB MSD and PICOBOOT interfaces
+        rom.resetUsbBoot(0, 0);
     } else {
         // In tests, bootloader jump should not be called
         @panic("bootloader_jump called in test environment");
     }
+}
+
+const testing = std.testing;
+
+test "bootloader jump panics in test environment" {
+    // bootloader.jump() is noreturn and panics in test environment.
+    // Verify that is_freestanding is false in test builds.
+    try testing.expect(!is_freestanding);
 }
