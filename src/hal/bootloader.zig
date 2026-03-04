@@ -20,7 +20,6 @@ const rom = if (is_freestanding) struct {
 
     /// Look up a ROM function by its two-character code.
     /// Same pattern as eeprom.zig romFuncLookup.
-    /// Must be inline so it is embedded in the caller, not placed in .text (flash).
     inline fn romFuncLookup(code: [2]u8) usize {
         const rom_table_lookup: *const fn (table: u16, code: u32) callconv(.c) usize =
             @ptrFromInt(@as(u32, @as(*const u16, @ptrFromInt(ROM_TABLE_LOOKUP_ADDR)).*));
@@ -55,8 +54,6 @@ pub fn jump() noreturn {
 
 const testing = std.testing;
 
-test "bootloader jump panics in test environment" {
-    // bootloader.jump() is noreturn and panics in test environment.
-    // Verify that is_freestanding is false in test builds.
+test "is_freestanding is false in test builds" {
     try testing.expect(!is_freestanding);
 }
