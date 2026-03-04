@@ -50,11 +50,11 @@ pub const CrashInfo = extern struct {
 
     pub const MAGIC: u32 = 0xDEAD_FA17; // "DEAD FAULT"
 
-    pub fn isValid(self: *const CrashInfo) bool {
+    pub fn isValid(self: *const volatile CrashInfo) bool {
         return self.magic == MAGIC;
     }
 
-    pub fn clear(self: *CrashInfo) void {
+    pub fn clear(self: *volatile CrashInfo) void {
         self.* = .{};
     }
 };
@@ -173,11 +173,14 @@ pub const VectorTable = extern struct {
 
 /// Create the vector table instance with the given reset handler
 pub fn vectorTable(reset_handler: *const fn () callconv(.naked) noreturn) VectorTable {
-    return .{
+    const usb = @import("usb.zig");
+    var vt = VectorTable{
         .initial_sp = @ptrCast(&_stack_top),
         .reset = reset_handler,
         .hard_fault = @ptrCast(&hardFaultHandler),
     };
+    vt.irq[@intFromEnum(Irq.USBCTRL_IRQ)] = &usb.usbctrlIrqHandler;
+    return vt;
 }
 
 // ============================================================
