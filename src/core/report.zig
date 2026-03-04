@@ -121,6 +121,72 @@ pub const KeyboardReport = extern struct {
     }
 };
 
+/// NKRO report bits count (30 bytes = 240 key bitmap)
+/// C版 NKRO_REPORT_BITS に相当
+pub const NKRO_REPORT_BITS = 30;
+
+/// NKRO Keyboard report (32 bytes: report_id + mods + bits[30])
+/// C版 report_nkro_t に相当。ビットマップ方式で最大240キー同時押し対応。
+/// bits[code >> 3] の bit (code & 7) が 1 なら該当キーが押下中。
+pub const NkroReport = extern struct {
+    report_id: u8 = @intFromEnum(ReportId.nkro),
+    mods: u8 = 0,
+    bits: [NKRO_REPORT_BITS]u8 = .{0} ** NKRO_REPORT_BITS,
+
+    pub fn clear(self: *NkroReport) void {
+        self.mods = 0;
+        self.bits = .{0} ** NKRO_REPORT_BITS;
+    }
+
+    /// Add a keycode to the NKRO bitmap.
+    /// C版 add_key_bit() に相当。
+    pub fn addKey(self: *NkroReport, code: u8) bool {
+        if (code == 0) return false;
+        const byte_idx = code >> 3;
+        if (byte_idx >= NKRO_REPORT_BITS) return false;
+        self.bits[byte_idx] |= @as(u8, 1) << @truncate(code & 7);
+        return true;
+    }
+
+    /// Remove a keycode from the NKRO bitmap.
+    /// C版 del_key_bit() に相当。
+    pub fn removeKey(self: *NkroReport, code: u8) void {
+        const byte_idx = code >> 3;
+        if (byte_idx >= NKRO_REPORT_BITS) return;
+        self.bits[byte_idx] &= ~(@as(u8, 1) << @truncate(code & 7));
+    }
+
+    /// Check if a keycode is in the NKRO bitmap.
+    pub fn hasKey(self: *const NkroReport, code: u8) bool {
+        const byte_idx = code >> 3;
+        if (byte_idx >= NKRO_REPORT_BITS) return false;
+        return (self.bits[byte_idx] & (@as(u8, 1) << @truncate(code & 7))) != 0;
+    }
+
+    /// Check if the report is empty (no keys, no modifiers).
+    pub fn isEmpty(self: *const NkroReport) bool {
+        if (self.mods != 0) return false;
+        for (self.bits) |b| {
+            if (b != 0) return false;
+        }
+        return true;
+    }
+
+    /// Check if any non-modifier key is registered.
+    pub fn hasAnyKey(self: *const NkroReport) bool {
+        for (self.bits) |b| {
+            if (b != 0) return true;
+        }
+        return false;
+    }
+
+    comptime {
+        if (@sizeOf(NkroReport) != 32) {
+            @compileError("NkroReport must be 32 bytes");
+        }
+    }
+};
+
 /// Mouse report
 pub const MouseReport = extern struct {
     buttons: u8 = 0,
@@ -271,6 +337,58 @@ test "ExtraReport" {
     const sys = ExtraReport.system(0x0081); // System Power Down
     try testing.expectEqual(@as(u8, 3), sys.report_id);
     try testing.expectEqual(@as(u16, 0x0081), sys.usage);
+}
+
+test "NkroReport size is 32 bytes" {
+    try testing.expectEqual(@as(usize, 32), @sizeOf(NkroReport));
+}
+
+test "NkroReport add/remove/has keys" {
+    var nkro = NkroReport{};
+    try testing.expect(nkro.isEmpty());
+
+    try testing.expect(nkro.addKey(0x04)); // KC_A
+    try testing.expect(nkro.hasKey(0x04));
+    try testing.expect(!nkro.isEmpty());
+    try testing.expect(nkro.hasAnyKey());
+
+    try testing.expect(nkro.addKey(0x05)); // KC_B
+    try testing.expect(nkro.hasKey(0x05));
+
+    nkro.removeKey(0x04);
+    try testing.expect(!nkro.hasKey(0x04));
+    try testing.expect(nkro.hasKey(0x05));
+
+    nkro.clear();
+    try testing.expect(nkro.isEmpty());
+}
+
+test "NkroReport kc=0 returns false" {
+    var nkro = NkroReport{};
+    try testing.expect(!nkro.addKey(0));
+}
+
+test "NkroReport out-of-range keycode" {
+    var nkro = NkroReport{};
+    // NKRO_REPORT_BITS=30, so max code = 30*8-1 = 239
+    try testing.expect(!nkro.addKey(240)); // byte_idx=30, out of range
+    try testing.expect(!nkro.hasKey(240));
+}
+
+test "NkroReport bitmap correctness" {
+    var nkro = NkroReport{};
+    // KC_A = 0x04: byte_idx=0, bit=4
+    _ = nkro.addKey(0x04);
+    try testing.expectEqual(@as(u8, 0x10), nkro.bits[0]); // 1 << 4
+
+    // KC_Z = 0x1D: byte_idx=3, bit=5
+    _ = nkro.addKey(0x1D);
+    try testing.expectEqual(@as(u8, 0x20), nkro.bits[3]); // 1 << 5
+}
+
+test "NkroReport report_id default" {
+    const nkro = NkroReport{};
+    try testing.expectEqual(@as(u8, @intFromEnum(ReportId.nkro)), nkro.report_id);
 }
 
 test "isModifierKeycode" {

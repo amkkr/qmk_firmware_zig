@@ -82,25 +82,29 @@ pub const DEVICE_VERSION: u16 = 0x0001;
 pub const KEYBOARD_INTERFACE: u8 = 0;
 pub const MOUSE_INTERFACE: u8 = 1;
 pub const EXTRA_INTERFACE: u8 = 2;
-pub const CDC_COMM_INTERFACE: u8 = 3;
-pub const CDC_DATA_INTERFACE: u8 = 4;
-pub const NUM_INTERFACES: u8 = 5;
+pub const NKRO_INTERFACE: u8 = 3;
+pub const CDC_COMM_INTERFACE: u8 = 4;
+pub const CDC_DATA_INTERFACE: u8 = 5;
+pub const NUM_INTERFACES: u8 = 6;
 
 pub const KEYBOARD_ENDPOINT: u8 = 1;
 pub const MOUSE_ENDPOINT: u8 = 2;
 pub const EXTRA_ENDPOINT: u8 = 3;
-pub const CDC_NOTIFICATION_ENDPOINT: u8 = 4;
-pub const CDC_DATA_ENDPOINT: u8 = 5;
+pub const NKRO_ENDPOINT: u8 = 4;
+pub const CDC_NOTIFICATION_ENDPOINT: u8 = 5;
+pub const CDC_DATA_ENDPOINT: u8 = 6;
 
 pub const KEYBOARD_ENDPOINT_SIZE: u8 = 8;
 pub const MOUSE_ENDPOINT_SIZE: u8 = 8;
 pub const EXTRA_ENDPOINT_SIZE: u8 = 8;
+pub const NKRO_ENDPOINT_SIZE: u8 = 32; // report_id(1) + mods(1) + bits(30) = 32 bytes
 pub const CDC_NOTIFICATION_ENDPOINT_SIZE: u8 = 8;
 pub const CDC_DATA_ENDPOINT_SIZE: u8 = 64;
 
 pub const KEYBOARD_INTERVAL: u8 = 1; // ms (C版: USB_POLLING_INTERVAL_MS, default 1)
 pub const MOUSE_INTERVAL: u8 = 1;
 pub const EXTRA_INTERVAL: u8 = 1;
+pub const NKRO_INTERVAL: u8 = 1;
 pub const CDC_NOTIFICATION_INTERVAL: u8 = 255; // C版: 0xFF
 
 // ============================================================
@@ -258,6 +262,44 @@ pub const keyboard_report_descriptor = blk: {
         hidReportCount(6) ++
         hidReportSize(8) ++
         hidInput(DATA_ARR_ABS) ++
+
+        hidEndCollection();
+};
+
+/// NKRO HID report descriptor
+/// C版 usb_descriptor.c の NKRO_ENABLE セクションに相当。
+/// Report ID 付きのビットマップ方式: mods(8bit) + keys(NKRO_REPORT_BITS*8 bit)
+pub const nkro_report_descriptor = blk: {
+    const report_mod = @import("../core/report.zig");
+    break :blk
+    // Usage Page (Generic Desktop)
+        hidUsagePage(0x01) ++
+        // Usage (Keyboard)
+        hidUsage(0x06) ++
+        // Collection (Application)
+        hidCollection(0x01) ++
+        // Report ID (NKRO)
+        hidReportId(@intFromEnum(report_mod.ReportId.nkro)) ++
+
+        // --- Modifier keys (8 bits) ---
+        hidUsagePage(0x07) ++ // Keyboard/Keypad
+        hidUsageMin(0xE0) ++ // Keyboard Left Control
+        hidUsageMax(0xE7) ++ // Keyboard Right GUI
+        hidLogicalMin(0) ++
+        hidLogicalMax(1) ++
+        hidReportSize(1) ++
+        hidReportCount(8) ++
+        hidInput(DATA_VAR_ABS) ++
+
+        // --- Key bitmap (NKRO_REPORT_BITS * 8 bits) ---
+        hidUsagePage(0x07) ++ // Keyboard/Keypad
+        hidUsageMin(0x00) ++
+        hidUsageMax(report_mod.NKRO_REPORT_BITS * 8 - 1) ++
+        hidLogicalMin(0x00) ++
+        hidLogicalMax(0x01) ++
+        hidReportCount(report_mod.NKRO_REPORT_BITS * 8) ++
+        hidReportSize(1) ++
+        hidInput(DATA_VAR_ABS) ++
 
         hidEndCollection();
 };
@@ -566,6 +608,20 @@ pub const configuration_descriptor = blk: {
         EXTRA_INTERVAL,
     );
 
+    const nkro_iface = interfaceDescriptor(
+        NKRO_INTERFACE,
+        1,
+        InterfaceSubClass.NONE,
+        InterfaceProtocol.NONE,
+        0,
+    );
+    const nkro_hid = hidDescriptor(nkro_report_descriptor.len);
+    const nkro_ep = endpointDescriptor(
+        NKRO_ENDPOINT,
+        NKRO_ENDPOINT_SIZE,
+        NKRO_INTERVAL,
+    );
+
     // --- CDC ACM (Interface Association + Comm Interface + Data Interface) ---
     const cdc_iad = iadDescriptor(
         CDC_COMM_INTERFACE,
@@ -617,6 +673,7 @@ pub const configuration_descriptor = blk: {
         keyboard_iface.len + keyboard_hid.len + keyboard_ep.len +
         mouse_iface.len + mouse_hid.len + mouse_ep.len +
         extra_iface.len + extra_hid.len + extra_ep.len +
+        nkro_iface.len + nkro_hid.len + nkro_ep.len +
         cdc_iad.len + cdc_comm_iface.len +
         cdc_header.len + cdc_call_mgmt.len + cdc_acm.len + cdc_union.len +
         cdc_notification_ep.len +
@@ -637,6 +694,7 @@ pub const configuration_descriptor = blk: {
         keyboard_iface ++ keyboard_hid ++ keyboard_ep ++
         mouse_iface ++ mouse_hid ++ mouse_ep ++
         extra_iface ++ extra_hid ++ extra_ep ++
+        nkro_iface ++ nkro_hid ++ nkro_ep ++
         cdc_iad ++ cdc_comm_iface ++
         cdc_header ++ cdc_call_mgmt ++ cdc_acm ++ cdc_union ++
         cdc_notification_ep ++
@@ -678,6 +736,7 @@ pub const string_descriptor_serial = stringDescriptor("000000000000");
 pub const keyboard_hid_descriptor = hidDescriptor(keyboard_report_descriptor.len);
 pub const mouse_hid_descriptor = hidDescriptor(mouse_report_descriptor.len);
 pub const extra_hid_descriptor = hidDescriptor(extra_report_descriptor.len);
+pub const nkro_hid_descriptor = hidDescriptor(nkro_report_descriptor.len);
 
 // ============================================================
 // Tests
@@ -908,8 +967,8 @@ test "CDC endpoint descriptors are present" {
         }
         i += len;
     }
-    // 3 HID + 3 CDC = 6
-    try testing.expectEqual(@as(u8, 6), ep_count);
+    // 4 HID (keyboard, mouse, extra, nkro) + 3 CDC = 7
+    try testing.expectEqual(@as(u8, 7), ep_count);
     try testing.expect(found_interrupt_in);
     try testing.expect(found_bulk_in);
     try testing.expect(found_bulk_out);

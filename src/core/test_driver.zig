@@ -9,6 +9,7 @@
 const std = @import("std");
 const report = @import("report.zig");
 const KeyboardReport = report.KeyboardReport;
+const NkroReport = report.NkroReport;
 const MouseReport = report.MouseReport;
 const ExtraReport = report.ExtraReport;
 
@@ -16,11 +17,14 @@ const ExtraReport = report.ExtraReport;
 /// Replaces per-file MockDriver definitions with a single reusable type.
 pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacity: usize) type {
     const mouse_capacity = 8;
+    const nkro_capacity = keyboard_capacity;
     return struct {
         keyboard_count: usize = 0,
+        nkro_count: usize = 0,
         mouse_count: usize = 0,
         extra_count: usize = 0,
         keyboard_reports: [keyboard_capacity]KeyboardReport = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity,
+        nkro_reports: [nkro_capacity]NkroReport = [_]NkroReport{NkroReport{}} ** nkro_capacity,
         mouse_reports: [mouse_capacity]MouseReport = [_]MouseReport{MouseReport{}} ** mouse_capacity,
         extra_reports: [extra_capacity]ExtraReport = [_]ExtraReport{ExtraReport{}} ** extra_capacity,
         leds: u8 = 0,
@@ -36,6 +40,13 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
                 self.keyboard_reports[self.keyboard_count] = r;
             }
             self.keyboard_count += 1;
+        }
+
+        pub fn sendNkro(self: *Self, r: NkroReport) void {
+            if (self.nkro_count < nkro_capacity) {
+                self.nkro_reports[self.nkro_count] = r;
+            }
+            self.nkro_count += 1;
         }
 
         pub fn sendMouse(self: *Self, r: MouseReport) void {
@@ -58,6 +69,12 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
             return self.keyboard_reports[idx];
         }
 
+        pub fn lastNkroReport(self: *const Self) NkroReport {
+            if (self.nkro_count == 0) return NkroReport{};
+            const idx = if (self.nkro_count > nkro_capacity) nkro_capacity - 1 else self.nkro_count - 1;
+            return self.nkro_reports[idx];
+        }
+
         pub fn lastMouseReport(self: *const Self) MouseReport {
             if (self.mouse_count == 0) return MouseReport{};
             const idx = if (self.mouse_count > mouse_capacity) mouse_capacity - 1 else self.mouse_count - 1;
@@ -72,9 +89,11 @@ pub fn FixedTestDriver(comptime keyboard_capacity: usize, comptime extra_capacit
 
         pub fn reset(self: *Self) void {
             self.keyboard_count = 0;
+            self.nkro_count = 0;
             self.mouse_count = 0;
             self.extra_count = 0;
             self.keyboard_reports = [_]KeyboardReport{KeyboardReport{}} ** keyboard_capacity;
+            self.nkro_reports = [_]NkroReport{NkroReport{}} ** nkro_capacity;
             self.mouse_reports = [_]MouseReport{MouseReport{}} ** mouse_capacity;
             self.extra_reports = [_]ExtraReport{ExtraReport{}} ** extra_capacity;
             self.leds = 0;
