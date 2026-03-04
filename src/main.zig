@@ -176,6 +176,11 @@ pub const startup = if (is_freestanding) struct {
         keyboard.getTestKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
+        // 全ペリフェラル初期化完了後、割り込みを有効化
+        // _start() で cpsid i により無効化されていたものを解除
+        // USB IRQ (USBCTRL_IRQ) はここから発火可能になる
+        asm volatile ("cpsie i");
+
         // 診断用変数
         var loop_count: u32 = 0;
         var last_heartbeat: u32 = timer.read32();
@@ -183,7 +188,7 @@ pub const startup = if (is_freestanding) struct {
 
         // メインループ
         while (true) {
-            // USBイベントポーリング（SETUP_REQ/BUS_RESET/BUFF_STATUS処理）
+            // USB割り込みで蓄積されたイベントを処理
             usb_driver.task();
 
             // マトリックススキャン → 状態を keyboard モジュールに反映

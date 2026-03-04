@@ -20,6 +20,45 @@ const ExtraReport = report.ExtraReport;
 const is_freestanding = builtin.os.tag == .freestanding;
 
 // ============================================================
+// USBCTRL_IRQ Interrupt Handler
+// ============================================================
+
+/// Interrupt pending flags, set by ISR and consumed by task().
+/// On freestanding, accessed via volatile pointer from both ISR and main loop.
+/// On test builds, mock_ints in UsbDriver is used instead.
+var irq_pending_storage: u32 = 0;
+
+/// Volatile pointer to irq_pending_storage for ISR/main loop communication.
+pub const irq_pending: *volatile u32 = @ptrCast(&irq_pending_storage);
+
+/// USBCTRL_IRQ handler (IRQ5). Registered in the vector table.
+/// Reads INTS → accumulates into irq_pending → clears BUS_RESET in SIE_STATUS.
+/// SETUP_REC and BUFF_STATUS are deferred to task() handlers because:
+///   - SETUP_REC must be cleared after reading the DPRAM setup packet
+///   - BUFF_STATUS must be cleared by reading its register in handleBuffStatus()
+pub fn usbctrlIrqHandler() callconv(.c) void {
+    if (is_freestanding) {
+        const ints = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTS)).*;
+
+        // Accumulate pending events (ISR may fire multiple times before task() runs)
+        irq_pending.* |= ints;
+
+        // Clear BUS_RESET in SIE_STATUS (W1C) — safe to clear immediately
+        if (ints & IntBit.BUS_RESET != 0) {
+            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
+            sie_status.* = SieStatus.BUS_RESET;
+        }
+        // SETUP_REC: cleared in handleSetupFromHw() after reading DPRAM
+        // BUFF_STATUS: cleared in handleBuffStatus() by reading the register
+    }
+}
+
+/// ARM Cortex-M0+ NVIC register addresses
+const NVIC_BASE: u32 = 0xE000E100;
+const NVIC_ISER: u32 = NVIC_BASE; // Interrupt Set-Enable Register
+const NVIC_IPR_BASE: u32 = 0xE000E400; // Interrupt Priority Registers
+
+// ============================================================
 // RP2040 USB Register Definitions
 // ============================================================
 
@@ -363,12 +402,21 @@ pub const UsbDriver = struct {
         );
     }
 
-    /// Poll USB peripheral for pending events and dispatch handlers.
-    /// Called from the main loop on each iteration.
+    /// Process pending USB events and dispatch handlers.
+    /// On freestanding, events are accumulated by the USBCTRL_IRQ ISR into
+    /// irq_pending; this function atomically reads and clears the flags.
+    /// On test builds, mock_ints is used directly.
     pub fn task(self: *UsbDriver) void {
         const ints = if (is_freestanding) blk: {
-            const ints_reg = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTS));
-            break :blk ints_reg.*;
+            // Atomically read and clear irq_pending set by ISR.
+            // Cortex-M0+ has no LDREX/STREX, but interrupts are disabled
+            // during the read-modify-write by using a simple swap pattern:
+            // disable IRQ → read → clear → enable IRQ.
+            asm volatile ("cpsid i");
+            const pending = irq_pending.*;
+            irq_pending.* = 0;
+            asm volatile ("cpsie i");
+            break :blk pending;
         } else self.mock_ints;
 
         if ((ints & IntBit.BUS_RESET) != 0) {
@@ -387,13 +435,10 @@ pub const UsbDriver = struct {
         }
     }
 
-    /// Handle USB bus reset event
+    /// Handle USB bus reset event.
+    /// SIE_STATUS BUS_RESET bit is already cleared by the ISR (usbctrlIrqHandler).
     pub fn handleBusReset(self: *UsbDriver) void {
         if (is_freestanding) {
-            // Clear BUS_RESET bit in SIE_STATUS (W1C, bit 19)
-            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
-            sie_status.* = SieStatus.BUS_RESET;
-
             // Reset device address to 0
             const addr_endp = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.ADDR_ENDP));
             addr_endp.* = 0;
@@ -958,9 +1003,19 @@ pub const UsbDriver = struct {
         // This is required for EP0 BUFF_STATUS events to fire on transfer completion.
         sie_ctrl.* = SieCtrl.EP0_INT_1BUF;
 
-        // Enable interrupts: buffer status, bus reset, setup request
+        // Enable USB peripheral interrupts: buffer status, bus reset, setup request
         const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
         inte.* = IntBit.BUFF_STATUS | IntBit.BUS_RESET | IntBit.SETUP_REQ;
+
+        // Enable USBCTRL_IRQ (IRQ5) in NVIC with default priority.
+        // Cortex-M0+ has 4 priority levels (2-bit, bits [7:6]).
+        // Priority 0 = highest. We use 0 (highest) for USB responsiveness.
+        const USBCTRL_IRQ_NUM: u5 = 5;
+        const nvic_iser = @as(*volatile u32, @ptrFromInt(NVIC_ISER));
+        nvic_iser.* = @as(u32, 1) << USBCTRL_IRQ_NUM;
+        // IPR1 register covers IRQ4-7, USBCTRL_IRQ=5 is byte offset 1 within IPR1
+        const ipr1 = @as(*volatile u32, @ptrFromInt(NVIC_IPR_BASE + 4));
+        ipr1.* = (ipr1.* & ~@as(u32, 0xFF << 8)) | (@as(u32, 0x00) << 8); // Priority 0
 
         // Initialize EP0 OUT buffer control to receive SETUP/OUT packets from host
         self.hwPrepareEp0Out();
@@ -2716,4 +2771,35 @@ test "restart from disconnected state transitions to attached" {
     drv.restart();
 
     try testing.expectEqual(DeviceState.attached, drv.state);
+}
+
+test "usbctrlIrqHandler is callable in test builds" {
+    // On non-freestanding, the ISR body is empty (no-op).
+    // Verify it can be called without panic.
+    usbctrlIrqHandler();
+}
+
+test "irq_pending storage is initially zero" {
+    // irq_pending is a volatile pointer to irq_pending_storage
+    try testing.expectEqual(@as(u32, 0), irq_pending.*);
+}
+
+test "task reads from mock_ints in test builds" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+
+    // Set mock_ints to simulate a BUS_RESET event
+    drv.mock_ints = IntBit.BUS_RESET;
+    drv.task();
+
+    // BUS_RESET handler resets state to default_state
+    try testing.expectEqual(DeviceState.default_state, drv.state);
+}
+
+test "NVIC constants are correct for USBCTRL_IRQ" {
+    // NVIC_ISER at 0xE000E100
+    try testing.expectEqual(@as(u32, 0xE000E100), NVIC_ISER);
+    // IPR base at 0xE000E400
+    try testing.expectEqual(@as(u32, 0xE000E400), NVIC_IPR_BASE);
 }
