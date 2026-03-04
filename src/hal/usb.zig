@@ -12,6 +12,7 @@ const builtin = @import("builtin");
 const usb_descriptors = @import("usb_descriptors.zig");
 const report = @import("../core/report.zig");
 const host = @import("../core/host.zig");
+const timer = @import("timer.zig");
 const KeyboardReport = report.KeyboardReport;
 const MouseReport = report.MouseReport;
 const ExtraReport = report.ExtraReport;
@@ -380,7 +381,6 @@ pub const UsbDriver = struct {
         self.remote_wakeup_enabled = false;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
-        self.remote_wakeup_enabled = false;
     }
 
     /// Handle USB device suspend event (DEV_SUSPEND interrupt)
@@ -415,13 +415,22 @@ pub const UsbDriver = struct {
         return self.state == .suspended;
     }
 
-    /// Initiate remote wakeup signaling on the USB bus
+    /// Initiate remote wakeup signaling on the USB bus.
+    /// Drives K-state (RESUME) for 15ms per USB 2.0 spec §7.1.7.7,
+    /// then clears the RESUME bit. The caller should wait for the host
+    /// to complete the resume sequence before sending reports.
     pub fn remoteWakeup(self: *UsbDriver) void {
         if (!self.remote_wakeup_enabled) return;
         if (!self.isSuspended()) return;
         if (is_freestanding) {
             const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
             sie_ctrl.* = sie_ctrl.* | SieCtrl.RESUME;
+        }
+        // USB 2.0 spec §7.1.7.7: Remote Wakeup K-state must be 1-15ms
+        timer.waitMs(15);
+        if (is_freestanding) {
+            const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+            sie_ctrl.* = sie_ctrl.* & ~SieCtrl.RESUME;
         }
     }
 
