@@ -656,7 +656,7 @@ pub const UsbDriver = struct {
                     if (is_freestanding) {
                         self.hwConfigureEndpoints();
                         // Arm CDC data endpoint OUT to start receiving data from host
-                        self.hwArmEp5Out();
+                        self.hwArmEp6Out();
                     }
                 } else {
                     self.state = .addressed;
@@ -892,12 +892,12 @@ pub const UsbDriver = struct {
     /// Handle CDC data endpoint OUT data arrival: read from DPRAM into RX ring buffer,
     /// then re-arm the endpoint for the next packet.
     fn handleCdcRxData(self: *UsbDriver) void {
-        const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
+        const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
         const max_packet = usb_descriptors.CDC_DATA_ENDPOINT_SIZE;
 
         // Read received data length and contents
         const len: u8 = if (is_freestanding) blk: {
-            const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep5) * 8 + 4;
+            const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep6) * 8 + 4;
             const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
             const raw_len = buf_ctrl.* & BufCtrl.LEN_MASK;
             break :blk @intCast(@min(raw_len, max_packet));
@@ -928,7 +928,7 @@ pub const UsbDriver = struct {
 
         // Re-arm CDC data endpoint OUT to receive the next packet
         if (is_freestanding) {
-            self.hwArmEp5Out();
+            self.hwArmEp6Out();
         }
     }
 
@@ -1331,11 +1331,11 @@ pub const UsbDriver = struct {
         }
     }
 
-    /// Arm EP5 OUT buffer control to receive the next CDC data packet from host.
-    fn hwArmEp5Out(self: *UsbDriver) void {
+    /// Arm EP6 OUT buffer control to receive the next CDC data packet from host.
+    fn hwArmEp6Out(self: *UsbDriver) void {
         _ = self;
-        const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
-        const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep5) * 8 + 4;
+        const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
+        const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep6) * 8 + 4;
         const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
         buf_ctrl.* = BufCtrl.AVAILABLE | (usb_descriptors.CDC_DATA_ENDPOINT_SIZE & BufCtrl.LEN_MASK);
     }
