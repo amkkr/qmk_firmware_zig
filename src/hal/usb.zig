@@ -1039,6 +1039,8 @@ pub const UsbDriver = struct {
     /// Send a zero-length packet (ZLP) on EP0 IN for the status stage of a control transfer.
     /// USB 2.0 spec requires a status stage ZLP after processing host-to-device requests
     /// (SET_ADDRESS, SET_CONFIGURATION, SET_IDLE, SET_PROTOCOL, SET_REPORT).
+    /// Also used as a data-stage terminating ZLP when the host requests more data
+    /// than available (e.g., GET_DESCRIPTOR with wLength > actual descriptor size).
     fn sendStatusStageZlp(self: *UsbDriver) void {
         if (is_freestanding) {
             const buf_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE));
