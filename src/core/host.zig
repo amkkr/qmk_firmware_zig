@@ -18,6 +18,7 @@ const layer_mod = @import("layer.zig");
 const timer = @import("../hal/timer.zig");
 const keymap_mod = @import("keymap.zig");
 const KeyboardReport = report_mod.KeyboardReport;
+const NkroReport = report_mod.NkroReport;
 const MouseReport = report_mod.MouseReport;
 const ExtraReport = report_mod.ExtraReport;
 
@@ -30,6 +31,7 @@ pub const HostDriver = struct {
     pub const VTable = struct {
         keyboard_leds: *const fn (ctx: *anyopaque) u8,
         send_keyboard: *const fn (ctx: *anyopaque, r: *const KeyboardReport) void,
+        send_nkro: *const fn (ctx: *anyopaque, r: *const NkroReport) void,
         send_mouse: *const fn (ctx: *anyopaque, r: *const MouseReport) void,
         send_extra: *const fn (ctx: *anyopaque, r: *const ExtraReport) void,
     };
@@ -40,6 +42,10 @@ pub const HostDriver = struct {
 
     pub fn sendKeyboard(self: HostDriver, r: *const KeyboardReport) void {
         self.vtable.send_keyboard(self.context, r);
+    }
+
+    pub fn sendNkro(self: HostDriver, r: *const NkroReport) void {
+        self.vtable.send_nkro(self.context, r);
     }
 
     pub fn sendMouse(self: HostDriver, r: *const MouseReport) void {
@@ -65,6 +71,10 @@ pub const HostDriver = struct {
                 const self: *Child = @ptrCast(@alignCast(ctx));
                 self.sendKeyboard(r.*);
             }
+            fn sendNkroFn(ctx: *anyopaque, r: *const NkroReport) void {
+                const self: *Child = @ptrCast(@alignCast(ctx));
+                self.sendNkro(r.*);
+            }
             fn sendMouseFn(ctx: *anyopaque, r: *const MouseReport) void {
                 const self: *Child = @ptrCast(@alignCast(ctx));
                 self.sendMouse(r.*);
@@ -80,6 +90,7 @@ pub const HostDriver = struct {
             .vtable = &.{
                 .keyboard_leds = vtable.keyboardLedsFn,
                 .send_keyboard = vtable.sendKeyboardFn,
+                .send_nkro = vtable.sendNkroFn,
                 .send_mouse = vtable.sendMouseFn,
                 .send_extra = vtable.sendExtraFn,
             },
@@ -96,6 +107,14 @@ var keyboard_report: KeyboardReport = .{};
 /// 前回送信したキーボードレポート（差分チェック用）
 /// C版 action_util.c の send_6kro_report() 内 static last_report に相当
 var last_keyboard_report: KeyboardReport = .{};
+/// NKRO レポート
+/// C版 action_util.c の nkro_report に相当
+var nkro_report: NkroReport = .{};
+/// 前回送信した NKRO レポート（差分チェック用）
+var last_nkro_report: NkroReport = .{};
+/// NKRO モードフラグ（true = NKRO、false = 6KRO）
+/// C版 keymap_config.nkro に相当
+pub var nkro_enabled: bool = false;
 var real_mods: u8 = 0;
 var weak_mods: u8 = 0;
 /// Key Override 用: 置換キーに付与する弱い修飾キー
@@ -238,20 +257,31 @@ pub fn getReport() *KeyboardReport {
     return &keyboard_report;
 }
 
+pub fn getNkroReport() *NkroReport {
+    return &nkro_report;
+}
+
 /// Register a keycode into the keyboard report
+/// C版 add_key_to_report() + register_code() に相当。
+/// NKRO モード時は nkro_report にビットマップで追加。
 pub fn registerCode(kc: u8) void {
     if (kc >= 0xE0 and kc <= 0xE7) {
         // Modifier key
         real_mods |= report_mod.keycodeToModBit(kc);
+    } else if (nkro_enabled) {
+        _ = nkro_report.addKey(kc);
     } else {
         _ = keyboard_report.addKey(kc);
     }
 }
 
 /// Unregister a keycode from the keyboard report
+/// C版 del_key_from_report() + unregister_code() に相当。
 pub fn unregisterCode(kc: u8) void {
     if (kc >= 0xE0 and kc <= 0xE7) {
         real_mods &= ~report_mod.keycodeToModBit(kc);
+    } else if (nkro_enabled) {
+        nkro_report.removeKey(kc);
     } else {
         keyboard_report.removeKey(kc);
     }
@@ -268,29 +298,43 @@ pub fn unregisterMods(mods: u8) void {
 }
 
 /// Send the current keyboard report to the host
-/// C版 send_keyboard_report() / send_6kro_report() に相当。
+/// C版 send_keyboard_report() / send_6kro_report() / send_nkro_report() に相当。
 /// oneshot_mods は一時的にレポートに含め、キーが送信されていたらクリアする。
 /// 前回送信したレポートと比較し、変更がある場合のみ送信する。
+/// NKRO モード時は nkro_report を、6KRO モード時は keyboard_report を送信する。
 pub fn sendKeyboardReport() void {
     // ONESHOT_TIMEOUT: タイムアウトチェック
     if (oneshot_timeout > 0 and hasOneshotModsTimedOut()) {
         clearOneshotMods();
     }
 
-    keyboard_report.mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods | oneshot_locked_mods) & ~suppressed_override_mods;
-    // oneshot_mods が設定されており、かつキーが登録されていればクリアする
-    // C版 get_mods_for_report() の has_anykey() チェックに相当
-    if (oneshot_mods != 0 and keyboard_report.hasAnyKey()) {
-        oneshot_mods = 0;
-    }
-    if (current_driver) |driver| {
-        // 前回のレポートと比較し、変更がある場合のみ送信する
-        // C版 action_util.c の send_6kro_report() 内 memcmp に相当
-        const current: [8]u8 = @bitCast(keyboard_report);
-        const last: [8]u8 = @bitCast(last_keyboard_report);
-        if (!std.mem.eql(u8, &current, &last)) {
-            last_keyboard_report = keyboard_report;
-            driver.sendKeyboard(&keyboard_report);
+    const effective_mods = (real_mods | weak_mods | weak_override_mods | oneshot_mods | oneshot_locked_mods) & ~suppressed_override_mods;
+
+    if (nkro_enabled) {
+        nkro_report.mods = effective_mods;
+        if (oneshot_mods != 0 and nkro_report.hasAnyKey()) {
+            oneshot_mods = 0;
+        }
+        if (current_driver) |driver| {
+            const current: [32]u8 = @bitCast(nkro_report);
+            const last: [32]u8 = @bitCast(last_nkro_report);
+            if (!std.mem.eql(u8, &current, &last)) {
+                last_nkro_report = nkro_report;
+                driver.sendNkro(&nkro_report);
+            }
+        }
+    } else {
+        keyboard_report.mods = effective_mods;
+        if (oneshot_mods != 0 and keyboard_report.hasAnyKey()) {
+            oneshot_mods = 0;
+        }
+        if (current_driver) |driver| {
+            const current: [8]u8 = @bitCast(keyboard_report);
+            const last: [8]u8 = @bitCast(last_keyboard_report);
+            if (!std.mem.eql(u8, &current, &last)) {
+                last_keyboard_report = keyboard_report;
+                driver.sendKeyboard(&keyboard_report);
+            }
         }
     }
 }
@@ -301,19 +345,28 @@ pub fn sendKeyboardReport() void {
 /// memcmp による差分チェックが適用されスキップされる場合がある。
 pub fn clearKeyboard() void {
     keyboard_report.clear();
+    nkro_report.clear();
     real_mods = 0;
     weak_mods = 0;
     weak_override_mods = 0;
     suppressed_override_mods = 0;
     last_keyboard_report = keyboard_report;
+    last_nkro_report = nkro_report;
     if (current_driver) |driver| {
-        driver.sendKeyboard(&keyboard_report);
+        if (nkro_enabled) {
+            driver.sendNkro(&nkro_report);
+        } else {
+            driver.sendKeyboard(&keyboard_report);
+        }
     }
 }
 
 pub fn hostReset() void {
     keyboard_report.clear();
     last_keyboard_report = .{};
+    nkro_report.clear();
+    last_nkro_report = .{};
+    nkro_enabled = false;
     real_mods = 0;
     weak_mods = 0;
     weak_override_mods = 0;
@@ -740,5 +793,87 @@ test "hasOneshotLayerTimedOut returns false when no layer is active" {
     // レイヤー未設定の状態でタイムアウト時間を超過しても false を返すことを確認
     timer.mockAdvance(200);
     try testing.expect(!hasOneshotLayerTimedOut());
+}
+
+test "NKRO registerCode uses bitmap" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    nkro_enabled = true;
+    registerCode(0x04); // KC_A
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 1), mock.nkro_count);
+    try testing.expect(mock.lastNkroReport().hasKey(0x04));
+    // 6KRO report should NOT be sent
+    try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
+
+    unregisterCode(0x04);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 2), mock.nkro_count);
+    try testing.expect(!mock.lastNkroReport().hasKey(0x04));
+}
+
+test "NKRO sendKeyboardReport skips duplicates" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    nkro_enabled = true;
+    registerCode(0x04);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 1), mock.nkro_count);
+
+    // 同じレポートを再送信 -> スキップ
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 1), mock.nkro_count);
+
+    // 変更があれば送信
+    registerCode(0x05);
+    sendKeyboardReport();
+    try testing.expectEqual(@as(usize, 2), mock.nkro_count);
+}
+
+test "NKRO clearKeyboard sends empty report" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    nkro_enabled = true;
+    registerCode(0x04);
+    sendKeyboardReport();
+
+    clearKeyboard();
+    // clearKeyboard は強制送信するので nkro_count が増える
+    try testing.expect(mock.lastNkroReport().isEmpty());
+    try testing.expectEqual(@as(u8, 0), getMods());
+}
+
+test "NKRO modifier in report mods" {
+    hostReset();
+    var mock = MockDriver{};
+    setDriver(HostDriver.from(&mock));
+    defer clearDriver();
+
+    nkro_enabled = true;
+    registerCode(0xE1); // LSHIFT (modifier)
+    registerCode(0x04); // KC_A
+    sendKeyboardReport();
+    try testing.expectEqual(@as(u8, 0x02), mock.lastNkroReport().mods);
+    try testing.expect(mock.lastNkroReport().hasKey(0x04));
+}
+
+test "hostReset clears NKRO state" {
+    hostReset();
+    nkro_enabled = true;
+    nkro_report.mods = 0xFF;
+    _ = nkro_report.addKey(0x04);
+
+    hostReset();
+    try testing.expect(!nkro_enabled);
+    try testing.expect(nkro_report.isEmpty());
 }
 

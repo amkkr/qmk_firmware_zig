@@ -143,13 +143,10 @@ export fn send_keyboard_report() void {
 /// フィールド順は C版と完全一致:
 ///   keyboard_leds, send_keyboard, send_nkro, send_mouse, send_extra
 ///
-/// 注意: send_nkro はバイナリ互換性のためフィールドとして存在するが、
-/// Zig版は NKRO 非対応のため常に null を設定する。
 pub const CHostDriver = extern struct {
     keyboard_leds: ?*const fn () callconv(.c) u8,
     send_keyboard: ?*const fn (*const report_mod.KeyboardReport) callconv(.c) void,
-    /// NKRO 非対応につき常に null。C版 host_driver_t とのバイナリ互換性のため維持。
-    send_nkro: ?*const fn (*const anyopaque) callconv(.c) void,
+    send_nkro: ?*const fn (*const report_mod.NkroReport) callconv(.c) void,
     send_mouse: ?*const fn (*const report_mod.MouseReport) callconv(.c) void,
     send_extra: ?*const fn (*const report_mod.ExtraReport) callconv(.c) void,
 };
@@ -166,6 +163,10 @@ const CDriverAdapter = struct {
 
     pub fn sendKeyboard(self: *CDriverAdapter, r: report_mod.KeyboardReport) void {
         if (self.c_driver.send_keyboard) |f| f(&r);
+    }
+
+    pub fn sendNkro(self: *CDriverAdapter, r: report_mod.NkroReport) void {
+        if (self.c_driver.send_nkro) |f| f(&r);
     }
 
     pub fn sendMouse(self: *CDriverAdapter, r: report_mod.MouseReport) void {

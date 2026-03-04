@@ -274,6 +274,7 @@ const MockExtraDriver = struct {
         return 0;
     }
     pub fn sendKeyboard(_: *@This(), _: report_mod.KeyboardReport) void {}
+    pub fn sendNkro(_: *@This(), _: report_mod.NkroReport) void {}
     pub fn sendMouse(_: *@This(), _: report_mod.MouseReport) void {}
     pub fn sendExtra(self: *@This(), r: ExtraReport) void {
         self.extra_count += 1;
