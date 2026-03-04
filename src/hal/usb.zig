@@ -12,6 +12,7 @@ const builtin = @import("builtin");
 const usb_descriptors = @import("usb_descriptors.zig");
 const report = @import("../core/report.zig");
 const host = @import("../core/host.zig");
+const timer = @import("timer.zig");
 const KeyboardReport = report.KeyboardReport;
 const MouseReport = report.MouseReport;
 const ExtraReport = report.ExtraReport;
@@ -254,6 +255,45 @@ pub const UsbDriver = struct {
         if (is_freestanding) {
             self.hwInit();
         }
+    }
+
+    /// Restart USB driver (disconnect → wait → re-init → connect).
+    /// Forces USB re-enumeration by the host.
+    /// C版 restart_usb_driver() に相当。
+    pub fn restart(self: *UsbDriver) void {
+        if (is_freestanding) {
+            const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+
+            // Disable D+ pull-up to signal disconnection to host
+            sie_ctrl.* = SieCtrl.EP0_INT_1BUF;
+        }
+
+        // Reset driver state (same as bus reset)
+        self.address = 0;
+        self.configuration = 0;
+        self.state = .disconnected;
+        self.data_toggle = .{ false, false, false, false, false, false };
+        self.pending_address = null;
+        self.ep0_out_pending = .none;
+        self.remote_wakeup_enabled = false;
+        self.cdc_tx_head = 0;
+        self.cdc_tx_tail = 0;
+        self.keyboard_leds = 0;
+
+        // Wait 50ms for host to detect disconnection
+        timer.waitMs(50);
+
+        if (is_freestanding) {
+            const sie_ctrl = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_CTRL));
+
+            // Re-initialize EP0 OUT buffer
+            self.hwPrepareEp0Out();
+
+            // Re-enable D+ pull-up to signal reconnection
+            sie_ctrl.* = SieCtrl.EP0_INT_1BUF | SieCtrl.PULLUP_EN;
+        }
+
+        self.state = .attached;
     }
 
     /// Check if device is configured and ready to send reports
@@ -2622,4 +2662,43 @@ test "GET_IDLE stalls on non-keyboard interface" {
     // Should have stalled (ep0_in_data remains null, no data sent)
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+test "restart resets driver state and transitions to attached" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.address = 5;
+    drv.configuration = 1;
+    drv.keyboard_leds = 0x07;
+    drv.remote_wakeup_enabled = true;
+    drv.data_toggle = .{ true, true, false, true, false, true };
+    drv.pending_address = 3;
+    drv.cdc_tx_head = 10;
+    drv.cdc_tx_tail = 5;
+
+    drv.restart();
+
+    try testing.expectEqual(DeviceState.attached, drv.state);
+    try testing.expectEqual(@as(u8, 0), drv.address);
+    try testing.expectEqual(@as(u8, 0), drv.configuration);
+    try testing.expectEqual(@as(u8, 0), drv.keyboard_leds);
+    try testing.expect(!drv.remote_wakeup_enabled);
+    try testing.expectEqual(@as(?u8, null), drv.pending_address);
+    try testing.expectEqual(Ep0OutPending.none, drv.ep0_out_pending);
+    try testing.expectEqual(@as(u8, 0), drv.cdc_tx_head);
+    try testing.expectEqual(@as(u8, 0), drv.cdc_tx_tail);
+    for (drv.data_toggle) |dt| {
+        try testing.expect(!dt);
+    }
+}
+
+test "restart from disconnected state transitions to attached" {
+    var drv = UsbDriver{};
+    drv.init();
+    try testing.expectEqual(DeviceState.disconnected, drv.state);
+
+    drv.restart();
+
+    try testing.expectEqual(DeviceState.attached, drv.state);
 }
