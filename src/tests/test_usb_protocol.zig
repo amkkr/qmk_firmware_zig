@@ -372,21 +372,23 @@ test "CDC data endpoint size is 64 bytes" {
     try testing.expectEqual(@as(u8, 64), usb_descriptors.CDC_DATA_ENDPOINT_SIZE);
 }
 
-test "endpoint numbers are sequential 1-5" {
+test "endpoint numbers are sequential 1-6" {
     try testing.expectEqual(@as(u8, 1), usb_descriptors.KEYBOARD_ENDPOINT);
     try testing.expectEqual(@as(u8, 2), usb_descriptors.MOUSE_ENDPOINT);
     try testing.expectEqual(@as(u8, 3), usb_descriptors.EXTRA_ENDPOINT);
-    try testing.expectEqual(@as(u8, 4), usb_descriptors.CDC_NOTIFICATION_ENDPOINT);
-    try testing.expectEqual(@as(u8, 5), usb_descriptors.CDC_DATA_ENDPOINT);
+    try testing.expectEqual(@as(u8, 4), usb_descriptors.NKRO_ENDPOINT);
+    try testing.expectEqual(@as(u8, 5), usb_descriptors.CDC_NOTIFICATION_ENDPOINT);
+    try testing.expectEqual(@as(u8, 6), usb_descriptors.CDC_DATA_ENDPOINT);
 }
 
-test "interface numbers are sequential 0-4" {
+test "interface numbers are sequential 0-5" {
     try testing.expectEqual(@as(u8, 0), usb_descriptors.KEYBOARD_INTERFACE);
     try testing.expectEqual(@as(u8, 1), usb_descriptors.MOUSE_INTERFACE);
     try testing.expectEqual(@as(u8, 2), usb_descriptors.EXTRA_INTERFACE);
-    try testing.expectEqual(@as(u8, 3), usb_descriptors.CDC_COMM_INTERFACE);
-    try testing.expectEqual(@as(u8, 4), usb_descriptors.CDC_DATA_INTERFACE);
-    try testing.expectEqual(@as(u8, 5), usb_descriptors.NUM_INTERFACES);
+    try testing.expectEqual(@as(u8, 3), usb_descriptors.NKRO_INTERFACE);
+    try testing.expectEqual(@as(u8, 4), usb_descriptors.CDC_COMM_INTERFACE);
+    try testing.expectEqual(@as(u8, 5), usb_descriptors.CDC_DATA_INTERFACE);
+    try testing.expectEqual(@as(u8, 6), usb_descriptors.NUM_INTERFACES);
 }
 
 test "configuration descriptor endpoint intervals match constants" {
