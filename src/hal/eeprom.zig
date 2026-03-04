@@ -244,16 +244,12 @@ const flashCommit = if (is_freestanding) flashCommitImpl else struct {
 /// Number of pages in EEPROM storage
 const PAGES_PER_EEPROM = EEPROM_SIZE / FLASH_PAGE_SIZE;
 
-/// Check if a sector erase is needed by comparing RAM cache with flash.
-/// Flash can only clear bits (1→0) without erasing. If any bit needs to go
-/// from 0→1 (i.e., a flash byte has a 0-bit where the new data has a 1-bit),
-/// a sector erase is required.
-/// Also determines which pages have changed and need reprogramming.
-/// Returns: .{ erase_needed, page_dirty_mask }
-/// Must be inline to execute from RAM (called before XIP is disabled,
-/// but reading XIP data here is fine since XIP is still active).
-inline fn analyzeChanges() struct { erase_needed: bool, page_dirty: [PAGES_PER_EEPROM]bool } {
-    const flash_data: [*]const u8 = @ptrFromInt(XIP_BASE + EEPROM_FLASH_OFFSET);
+const AnalyzeResult = struct { erase_needed: bool, page_dirty: [PAGES_PER_EEPROM]bool };
+
+/// Core change analysis: compare flash data with RAM cache.
+/// Determines which pages are dirty and whether a sector erase is needed.
+/// Must be inline so it can be used from RAM-resident code.
+inline fn analyzeChangesCore(flash_data: [*]const u8) AnalyzeResult {
     var erase_needed = false;
     var page_dirty = [_]bool{false} ** PAGES_PER_EEPROM;
 
@@ -270,6 +266,19 @@ inline fn analyzeChanges() struct { erase_needed: bool, page_dirty: [PAGES_PER_E
     }
 
     return .{ .erase_needed = erase_needed, .page_dirty = page_dirty };
+}
+
+/// Check if a sector erase is needed by comparing RAM cache with flash.
+/// Flash can only clear bits (1→0) without erasing. If any bit needs to go
+/// from 0→1 (i.e., a flash byte has a 0-bit where the new data has a 1-bit),
+/// a sector erase is required.
+/// Also determines which pages have changed and need reprogramming.
+/// Returns: .{ erase_needed, page_dirty_mask }
+/// Must be inline to execute from RAM (called before XIP is disabled,
+/// but reading XIP data here is fine since XIP is still active).
+inline fn analyzeChanges() AnalyzeResult {
+    const flash_data: [*]const u8 = @ptrFromInt(XIP_BASE + EEPROM_FLASH_OFFSET);
+    return analyzeChangesCore(flash_data);
 }
 
 fn flashCommitImpl() linksection(".data") void {
@@ -337,22 +346,9 @@ pub fn mockReset() void {
 /// Returns whether a sector erase would be needed and which pages are dirty.
 /// This mirrors the logic of the freestanding analyzeChanges() but works
 /// with a provided flash snapshot instead of XIP-mapped memory.
-pub fn mockAnalyzeChanges(flash_snapshot: []const u8) struct { erase_needed: bool, page_dirty: [PAGES_PER_EEPROM]bool } {
-    var erase_needed = false;
-    var page_dirty = [_]bool{false} ** PAGES_PER_EEPROM;
-
-    for (0..EEPROM_SIZE) |i| {
-        const flash_byte = flash_snapshot[i];
-        const ram_byte = storage[i];
-        if (flash_byte != ram_byte) {
-            page_dirty[i / FLASH_PAGE_SIZE] = true;
-            if ((~flash_byte & ram_byte) != 0) {
-                erase_needed = true;
-            }
-        }
-    }
-
-    return .{ .erase_needed = erase_needed, .page_dirty = page_dirty };
+pub fn mockAnalyzeChanges(flash_snapshot: []const u8) AnalyzeResult {
+    std.debug.assert(flash_snapshot.len >= EEPROM_SIZE);
+    return analyzeChangesCore(flash_snapshot.ptr);
 }
 
 // ============================================================
