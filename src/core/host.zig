@@ -732,3 +732,13 @@ test "hasOneshotLayerTimedOut TOGGLED state does not timeout" {
     try testing.expect(!hasOneshotLayerTimedOut());
 }
 
+test "hasOneshotLayerTimedOut returns false when no layer is active" {
+    hostReset();
+    timer.mockReset();
+    oneshot_timeout = 100;
+
+    // レイヤー未設定の状態でタイムアウト時間を超過しても false を返すことを確認
+    timer.mockAdvance(200);
+    try testing.expect(!hasOneshotLayerTimedOut());
+}
+
