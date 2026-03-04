@@ -140,7 +140,7 @@ pub var event_queue: UsbEventQueue = .{};
 pub fn usbctrlIrqHandler() callconv(.c) void {
     if (is_freestanding) {
         const ints = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTS)).*;
-        const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
+        const inte_clr = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_CLR + Reg.INTE));
 
         if (ints & IntBit.BUS_RESET != 0) {
             _ = event_queue.enqueue(.bus_reset);
@@ -148,15 +148,15 @@ pub fn usbctrlIrqHandler() callconv(.c) void {
             @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS)).* = SieStatus.BUS_RESET;
         }
         if (ints & IntBit.SETUP_REQ != 0) {
-            // Mask SETUP_REQ to prevent re-firing (level-triggered).
+            // Mask SETUP_REQ via atomic CLR alias to prevent re-firing (level-triggered).
             // Re-enabled in handleSetupFromHw() after clearing SIE_STATUS.SETUP_REC.
-            inte.* &= ~IntBit.SETUP_REQ;
+            inte_clr.* = IntBit.SETUP_REQ;
             _ = event_queue.enqueue(.setup_req);
         }
         if (ints & IntBit.BUFF_STATUS != 0) {
-            // Mask BUFF_STATUS to prevent re-firing (level-triggered).
+            // Mask BUFF_STATUS via atomic CLR alias to prevent re-firing (level-triggered).
             // Re-enabled in handleBuffStatus() after draining BUFF_STATUS register.
-            inte.* &= ~IntBit.BUFF_STATUS;
+            inte_clr.* = IntBit.BUFF_STATUS;
             _ = event_queue.enqueue(.buff_status);
         }
     }
@@ -172,6 +172,10 @@ const NVIC_IPR_BASE: u32 = 0xE000E400; // Interrupt Priority Registers
 // ============================================================
 
 pub const USBCTRL_REGS_BASE: u32 = 0x50110000;
+/// RP2040 atomic SET alias (write 1 bits set corresponding bits)
+pub const USBCTRL_REGS_SET: u32 = USBCTRL_REGS_BASE + 0x2000;
+/// RP2040 atomic CLR alias (write 1 bits clear corresponding bits)
+pub const USBCTRL_REGS_CLR: u32 = USBCTRL_REGS_BASE + 0x3000;
 pub const USBCTRL_DPRAM_BASE: u32 = 0x50100000;
 
 pub const RESETS_BASE: u32 = 0x4000_C000;
@@ -975,8 +979,9 @@ pub const UsbDriver = struct {
             // Re-arm EP0 OUT to receive the next SETUP/OUT packet
             self.hwPrepareEp0Out();
 
-            // Re-enable SETUP_REQ interrupt (masked by ISR to prevent level-triggered re-firing)
-            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE)).* |= IntBit.SETUP_REQ;
+            // Re-enable SETUP_REQ interrupt via atomic SET alias
+            // (masked by ISR to prevent level-triggered re-firing)
+            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_SET + Reg.INTE)).* = IntBit.SETUP_REQ;
         } else {
             if (self.mock_setup_packet) |*pkt| {
                 self.handleSetup(pkt);
@@ -1027,8 +1032,9 @@ pub const UsbDriver = struct {
         }
 
         if (is_freestanding) {
-            // Re-enable BUFF_STATUS interrupt (masked by ISR to prevent level-triggered re-firing)
-            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE)).* |= IntBit.BUFF_STATUS;
+            // Re-enable BUFF_STATUS interrupt via atomic SET alias
+            // (masked by ISR to prevent level-triggered re-firing)
+            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_SET + Reg.INTE)).* = IntBit.BUFF_STATUS;
         }
     }
 
@@ -1133,9 +1139,9 @@ pub const UsbDriver = struct {
             }
         }
 
-        // Enable USBCTRL_IRQ (IRQ5) in NVIC with highest priority
+        // Enable USBCTRL_IRQ (IRQ5) in NVIC
+        // Priority 0 はリセット後のデフォルトなので明示的な設定は不要
         @as(*volatile u32, @ptrFromInt(NVIC_ISER)).* = 1 << 5;
-        @as(*volatile u32, @ptrFromInt(NVIC_IPR_BASE + 4)).* = 0; // Priority 0 for IRQ5
 
         // Enable pull-up on D+ to signal device connection to host
         sie_ctrl.* = SieCtrl.EP0_INT_1BUF | SieCtrl.PULLUP_EN;
