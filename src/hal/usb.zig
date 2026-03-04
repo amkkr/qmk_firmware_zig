@@ -189,6 +189,10 @@ pub const UsbDriver = struct {
     ep0_in_data: ?[]const u8 = null,
     ep0_in_offset: u16 = 0,
     ep0_in_total_len: u16 = 0,
+    /// ZLP needed after EP0 IN data transfer completes.
+    /// Set when send_len < wLength and send_len is a multiple of EP0_MAX_PACKET_SIZE.
+    /// USB 2.0 spec §5.5.3: short packet or ZLP signals end of data stage.
+    ep0_in_needs_zlp: bool = false,
     /// Pending address to apply after status stage ZLP completion (USB 2.0 spec)
     pending_address: ?u8 = null,
     /// EP0 OUT data phase pending state (for SET_REPORT / SET_LINE_CODING)
@@ -235,6 +239,7 @@ pub const UsbDriver = struct {
         self.ep0_in_data = null;
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
+        self.ep0_in_needs_zlp = false;
         self.pending_address = null;
         self.ep0_out_pending = .none;
         self.cdc_line_coding = .{};
@@ -278,6 +283,7 @@ pub const UsbDriver = struct {
         self.ep0_in_data = null;
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
+        self.ep0_in_needs_zlp = false;
         self.remote_wakeup_enabled = false;
         self.keyboard_protocol = .report;
         self.mouse_protocol = .report;
@@ -725,6 +731,13 @@ pub const UsbDriver = struct {
             self.ep0_in_data = data;
             self.ep0_in_offset = 0;
             self.ep0_in_total_len = send_len;
+            // USB 2.0 spec §5.5.3: If the data stage sends less data than
+            // wLength and the last packet is exactly EP0_MAX_PACKET_SIZE,
+            // a ZLP is needed to signal end-of-transfer to the host.
+            // Without this, Windows fails to enumerate when descriptor size
+            // is a multiple of 64 (e.g., 64-byte keyboard report descriptor).
+            self.ep0_in_needs_zlp = (send_len < max_len) and
+                (send_len % EP0_MAX_PACKET_SIZE == 0) and (send_len > 0);
             self.sendEp0InPacket();
         } else {
             self.stallEndpoint0();
@@ -857,6 +870,11 @@ pub const UsbDriver = struct {
             // Continue multi-packet EP0 IN transfer
             if (self.ep0_in_data != null) {
                 self.sendEp0InPacket();
+            } else if (self.ep0_in_needs_zlp) {
+                // Send ZLP to terminate a data stage whose total length was
+                // a multiple of EP0_MAX_PACKET_SIZE but less than wLength.
+                self.ep0_in_needs_zlp = false;
+                self.sendStatusStageZlp();
             }
 
             // Apply deferred SET_ADDRESS after status stage ZLP completion
@@ -870,6 +888,13 @@ pub const UsbDriver = struct {
 
         if ((status & BUFF_STATUS_EP0_OUT) != 0) {
             self.handleEp0OutData();
+            // Re-arm EP0 OUT to receive next SETUP/OUT packet.
+            // Without this, Windows may fail to send subsequent control transfers
+            // because the EP0 OUT buffer is not available after consuming the
+            // status stage ZLP or data phase.
+            if (is_freestanding) {
+                self.hwPrepareEp0Out();
+            }
         }
     }
 
@@ -2716,4 +2741,100 @@ test "restart from disconnected state transitions to attached" {
     drv.restart();
 
     try testing.expectEqual(DeviceState.attached, drv.state);
+}
+
+test "GET_DESCRIPTOR sets ep0_in_needs_zlp when descriptor size is multiple of 64 and less than wLength" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // keyboard_report_descriptor is exactly 64 bytes (EP0_MAX_PACKET_SIZE).
+    // When wLength (e.g. 256) > descriptor size (64), a ZLP is needed
+    // because the last data packet is exactly max packet size and the host
+    // expects more data or a ZLP to terminate the transfer.
+    const setup = SetupPacket{
+        .bmRequestType = 0x81, // Device-to-host, Standard, Interface
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 256,
+    };
+    drv.handleSetup(&setup);
+
+    // Keyboard report descriptor is exactly 64 bytes
+    try testing.expectEqual(@as(usize, 64), usb_descriptors.keyboard_report_descriptor.len);
+    // ep0_in_needs_zlp should be true
+    try testing.expect(drv.ep0_in_needs_zlp);
+    // After data transfer, ep0_in_data should be null (64 bytes sent in one packet)
+    try testing.expect(drv.ep0_in_data == null);
+}
+
+test "GET_DESCRIPTOR does not set ep0_in_needs_zlp when descriptor size equals wLength" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // When wLength exactly matches descriptor size, host knows transfer is complete
+    const setup = SetupPacket{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.KEYBOARD_INTERFACE,
+        .wLength = 64,
+    };
+    drv.handleSetup(&setup);
+
+    try testing.expect(!drv.ep0_in_needs_zlp);
+}
+
+test "GET_DESCRIPTOR does not set ep0_in_needs_zlp when last packet is short" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Mouse report descriptor is not a multiple of 64, so short packet terminates transfer
+    const setup = SetupPacket{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_DESCRIPTOR,
+        .wValue = @as(u16, usb_descriptors.DescriptorType.HID_REPORT) << 8,
+        .wIndex = usb_descriptors.MOUSE_INTERFACE,
+        .wLength = 256,
+    };
+    drv.handleSetup(&setup);
+
+    try testing.expect(!drv.ep0_in_needs_zlp);
+}
+
+test "EP0 IN BUFF_STATUS sends ZLP when ep0_in_needs_zlp is set" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    // Simulate: descriptor transfer completed, ZLP pending
+    drv.ep0_in_data = null;
+    drv.ep0_in_needs_zlp = true;
+    const toggle_before = drv.data_toggle[0];
+
+    // Simulate EP0 IN buffer completion
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP0_IN;
+    drv.handleBuffStatus();
+
+    // ZLP should have been sent (data toggle changed)
+    try testing.expect(!drv.ep0_in_needs_zlp);
+    try testing.expectEqual(!toggle_before, drv.data_toggle[0]);
+}
+
+test "init resets ep0_in_needs_zlp" {
+    var drv = UsbDriver{};
+    drv.ep0_in_needs_zlp = true;
+
+    drv.init();
+
+    try testing.expect(!drv.ep0_in_needs_zlp);
+}
+
+test "restart resets ep0_in_needs_zlp" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.ep0_in_needs_zlp = true;
+
+    drv.restart();
+
+    try testing.expect(!drv.ep0_in_needs_zlp);
 }
