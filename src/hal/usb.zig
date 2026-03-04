@@ -391,6 +391,13 @@ pub const UsbDriver = struct {
     cdc_tx_buf: [256]u8 = undefined,
     cdc_tx_head: u8 = 0,
     cdc_tx_tail: u8 = 0,
+    /// CDC RX ring buffer (host → device)
+    cdc_rx_buf: [256]u8 = undefined,
+    cdc_rx_head: u8 = 0,
+    cdc_rx_tail: u8 = 0,
+    /// Mock CDC RX data (for testing CDC data endpoint OUT reception)
+    mock_cdc_rx_data: [64]u8 = undefined,
+    mock_cdc_rx_len: u8 = 0,
     /// Small reply buffer for EP0 IN responses (up to 8 bytes for KeyboardReport / LineCoding)
     ep0_reply_buf: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
     /// Last sent keyboard report (GET_REPORT 応答用)
@@ -421,6 +428,9 @@ pub const UsbDriver = struct {
         self.cdc_control_line_state = 0;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
+        self.cdc_rx_head = 0;
+        self.cdc_rx_tail = 0;
+        self.mock_cdc_rx_len = 0;
         self.ep0_reply_buf = .{ 0, 0, 0, 0, 0, 0, 0, 0 };
         self.last_keyboard_report = .{};
         self.remote_wakeup_enabled = false;
@@ -610,6 +620,8 @@ pub const UsbDriver = struct {
         self.remote_wakeup_enabled = false;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
+        self.cdc_rx_head = 0;
+        self.cdc_rx_tail = 0;
     }
 
     /// Handle USB device suspend event (DEV_SUSPEND interrupt)
@@ -724,6 +736,8 @@ pub const UsbDriver = struct {
                     self.state = .configured;
                     if (is_freestanding) {
                         self.hwConfigureEndpoints();
+                        // Arm CDC data endpoint OUT to start receiving data from host
+                        self.hwArmEp6Out();
                     }
                 } else {
                     self.state = .addressed;
@@ -935,6 +949,70 @@ pub const UsbDriver = struct {
         return (self.cdc_control_line_state & 0x01) != 0;
     }
 
+    // ============================================================
+    // CDC RX Ring Buffer
+    // ============================================================
+
+    /// Return the number of bytes available to read from the CDC RX buffer.
+    pub fn cdcAvailable(self: *const UsbDriver) u8 {
+        return self.cdc_rx_head -% self.cdc_rx_tail;
+    }
+
+    /// Read up to `buf.len` bytes from the CDC RX ring buffer.
+    /// Returns the number of bytes actually read.
+    pub fn cdcRead(self: *UsbDriver, buf: []u8) u8 {
+        const avail = self.cdcAvailable();
+        const read_len: u8 = @intCast(@min(buf.len, @as(usize, avail)));
+        for (0..read_len) |i| {
+            buf[i] = self.cdc_rx_buf[self.cdc_rx_tail +% @as(u8, @intCast(i))];
+        }
+        self.cdc_rx_tail +%= read_len;
+        return read_len;
+    }
+
+    /// Handle CDC data endpoint OUT data arrival: read from DPRAM into RX ring buffer,
+    /// then re-arm the endpoint for the next packet.
+    fn handleCdcRxData(self: *UsbDriver) void {
+        const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
+        const max_packet = usb_descriptors.CDC_DATA_ENDPOINT_SIZE;
+
+        // Read received data length and contents
+        const len: u8 = if (is_freestanding) blk: {
+            const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep6) * 8 + 4;
+            const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
+            const raw_len = buf_ctrl.* & BufCtrl.LEN_MASK;
+            break :blk @intCast(@min(raw_len, max_packet));
+        } else blk: {
+            break :blk self.mock_cdc_rx_len;
+        };
+
+        if (len == 0) return;
+        const read_len = @min(len, max_packet);
+
+        // Copy data from DPRAM (or mock) into RX ring buffer
+        for (0..read_len) |i| {
+            const next_head = self.cdc_rx_head +% 1;
+            if (next_head == self.cdc_rx_tail) break; // Buffer full
+            const byte = if (is_freestanding) blk: {
+                const dpram_buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP6_OUT_BUF));
+                break :blk dpram_buf[i];
+            } else blk: {
+                break :blk self.mock_cdc_rx_data[i];
+            };
+            self.cdc_rx_buf[self.cdc_rx_head] = byte;
+            self.cdc_rx_head = next_head;
+        }
+
+        if (!is_freestanding) {
+            self.mock_cdc_rx_len = 0;
+        }
+
+        // Re-arm CDC data endpoint OUT to receive the next packet
+        if (is_freestanding) {
+            self.hwArmEp6Out();
+        }
+    }
+
     const EP0_MAX_PACKET_SIZE: u16 = 64;
 
     /// GET_DESCRIPTOR 応答: ディスクリプタを選択し EP0 IN で送信開始。
@@ -1101,6 +1179,8 @@ pub const UsbDriver = struct {
     pub const BUFF_STATUS_EP0_IN: u32 = 1 << 0;
     /// BUFF_STATUS EP0 OUT bit (bit 1)
     pub const BUFF_STATUS_EP0_OUT: u32 = 1 << 1;
+    /// BUFF_STATUS EP6 OUT bit (bit 13): CDC Data OUT transfer complete
+    pub const BUFF_STATUS_EP6_OUT: u32 = 1 << 13; // EP6 OUT = bit 2*6+1 = 13
 
     /// Handle buffer status events (endpoint transfer completions).
     /// EP0 IN 完了時にマルチパケット転送の次パケットを送信する。
@@ -1148,6 +1228,10 @@ pub const UsbDriver = struct {
             if (is_freestanding) {
                 self.hwPrepareEp0Out();
             }
+        }
+
+        if ((status & BUFF_STATUS_EP6_OUT) != 0) {
+            self.handleCdcRxData();
         }
 
         if (is_freestanding) {
@@ -1347,6 +1431,15 @@ pub const UsbDriver = struct {
                 EpCtrl.EP_TYPE_BULK |
                 (DPRAM.EP6_OUT_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
         }
+    }
+
+    /// Arm EP6 OUT buffer control to receive the next CDC data packet from host.
+    fn hwArmEp6Out(self: *UsbDriver) void {
+        _ = self;
+        const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
+        const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep6) * 8 + 4;
+        const buf_ctrl = @as(*volatile u32, @ptrFromInt(buf_ctrl_addr));
+        buf_ctrl.* = BufCtrl.AVAILABLE | (usb_descriptors.CDC_DATA_ENDPOINT_SIZE & BufCtrl.LEN_MASK);
     }
 
     fn hwSendEndpoint(self: *UsbDriver, ep: u8, data: []const u8) void {
@@ -3012,6 +3105,88 @@ test "GET_IDLE stalls on non-keyboard interface" {
     // Should have stalled (ep0_in_data remains null, no data sent)
     try testing.expect(drv.ep0_in_data == null);
     try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+}
+
+// ============================================================
+// CDC RX Tests
+// ============================================================
+
+test "CDC RX receives data via handleBuffStatus EP6 OUT" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+
+    // Simulate host sending 5 bytes on EP6 OUT
+    drv.mock_cdc_rx_data[0] = 'H';
+    drv.mock_cdc_rx_data[1] = 'e';
+    drv.mock_cdc_rx_data[2] = 'l';
+    drv.mock_cdc_rx_data[3] = 'l';
+    drv.mock_cdc_rx_data[4] = 'o';
+    drv.mock_cdc_rx_len = 5;
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP6_OUT;
+
+    drv.handleBuffStatus();
+
+    try testing.expectEqual(@as(u8, 5), drv.cdcAvailable());
+    var buf: [5]u8 = undefined;
+    const read = drv.cdcRead(&buf);
+    try testing.expectEqual(@as(u8, 5), read);
+    try testing.expectEqualSlices(u8, "Hello", &buf);
+    try testing.expectEqual(@as(u8, 0), drv.cdcAvailable());
+}
+
+test "CDC RX cdcRead returns partial data when buffer has less than requested" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.mock_cdc_rx_data[0] = 'A';
+    drv.mock_cdc_rx_data[1] = 'B';
+    drv.mock_cdc_rx_len = 2;
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP6_OUT;
+    drv.handleBuffStatus();
+
+    var buf: [10]u8 = undefined;
+    const read = drv.cdcRead(&buf);
+    try testing.expectEqual(@as(u8, 2), read);
+    try testing.expectEqual(@as(u8, 'A'), buf[0]);
+    try testing.expectEqual(@as(u8, 'B'), buf[1]);
+}
+
+test "CDC RX cdcAvailable returns 0 when empty" {
+    var drv = UsbDriver{};
+    drv.init();
+    try testing.expectEqual(@as(u8, 0), drv.cdcAvailable());
+}
+
+test "CDC RX handleBusReset clears RX buffer" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.mock_cdc_rx_data[0] = 'X';
+    drv.mock_cdc_rx_len = 1;
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP6_OUT;
+    drv.handleBuffStatus();
+    try testing.expectEqual(@as(u8, 1), drv.cdcAvailable());
+
+    drv.handleBusReset();
+    try testing.expectEqual(@as(u8, 0), drv.cdcAvailable());
+    try testing.expectEqual(@as(u8, 0), drv.cdc_rx_head);
+    try testing.expectEqual(@as(u8, 0), drv.cdc_rx_tail);
+}
+
+test "CDC RX zero-length packet is ignored" {
+    var drv = UsbDriver{};
+    drv.init();
+
+    drv.mock_cdc_rx_len = 0;
+    drv.mock_buff_status = UsbDriver.BUFF_STATUS_EP6_OUT;
+    drv.handleBuffStatus();
+
+    try testing.expectEqual(@as(u8, 0), drv.cdcAvailable());
+}
+
+test "BUFF_STATUS_EP6_OUT bit position" {
+    try testing.expectEqual(@as(u32, 1 << 13), UsbDriver.BUFF_STATUS_EP6_OUT);
 }
 
 test "restart resets driver state and transitions to attached" {
