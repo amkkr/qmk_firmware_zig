@@ -136,16 +136,17 @@ test "SIE_CTRL EP0_INT_1BUF and PULLUP_EN do not overlap" {
 }
 
 // ============================================================
-// 3. SET_CONFIGURATION で EP4-EP5 の data toggle もリセット
+// 3. SET_CONFIGURATION で EP4-EP6 の data toggle もリセット
 // ============================================================
 
-test "SET_CONFIGURATION resets EP4-EP5 data toggle to DATA0" {
+test "SET_CONFIGURATION resets EP1-EP6 data toggle to DATA0" {
     var drv = UsbDriver{};
     drv.init();
 
-    // EP4, EP5 の data toggle を true に設定
+    // EP4, EP5, EP6 の data toggle を true に設定
     drv.data_toggle[4] = true;
     drv.data_toggle[5] = true;
+    drv.data_toggle[6] = true;
 
     drv.handleSetup(&.{
         .bmRequestType = 0x00,
@@ -154,15 +155,16 @@ test "SET_CONFIGURATION resets EP4-EP5 data toggle to DATA0" {
     });
 
     try testing.expectEqual(DeviceState.configured, drv.state);
-    // USB 2.0 spec §9.4.7: EP1-EP5 全てリセット
+    // USB 2.0 spec §9.4.7: EP1-EP6 全てリセット
     try testing.expectEqual(false, drv.data_toggle[1]);
     try testing.expectEqual(false, drv.data_toggle[2]);
     try testing.expectEqual(false, drv.data_toggle[3]);
     try testing.expectEqual(false, drv.data_toggle[4]);
     try testing.expectEqual(false, drv.data_toggle[5]);
+    try testing.expectEqual(false, drv.data_toggle[6]);
 }
 
-test "SET_CONFIGURATION deconfigure resets EP4-EP5 data toggle" {
+test "SET_CONFIGURATION deconfigure resets EP4-EP6 data toggle" {
     var drv = UsbDriver{};
     drv.init();
 
@@ -173,9 +175,10 @@ test "SET_CONFIGURATION deconfigure resets EP4-EP5 data toggle" {
         .wValue = 1,
     });
 
-    // EP4, EP5 にアクティビティ
+    // EP4, EP5, EP6 にアクティビティ
     drv.data_toggle[4] = true;
     drv.data_toggle[5] = true;
+    drv.data_toggle[6] = true;
 
     // deconfigure (configuration = 0)
     drv.handleSetup(&.{
@@ -187,6 +190,7 @@ test "SET_CONFIGURATION deconfigure resets EP4-EP5 data toggle" {
     try testing.expectEqual(DeviceState.addressed, drv.state);
     try testing.expectEqual(false, drv.data_toggle[4]);
     try testing.expectEqual(false, drv.data_toggle[5]);
+    try testing.expectEqual(false, drv.data_toggle[6]);
 }
 
 // ============================================================
