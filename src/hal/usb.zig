@@ -2317,85 +2317,6 @@ test "GET_STATUS returns 2-byte zero status" {
     try testing.expectEqual(@as(u8, 0), drv.ep0_reply_buf[1]);
 }
 
-test "SET_FEATURE DEVICE_REMOTE_WAKEUP enables remote wakeup" {
-    var drv = UsbDriver{};
-    drv.init();
-    drv.state = .configured;
-    try testing.expect(!drv.remote_wakeup_enabled);
-    drv.handleSetup(&.{
-        .bmRequestType = 0x00,
-        .bRequest = Request.SET_FEATURE,
-        .wValue = 1,
-        .wIndex = 0,
-        .wLength = 0,
-    });
-    try testing.expect(drv.remote_wakeup_enabled);
-}
-
-test "CLEAR_FEATURE DEVICE_REMOTE_WAKEUP disables remote wakeup" {
-    var drv = UsbDriver{};
-    drv.init();
-    drv.state = .configured;
-    drv.remote_wakeup_enabled = true;
-    drv.handleSetup(&.{
-        .bmRequestType = 0x00,
-        .bRequest = Request.CLEAR_FEATURE,
-        .wValue = 1,
-        .wIndex = 0,
-        .wLength = 0,
-    });
-    try testing.expect(!drv.remote_wakeup_enabled);
-}
-
-test "GET_STATUS reflects remote wakeup state" {
-    var drv = UsbDriver{};
-    drv.init();
-    drv.state = .configured;
-    drv.handleSetup(&.{
-        .bmRequestType = 0x80,
-        .bRequest = Request.GET_STATUS,
-        .wValue = 0,
-        .wIndex = 0,
-        .wLength = 2,
-    });
-    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
-    drv.remote_wakeup_enabled = true;
-    drv.data_toggle[0] = false;
-    drv.handleSetup(&.{
-        .bmRequestType = 0x80,
-        .bRequest = Request.GET_STATUS,
-        .wValue = 0,
-        .wIndex = 0,
-        .wLength = 2,
-    });
-    try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
-}
-
-test "GET_STATUS for non-Device recipient does not set remote wakeup bit" {
-    var drv = UsbDriver{};
-    drv.init();
-    drv.state = .configured;
-    drv.remote_wakeup_enabled = true;
-    // Interface recipient (bmRequestType & 0x1F == 1)
-    drv.handleSetup(&.{
-        .bmRequestType = 0x81,
-        .bRequest = Request.GET_STATUS,
-        .wValue = 0,
-        .wIndex = 0,
-        .wLength = 2,
-    });
-    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
-}
-
-test "BUS_RESET clears remote_wakeup_enabled" {
-    var drv = UsbDriver{};
-    drv.init();
-    drv.state = .configured;
-    drv.remote_wakeup_enabled = true;
-    drv.handleBusReset();
-    try testing.expect(!drv.remote_wakeup_enabled);
-}
-
 test "GET_STATUS clamps to wLength" {
     var drv = UsbDriver{};
     drv.init();
@@ -2605,6 +2526,22 @@ test "GET_STATUS reflects remote wakeup state" {
         .wLength = 2,
     });
     try testing.expectEqual(@as(u8, 0x02), drv.ep0_reply_buf[0]);
+}
+
+test "GET_STATUS for non-Device recipient does not set remote wakeup bit" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.remote_wakeup_enabled = true;
+    // Interface recipient (bmRequestType & 0x1F == 1)
+    drv.handleSetup(&.{
+        .bmRequestType = 0x81,
+        .bRequest = Request.GET_STATUS,
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    });
+    try testing.expectEqual(@as(u8, 0x00), drv.ep0_reply_buf[0]);
 }
 
 test "BUS_RESET clears remote_wakeup_enabled" {
