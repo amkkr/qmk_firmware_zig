@@ -184,8 +184,9 @@ pub const startup = if (is_freestanding) struct {
         var last_heartbeat: u32 = timer.read32();
         var prev_matrix: [kb_mod.rows]u32 = .{0} ** kb_mod.rows;
 
-        // USB_SUSPEND_WAKEUP_DELAY: C版と同等のレース条件対策遅延（200ms）
-        const USB_SUSPEND_WAKEUP_DELAY: u32 = 200;
+        // USB_SUSPEND_WAKEUP_DELAY: C版と同等のレース条件対策遅延
+        // remoteWakeup() 内の K-state 15ms + 185ms = 合計 200ms（C版相当）
+        const USB_SUSPEND_WAKEUP_DELAY: u32 = 185;
 
         // メインループ
         while (true) {
@@ -202,7 +203,7 @@ pub const startup = if (is_freestanding) struct {
                         break;
                     }
                 }
-                if (any_key_pressed) {
+                if (any_key_pressed and usb_driver.remote_wakeup_enabled) {
                     usb_driver.remoteWakeup();
                     timer.waitMs(USB_SUSPEND_WAKEUP_DELAY);
                 } else {
