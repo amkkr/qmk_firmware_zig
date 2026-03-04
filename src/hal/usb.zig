@@ -86,7 +86,11 @@ pub const UsbEventQueue = struct {
         if (next_head == self.readTail()) {
             return false; // Queue full
         }
-        self.buf[h] = event;
+        if (is_freestanding) {
+            @as(*volatile UsbEvent, @ptrCast(&self.buf[h])).* = event;
+        } else {
+            self.buf[h] = event;
+        }
         self.writeHead(next_head);
         return true;
     }
@@ -98,7 +102,10 @@ pub const UsbEventQueue = struct {
         if (t == self.readHead()) {
             return null; // Queue empty
         }
-        const event = self.buf[t];
+        const event = if (is_freestanding)
+            @as(*volatile UsbEvent, @ptrCast(&self.buf[t])).*
+        else
+            self.buf[t];
         self.writeTail((t +% 1) & MASK);
         return event;
     }
@@ -124,27 +131,33 @@ pub const UsbEventQueue = struct {
 pub var event_queue: UsbEventQueue = .{};
 
 /// USBCTRL_IRQ handler (IRQ5). Registered in the vector table.
-/// Reads INTS → enqueues events → clears BUS_RESET in SIE_STATUS.
-/// SETUP_REC and BUFF_STATUS are deferred to task() handlers because:
-///   - SETUP_REC must be cleared after reading the DPRAM setup packet
-///   - BUFF_STATUS must be cleared by reading its register in handleBuffStatus()
+/// Reads INTS → enqueues events → masks level-triggered sources in INTE.
+///
+/// SETUP_REQ and BUFF_STATUS are level-triggered: they remain asserted as long as
+/// the underlying status register is non-zero. To prevent ISR re-entry before task()
+/// clears the cause, we mask them in INTE. task() handlers re-enable after clearing.
+/// BUS_RESET is edge-triggered (cleared by W1C to SIE_STATUS) and safe to clear here.
 pub fn usbctrlIrqHandler() callconv(.c) void {
     if (is_freestanding) {
         const ints = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTS)).*;
+        const inte = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE));
 
         if (ints & IntBit.BUS_RESET != 0) {
             _ = event_queue.enqueue(.bus_reset);
             // Clear BUS_RESET in SIE_STATUS (W1C) — safe to clear immediately
-            const sie_status = @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS));
-            sie_status.* = SieStatus.BUS_RESET;
+            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.SIE_STATUS)).* = SieStatus.BUS_RESET;
         }
         if (ints & IntBit.SETUP_REQ != 0) {
+            // Mask SETUP_REQ to prevent re-firing (level-triggered).
+            // Re-enabled in handleSetupFromHw() after clearing SIE_STATUS.SETUP_REC.
+            inte.* &= ~IntBit.SETUP_REQ;
             _ = event_queue.enqueue(.setup_req);
-            // SETUP_REC: cleared in handleSetupFromHw() after reading DPRAM
         }
         if (ints & IntBit.BUFF_STATUS != 0) {
+            // Mask BUFF_STATUS to prevent re-firing (level-triggered).
+            // Re-enabled in handleBuffStatus() after draining BUFF_STATUS register.
+            inte.* &= ~IntBit.BUFF_STATUS;
             _ = event_queue.enqueue(.buff_status);
-            // BUFF_STATUS: cleared in handleBuffStatus() by reading the register
         }
     }
 }
@@ -961,6 +974,9 @@ pub const UsbDriver = struct {
 
             // Re-arm EP0 OUT to receive the next SETUP/OUT packet
             self.hwPrepareEp0Out();
+
+            // Re-enable SETUP_REQ interrupt (masked by ISR to prevent level-triggered re-firing)
+            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE)).* |= IntBit.SETUP_REQ;
         } else {
             if (self.mock_setup_packet) |*pkt| {
                 self.handleSetup(pkt);
@@ -1008,6 +1024,11 @@ pub const UsbDriver = struct {
 
         if ((status & BUFF_STATUS_EP0_OUT) != 0) {
             self.handleEp0OutData();
+        }
+
+        if (is_freestanding) {
+            // Re-enable BUFF_STATUS interrupt (masked by ISR to prevent level-triggered re-firing)
+            @as(*volatile u32, @ptrFromInt(USBCTRL_REGS_BASE + Reg.INTE)).* |= IntBit.BUFF_STATUS;
         }
     }
 
