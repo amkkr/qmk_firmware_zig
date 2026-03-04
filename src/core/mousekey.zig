@@ -349,6 +349,8 @@ const MockMouseDriver = struct {
         self.keyboard_count += 1;
     }
 
+    pub fn sendNkro(_: *MockMouseDriver, _: report_mod.NkroReport) void {}
+
     pub fn sendMouse(self: *MockMouseDriver, r: MouseReport) void {
         self.mouse_count += 1;
         self.last_mouse = r;

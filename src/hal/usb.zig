@@ -229,10 +229,14 @@ pub const DPRAM = struct {
     pub const EP0_BUF: u32 = 0x100; // ep0_buf_a: EP0 data stage buffer (IN/OUT shared)
     pub const EP0_OUT_BUF: u32 = 0x140;
     pub const EP_BUF_BASE: u32 = 0x180;
-    // EP1: 0x180, EP2: 0x1C0, EP3: 0x200 (existing HID endpoints)
-    pub const EP4_BUF: u32 = 0x240; // CDC notification IN
-    pub const EP5_IN_BUF: u32 = 0x280; // CDC data IN
-    pub const EP5_OUT_BUF: u32 = 0x2C0; // CDC data OUT
+    // EP1: 0x180, EP2: 0x1C0, EP3: 0x200 (HID endpoints)
+    // EP4: 0x240 (NKRO IN, 32 bytes used, 64 allocated)
+    pub const EP4_BUF: u32 = 0x240; // NKRO IN
+    // EP5: 0x280 (CDC notification IN)
+    pub const EP5_BUF: u32 = 0x280; // CDC notification IN
+    // EP6: CDC data IN/OUT
+    pub const EP6_IN_BUF: u32 = 0x2C0; // CDC data IN
+    pub const EP6_OUT_BUF: u32 = 0x300; // CDC data OUT
 };
 
 /// Buffer control bits
@@ -335,8 +339,8 @@ pub const UsbDriver = struct {
     mouse_protocol: HidProtocol = .report,
     keyboard_idle: u8 = 0,
     keyboard_leds: u8 = 0,
-    /// Data toggle tracking per endpoint (IN): EP0-EP5
-    data_toggle: [6]bool = .{ false, false, false, false, false, false },
+    /// Data toggle tracking per endpoint (IN): EP0-EP6
+    data_toggle: [7]bool = .{ false, false, false, false, false, false, false },
     /// EP0 IN multi-packet transfer state
     ep0_in_data: ?[]const u8 = null,
     ep0_in_offset: u16 = 0,
@@ -383,7 +387,7 @@ pub const UsbDriver = struct {
         self.mouse_protocol = .report;
         self.keyboard_idle = 0;
         self.keyboard_leds = 0;
-        self.data_toggle = .{ false, false, false, false, false, false };
+        self.data_toggle = .{ false, false, false, false, false, false, false };
         self.ep0_in_data = null;
         self.ep0_in_offset = 0;
         self.ep0_in_total_len = 0;
@@ -424,7 +428,7 @@ pub const UsbDriver = struct {
         self.address = 0;
         self.configuration = 0;
         self.state = .disconnected;
-        self.data_toggle = .{ false, false, false, false, false, false };
+        self.data_toggle = .{ false, false, false, false, false, false, false };
         self.pending_address = null;
         self.ep0_out_pending = .none;
         self.ep0_in_data = null;
@@ -515,6 +519,16 @@ pub const UsbDriver = struct {
         );
     }
 
+    /// Send an NKRO report
+    /// C版 usb_main.c の send_nkro() に相当。
+    pub fn sendNkro(self: *UsbDriver, r: report.NkroReport) void {
+        if (!self.isConfigured()) return;
+        self.sendEndpoint(
+            usb_descriptors.NKRO_ENDPOINT,
+            std.mem.asBytes(&r),
+        );
+    }
+
     /// Process pending USB events from the event queue and dispatch handlers.
     /// On freestanding, events are enqueued by usbctrlIrqHandler (ISR).
     /// On test builds, mock_ints is converted to events for compatibility.
@@ -560,7 +574,7 @@ pub const UsbDriver = struct {
         self.address = 0;
         self.configuration = 0;
         self.state = .default_state;
-        self.data_toggle = .{ false, false, false, false, false, false };
+        self.data_toggle = .{ false, false, false, false, false, false, false };
         self.pending_address = null;
         self.ep0_out_pending = .none;
         self.remote_wakeup_enabled = false;
@@ -617,13 +631,14 @@ pub const UsbDriver = struct {
             },
             Request.SET_CONFIGURATION => {
                 self.configuration = @truncate(setup.wValue);
-                // Reset data toggle for EP1-EP5 to DATA0 (USB 2.0 spec §9.4.7:
+                // Reset data toggle for EP1-EP6 to DATA0 (USB 2.0 spec §9.4.7:
                 // data toggle bits for all endpoints shall be reset on SET_CONFIGURATION)
                 self.data_toggle[1] = false;
                 self.data_toggle[2] = false;
                 self.data_toggle[3] = false;
                 self.data_toggle[4] = false;
                 self.data_toggle[5] = false;
+                self.data_toggle[6] = false;
                 if (self.configuration > 0) {
                     self.state = .configured;
                     if (is_freestanding) {
@@ -799,7 +814,7 @@ pub const UsbDriver = struct {
         std.fmt.format(writer, fmt, args) catch {};
     }
 
-    /// Flush CDC TX ring buffer to EP5 IN
+    /// Flush CDC TX ring buffer to EP6 IN
     pub fn cdcFlush(self: *UsbDriver) void {
         if (self.cdc_tx_head == self.cdc_tx_tail) return;
 
@@ -860,6 +875,7 @@ pub const UsbDriver = struct {
                     usb_descriptors.KEYBOARD_INTERFACE => &usb_descriptors.keyboard_hid_descriptor,
                     usb_descriptors.MOUSE_INTERFACE => &usb_descriptors.mouse_hid_descriptor,
                     usb_descriptors.EXTRA_INTERFACE => &usb_descriptors.extra_hid_descriptor,
+                    usb_descriptors.NKRO_INTERFACE => &usb_descriptors.nkro_hid_descriptor,
                     else => null,
                 };
             },
@@ -869,6 +885,7 @@ pub const UsbDriver = struct {
                     usb_descriptors.KEYBOARD_INTERFACE => &usb_descriptors.keyboard_report_descriptor,
                     usb_descriptors.MOUSE_INTERFACE => &usb_descriptors.mouse_report_descriptor,
                     usb_descriptors.EXTRA_INTERFACE => &usb_descriptors.extra_report_descriptor,
+                    usb_descriptors.NKRO_INTERFACE => &usb_descriptors.nkro_report_descriptor,
                     else => null,
                 };
             },
@@ -1163,12 +1180,12 @@ pub const UsbDriver = struct {
         addr_endp.* = addr;
     }
 
-    /// Configure EP1-EP5 endpoint control registers in DPRAM.
+    /// Configure EP1-EP6 endpoint control registers in DPRAM.
     /// Called on SET_CONFIGURATION when configuration > 0.
     /// Sets endpoint type, buffer address, and interrupt-per-buffer for each endpoint.
     fn hwConfigureEndpoints(self: *UsbDriver) void {
         _ = self;
-        // EP1-EP3: HID Interrupt IN endpoints
+        // EP1-EP3: HID Interrupt IN endpoints (keyboard, mouse, extra)
         const hid_endpoints = [_]u8{
             usb_descriptors.KEYBOARD_ENDPOINT,
             usb_descriptors.MOUSE_ENDPOINT,
@@ -1185,9 +1202,9 @@ pub const UsbDriver = struct {
                 (buf_offset & EpCtrl.BUFFER_ADDRESS_MASK);
         }
 
-        // EP4: CDC Notification IN (Interrupt)
+        // EP4: NKRO IN (Interrupt)
         {
-            const ep4 = usb_descriptors.CDC_NOTIFICATION_ENDPOINT;
+            const ep4 = usb_descriptors.NKRO_ENDPOINT;
             const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep4) - 1) * 8;
             const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
             ctrl_reg.* = EpCtrl.ENABLE |
@@ -1196,26 +1213,37 @@ pub const UsbDriver = struct {
                 (DPRAM.EP4_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
         }
 
-        // EP5 IN: CDC Data IN (Bulk)
+        // EP5: CDC Notification IN (Interrupt)
         {
-            const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
+            const ep5 = usb_descriptors.CDC_NOTIFICATION_ENDPOINT;
             const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep5) - 1) * 8;
             const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
             ctrl_reg.* = EpCtrl.ENABLE |
                 EpCtrl.INTERRUPT_PER_BUFF |
-                EpCtrl.EP_TYPE_BULK |
-                (DPRAM.EP5_IN_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
+                EpCtrl.EP_TYPE_INTERRUPT |
+                (DPRAM.EP5_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
         }
 
-        // EP5 OUT: CDC Data OUT (Bulk)
+        // EP6 IN: CDC Data IN (Bulk)
         {
-            const ep5 = usb_descriptors.CDC_DATA_ENDPOINT;
-            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_OUT_CTRL_BASE + (@as(u32, ep5) - 1) * 8;
+            const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_IN_CTRL_BASE + (@as(u32, ep6) - 1) * 8;
             const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
             ctrl_reg.* = EpCtrl.ENABLE |
                 EpCtrl.INTERRUPT_PER_BUFF |
                 EpCtrl.EP_TYPE_BULK |
-                (DPRAM.EP5_OUT_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
+                (DPRAM.EP6_IN_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
+        }
+
+        // EP6 OUT: CDC Data OUT (Bulk)
+        {
+            const ep6 = usb_descriptors.CDC_DATA_ENDPOINT;
+            const ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_OUT_CTRL_BASE + (@as(u32, ep6) - 1) * 8;
+            const ctrl_reg = @as(*volatile u32, @ptrFromInt(ctrl_addr));
+            ctrl_reg.* = EpCtrl.ENABLE |
+                EpCtrl.INTERRUPT_PER_BUFF |
+                EpCtrl.EP_TYPE_BULK |
+                (DPRAM.EP6_OUT_BUF & EpCtrl.BUFFER_ADDRESS_MASK);
         }
     }
 
@@ -1254,7 +1282,7 @@ pub const UsbDriver = struct {
         buf_ctrl.* = ctrl;
     }
 
-    /// Send data on CDC Data IN endpoint (EP5)
+    /// Send data on CDC Data IN endpoint (EP6)
     fn hwSendCdcData(self: *UsbDriver, data: []const u8) void {
         const ep: u8 = usb_descriptors.CDC_DATA_ENDPOINT;
         const buf_ctrl_addr = USBCTRL_DPRAM_BASE + DPRAM.EP_BUF_CTRL_BASE + @as(u32, ep) * 8;
@@ -1262,7 +1290,7 @@ pub const UsbDriver = struct {
 
         // Caller (cdcFlush) guarantees AVAILABLE=0 before calling this function.
 
-        const buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP5_IN_BUF));
+        const buf = @as([*]volatile u8, @ptrFromInt(USBCTRL_DPRAM_BASE + DPRAM.EP6_IN_BUF));
         const len = @min(data.len, 64);
 
         for (data[0..len], 0..) |byte, i| {
@@ -1497,7 +1525,7 @@ test "UsbDriver handleBusReset resets state" {
     try testing.expectEqual(@as(u8, 1), drv.configuration);
 
     // Simulate some data toggle activity
-    drv.data_toggle = .{ true, false, true, false, false, false };
+    drv.data_toggle = .{ true, false, true, false, false, false, false };
 
     // Bus reset
     drv.handleBusReset();
@@ -1505,7 +1533,7 @@ test "UsbDriver handleBusReset resets state" {
     try testing.expectEqual(DeviceState.default_state, drv.state);
     try testing.expectEqual(@as(u8, 0), drv.address);
     try testing.expectEqual(@as(u8, 0), drv.configuration);
-    try testing.expectEqual([6]bool{ false, false, false, false, false, false }, drv.data_toggle);
+    try testing.expectEqual([7]bool{ false, false, false, false, false, false, false }, drv.data_toggle);
 }
 
 test "UsbDriver task dispatches BUS_RESET" {
@@ -2307,14 +2335,18 @@ test "handleBusReset clears CDC TX buffer" {
     try testing.expectEqual(@as(u8, 0), drv.cdc_tx_tail);
 }
 
-test "EP4/EP5 DPRAM buffer offsets" {
+test "EP4/EP5/EP6 DPRAM buffer offsets" {
     try testing.expectEqual(@as(u32, 0x240), DPRAM.EP4_BUF);
-    try testing.expectEqual(@as(u32, 0x280), DPRAM.EP5_IN_BUF);
-    try testing.expectEqual(@as(u32, 0x2C0), DPRAM.EP5_OUT_BUF);
-    // No overlap with EP3 buffer (EP3 at 0x200, 64 bytes -> 0x240)
+    try testing.expectEqual(@as(u32, 0x280), DPRAM.EP5_BUF);
+    try testing.expectEqual(@as(u32, 0x2C0), DPRAM.EP6_IN_BUF);
+    try testing.expectEqual(@as(u32, 0x300), DPRAM.EP6_OUT_BUF);
+    // No overlap: EP3 at 0x200 (64 bytes) -> EP4 at 0x240
     try testing.expect(DPRAM.EP4_BUF >= DPRAM.EP_BUF_BASE + 3 * 64);
-    try testing.expect(DPRAM.EP5_IN_BUF >= DPRAM.EP4_BUF + 64);
-    try testing.expect(DPRAM.EP5_OUT_BUF >= DPRAM.EP5_IN_BUF + 64);
+    try testing.expect(DPRAM.EP5_BUF >= DPRAM.EP4_BUF + 64);
+    try testing.expect(DPRAM.EP6_IN_BUF >= DPRAM.EP5_BUF + 64);
+    try testing.expect(DPRAM.EP6_OUT_BUF >= DPRAM.EP6_IN_BUF + 64);
+    // Ensure all buffers fit within 4KB DPRAM
+    try testing.expect(DPRAM.EP6_OUT_BUF + 64 <= 0x1000);
 }
 
 test "EpCtrl bulk type value" {
@@ -2846,7 +2878,7 @@ test "restart resets driver state and transitions to attached" {
     drv.configuration = 1;
     drv.keyboard_leds = 0x07;
     drv.remote_wakeup_enabled = true;
-    drv.data_toggle = .{ true, true, false, true, false, true };
+    drv.data_toggle = .{ true, true, false, true, false, true, false };
     drv.pending_address = 3;
     drv.cdc_tx_head = 10;
     drv.cdc_tx_tail = 5;
