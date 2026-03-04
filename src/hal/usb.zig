@@ -268,14 +268,19 @@ pub const UsbDriver = struct {
             sie_ctrl.* = SieCtrl.EP0_INT_1BUF;
         }
 
-        // Reset driver state (same as bus reset)
+        // Reset driver state (same as bus reset + protocol reset)
         self.address = 0;
         self.configuration = 0;
         self.state = .disconnected;
         self.data_toggle = .{ false, false, false, false, false, false };
         self.pending_address = null;
         self.ep0_out_pending = .none;
+        self.ep0_in_data = null;
+        self.ep0_in_offset = 0;
+        self.ep0_in_total_len = 0;
         self.remote_wakeup_enabled = false;
+        self.keyboard_protocol = .report;
+        self.mouse_protocol = .report;
         self.cdc_tx_head = 0;
         self.cdc_tx_tail = 0;
         self.keyboard_leds = 0;
@@ -2676,6 +2681,11 @@ test "restart resets driver state and transitions to attached" {
     drv.pending_address = 3;
     drv.cdc_tx_head = 10;
     drv.cdc_tx_tail = 5;
+    drv.ep0_in_data = &drv.ep0_reply_buf;
+    drv.ep0_in_offset = 8;
+    drv.ep0_in_total_len = 16;
+    drv.keyboard_protocol = .boot;
+    drv.mouse_protocol = .boot;
 
     drv.restart();
 
@@ -2686,6 +2696,11 @@ test "restart resets driver state and transitions to attached" {
     try testing.expect(!drv.remote_wakeup_enabled);
     try testing.expectEqual(@as(?u8, null), drv.pending_address);
     try testing.expectEqual(Ep0OutPending.none, drv.ep0_out_pending);
+    try testing.expect(drv.ep0_in_data == null);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_offset);
+    try testing.expectEqual(@as(u16, 0), drv.ep0_in_total_len);
+    try testing.expectEqual(HidProtocol.report, drv.keyboard_protocol);
+    try testing.expectEqual(HidProtocol.report, drv.mouse_protocol);
     try testing.expectEqual(@as(u8, 0), drv.cdc_tx_head);
     try testing.expectEqual(@as(u8, 0), drv.cdc_tx_tail);
     for (drv.data_toggle) |dt| {
