@@ -1149,6 +1149,11 @@ pub const UsbDriver = struct {
         // C版 (ChibiOS): reset_ep0() sets next_pid = 1 for both IN and OUT.
         self.data_toggle[0] = true;
 
+        // Reset ZLP flag: if the host sends a new SETUP before the previous
+        // STATUS stage completes (e.g. timeout retry), the stale flag from a
+        // prior GET_DESCRIPTOR could cause a spurious ZLP on the next transfer.
+        self.ep0_in_needs_zlp = false;
+
         if (is_freestanding) {
             // Read setup packet from DPRAM first (volatile: USB controller writes asynchronously)
             // Per RP2040 TRM: read the 8-byte setup packet, then clear SETUP_REC
@@ -3331,6 +3336,29 @@ test "restart resets ep0_in_needs_zlp" {
 
     drv.restart();
 
+    try testing.expect(!drv.ep0_in_needs_zlp);
+}
+
+test "handleSetupFromHw resets ep0_in_needs_zlp" {
+    var drv = UsbDriver{};
+    drv.init();
+    drv.state = .configured;
+    drv.configuration = 1;
+
+    // Simulate stale ZLP flag from a prior GET_DESCRIPTOR
+    drv.ep0_in_needs_zlp = true;
+
+    // Send a new SETUP request (GET_STATUS) via handleSetupFromHw
+    drv.mock_setup_packet = .{
+        .bmRequestType = 0x80, // Device-to-Host, Standard, Device
+        .bRequest = 0x00, // GET_STATUS
+        .wValue = 0,
+        .wIndex = 0,
+        .wLength = 2,
+    };
+    drv.handleSetupFromHw();
+
+    // The stale ZLP flag must have been cleared
     try testing.expect(!drv.ep0_in_needs_zlp);
 }
 
