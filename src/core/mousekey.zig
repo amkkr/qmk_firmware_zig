@@ -292,8 +292,10 @@ fn wheelUnitKinetic() u8 {
     } else if (mousekey_accel & (1 << 2) != 0) {
         speed = kinetic_speed_config.wheel_accelerated_movements;
     } else if (mousekey_wheel_repeat != 0 and mouse_timer != 0) {
-        const initial_interval: u32 = 1000 / @as(u32, kinetic_speed_config.wheel_initial_movements);
-        if (kinetic_wheel_interval != @as(u16, @intCast(initial_interval))) {
+        // C版 upstream と同様に kinetic_wheel_interval を wheel_base_movements と比較する。
+        // initial_interval と比較すると、最初の呼び出し後に interval が initial_interval と等しくなり、
+        // 以降の加速計算が常にスキップされてしまう不具合を修正。
+        if (kinetic_wheel_interval != kinetic_speed_config.wheel_base_movements) {
             const time_elapsed: u32 = @as(u32, timer.elapsed(mouse_timer)) / 50;
             speed = @as(u32, kinetic_speed_config.wheel_initial_movements) +
                 1 * time_elapsed +
@@ -311,6 +313,7 @@ fn wheelUnitKinetic() u8 {
 }
 
 /// 慣性モードの移動速度計算（軸ごと）
+/// 純粋な計算関数。mousekey_frame の更新は呼び出し側（onInertia / taskInertia）で行う。
 fn moveUnitInertia(axis: u1) i8 {
     var unit: i16 = undefined;
 
@@ -319,7 +322,7 @@ fn moveUnitInertia(axis: u1) i8 {
 
     if (mousekey_frame < 2) {
         // 初回フレーム: 初期キー押下で1ピクセル移動
-        mousekey_frame = 1;
+        // mousekey_frame のセットは呼び出し側（onInertia）が担う
         unit = @as(i16, dir) * @as(i16, inertia_config.move_delta);
     } else {
         // 二次関数的加速: percent = (inertia / time_to_max)^2
@@ -514,6 +517,7 @@ pub fn clear() void {
     last_timer_w = 0;
     // kinetic_speed 状態
     mouse_timer = 0;
+    kinetic_wheel_interval = 0;
     // inertia 状態
     mousekey_frame = 0;
     mousekey_x_dir = 0;
@@ -750,9 +754,6 @@ fn onThreeSpeed(c: u8) void {
 }
 
 fn offThreeSpeed(c: u8) void {
-    const old_speed = if (three_speed_config.momentary_accel) mk_speed else @as(u8, 0);
-    _ = old_speed; // momentary_accel 処理で使用
-
     if (c == @as(u8, @truncate(KC.MS_UP)) and mouse_report.y < 0) {
         mouse_report.y = 0;
     } else if (c == @as(u8, @truncate(KC.MS_DOWN)) and mouse_report.y > 0) {
@@ -815,10 +816,18 @@ fn onInertia(c: u8) void {
     // カーソルキー: 方向を設定し、初回フレームの移動量を計算
     if (c == @as(u8, @truncate(KC.MS_UP)) or c == @as(u8, @truncate(KC.MS_DOWN))) {
         mousekey_y_dir = if (c == @as(u8, @truncate(KC.MS_DOWN))) @as(i8, 1) else @as(i8, -1);
-        if (mousekey_frame < 2) mouse_report.y = moveUnitInertia(1);
+        if (mousekey_frame < 2) {
+            // moveUnitInertia の副作用を排除し、ここで明示的にフレームを初期化する
+            mousekey_frame = 1;
+            mouse_report.y = moveUnitInertia(1);
+        }
     } else if (c == @as(u8, @truncate(KC.MS_LEFT)) or c == @as(u8, @truncate(KC.MS_RIGHT))) {
         mousekey_x_dir = if (c == @as(u8, @truncate(KC.MS_RIGHT))) @as(i8, 1) else @as(i8, -1);
-        if (mousekey_frame < 2) mouse_report.x = moveUnitInertia(0);
+        if (mousekey_frame < 2) {
+            // moveUnitInertia の副作用を排除し、ここで明示的にフレームを初期化する
+            mousekey_frame = 1;
+            mouse_report.x = moveUnitInertia(0);
+        }
     }
     // ホイール・ボタン・アクセルはデフォルトモードと共通
     else if (c == @as(u8, @truncate(KC.MS_WH_UP))) {
@@ -1705,6 +1714,37 @@ test "kinetic_speed - ホイール動作" {
     send();
     // ホイールは常に unit=1 を返す
     try testing.expectEqual(@as(i8, 1), mock.last_mouse.v);
+
+    off(KC.MS_WH_UP);
+}
+
+test "kinetic_speed - ホイール kinetic 加速で kinetic_wheel_interval が変化する" {
+    // 修正前バグ: kinetic_wheel_interval を initial_interval と比較すると
+    // 1回目の呼び出し後に等しくなり、加速計算が永遠にスキップされた。
+    // 修正後: wheel_base_movements と比較するため、常に加速計算が実行される。
+    _ = setupTest();
+    defer teardownTest();
+
+    // タイマーを 0 以外にしておく（mouse_timer との区別のため）
+    timer.mockAdvance(10);
+
+    setAccelMode(.kinetic_speed);
+    on(KC.MS_WH_UP);
+    send();
+    // 初回送信後: kinetic_wheel_interval = 1000 / wheel_initial_movements = 1000 / 16 = 62
+    const interval_after_first = getKineticWheelInterval();
+    try testing.expectEqual(@as(u16, 62), interval_after_first);
+
+    // ホイールインターバル(62ms)を超える時間を進めて task() を実行し、リピートを発生させる。
+    // last_timer_w は send() 呼び出し時(10ms)に記録される。
+    // 経過時間 = 10 + 70 - 10 = 70ms > 62ms → リピート発生。
+    // mouse_timer からの経過: 70ms, time_elapsed = 70/50 = 1
+    // speed = 16 + 1*1 + (1*1*1)/2 = 17 → interval = 1000/17 = 58 < 62
+    timer.mockAdvance(70);
+    task();
+
+    const interval_after_repeat = getKineticWheelInterval();
+    try testing.expect(interval_after_repeat < interval_after_first);
 
     off(KC.MS_WH_UP);
 }
