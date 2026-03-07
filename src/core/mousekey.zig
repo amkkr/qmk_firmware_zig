@@ -81,7 +81,7 @@ pub const Config = struct {
 /// 3段階速度切替モードの設定（MK_3_SPEED 相当）
 pub const ThreeSpeedConfig = struct {
     /// 速度レベルごとのカーソル移動オフセット [unmod, speed0, speed1, speed2]
-    c_offsets: [4]u16 = .{ 16, 1, 4, 32 },
+    c_offsets: [4]u16 = .{ 16, 16, 4, 32 },
     /// 速度レベルごとのカーソル移動間隔（ms）[unmod, speed0, speed1, speed2]
     c_intervals: [4]u16 = .{ 16, 32, 16, 16 },
     /// 速度レベルごとのホイール移動オフセット [unmod, speed0, speed1, speed2]
@@ -1522,11 +1522,11 @@ test "three_speed - ACCEL0 で slow 速度" {
     defer teardownTest();
 
     setAccelMode(.three_speed);
-    // ACCEL0 → speed0, c_offset = 1
+    // ACCEL0 → speed0, c_offset = 16 (upstream MK_C_OFFSET_0 と同値)
     on(KC.MS_ACCEL0);
     on(KC.MS_RIGHT);
     send();
-    try testing.expectEqual(@as(i8, 1), mock.last_mouse.x);
+    try testing.expectEqual(@as(i8, 16), mock.last_mouse.x);
 
     off(KC.MS_ACCEL0);
     off(KC.MS_RIGHT);
@@ -1898,6 +1898,14 @@ test "inertia - キーリリース後も慣性で移動継続" {
     task();
     try testing.expect(mousekey_x_inertia > 0);
 
+    // さらにフレームを進行させて慣性を十分に蓄積
+    var i: u32 = 0;
+    while (i < 10) : (i += 1) {
+        timer.mockAdvance(17);
+        task();
+    }
+    try testing.expect(mousekey_x_inertia > 0);
+
     // キーリリース（方向はクリアされるが慣性は残る）
     off(KC.MS_RIGHT);
     try testing.expectEqual(@as(i8, 0), mousekey_x_dir);
@@ -1907,8 +1915,8 @@ test "inertia - キーリリース後も慣性で移動継続" {
     timer.mockAdvance(17);
     const count_before = mock.mouse_count;
     task();
-    // 慣性が残っているのでまだ動く可能性がある
-    _ = count_before;
+    // 慣性が残っているのでキーリリース後もレポートが送信される
+    try testing.expect(mock.mouse_count > count_before);
 }
 
 test "inertia - ボタン操作" {
