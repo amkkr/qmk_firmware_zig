@@ -34,6 +34,11 @@ const EECONFIG_DEFAULT_LAYER_ADDR: u16 = 3;
 /// EEPROM keymap_config のアドレス（C版 EECONFIG_KEYMAP に相当）
 pub const EECONFIG_KEYMAP_ADDR: u16 = 4;
 
+/// EEPROM handedness のアドレス（C版 eeprom_core_t.handedness に相当、offset 14）
+/// スプリットキーボードの左右判定に使用。
+/// 値: 1 = 左手側, 0 = 右手側（C版 eeconfig_update_handedness(bool) 互換）
+pub const EECONFIG_HANDEDNESS_ADDR: u16 = 14;
+
 /// EEPROM magic number（有効な設定が書き込まれていることを示す）
 const EECONFIG_MAGIC_NUMBER: u16 = 0xFEED;
 
@@ -81,6 +86,34 @@ pub fn updateKeymap(raw: u16) void {
 }
 
 // ============================================================
+// Handedness EEPROM API
+// upstream の eeconfig_read_handedness() / eeconfig_update_handedness() に相当
+// スプリットキーボードの左右ハンド判定（EE_HANDS）で使用
+// ============================================================
+
+/// Handedness（左右判定）の値定義
+pub const Handedness = enum(u8) {
+    right = 0,
+    left = 1,
+};
+
+/// EEPROMから handedness を読み出す。
+/// upstream の eeconfig_read_handedness() に相当。
+/// 戻り値: true = 左手側, false = 右手側（C版互換）。
+/// EEPROM未初期化時（0xFF）は false（右手側）を返す。
+pub fn readHandedness() bool {
+    return eeprom.readByte(EECONFIG_HANDEDNESS_ADDR) == @intFromEnum(Handedness.left);
+}
+
+/// Handedness を EEPROM に書き込む。
+/// upstream の eeconfig_update_handedness(bool) に相当。
+/// is_left: true = 左手側, false = 右手側
+pub fn updateHandedness(is_left: bool) void {
+    const value: u8 = if (is_left) @intFromEnum(Handedness.left) else @intFromEnum(Handedness.right);
+    eeprom.writeByte(EECONFIG_HANDEDNESS_ADDR, value);
+}
+
+// ============================================================
 // Tests
 // ============================================================
 
@@ -120,4 +153,37 @@ test "eeconfig: readKeymap は未有効時にデフォルト値を返す" {
     // EEPROM が無効なので 0 が返る
     try std.testing.expect(!isEnabled());
     try std.testing.expectEqual(@as(u16, 0), readKeymap());
+}
+
+test "eeconfig: updateHandedness/readHandedness ラウンドトリップ（左手側）" {
+    eeprom.mockReset();
+
+    // 左手側に設定
+    updateHandedness(true);
+    try std.testing.expect(readHandedness());
+
+    // EEPROM の raw 値が 1 であることを確認
+    try std.testing.expectEqual(@as(u8, 1), eeprom.readByte(EECONFIG_HANDEDNESS_ADDR));
+}
+
+test "eeconfig: updateHandedness/readHandedness ラウンドトリップ（右手側）" {
+    eeprom.mockReset();
+
+    // 右手側に設定
+    updateHandedness(false);
+    try std.testing.expect(!readHandedness());
+
+    // EEPROM の raw 値が 0 であることを確認
+    try std.testing.expectEqual(@as(u8, 0), eeprom.readByte(EECONFIG_HANDEDNESS_ADDR));
+}
+
+test "eeconfig: readHandedness は未初期化時に右手側（false）を返す" {
+    eeprom.mockReset();
+
+    // EEPROM 未初期化（0xFF）→ 右手側
+    try std.testing.expect(!readHandedness());
+}
+
+test "eeconfig: handedness のアドレスが C版レイアウト互換（offset 14）" {
+    try std.testing.expectEqual(@as(u16, 14), EECONFIG_HANDEDNESS_ADDR);
 }
