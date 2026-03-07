@@ -22,11 +22,31 @@ const KC = keycode.KC;
 /// C版 CAPS_WORD_IDLE_TIMEOUT のデフォルト値: 5000ms
 pub var idle_timeout: u16 = 5000;
 
+/// 左右 Shift 同時押しで Caps Word を有効化する
+/// C版 BOTH_SHIFTS_TURNS_ON_CAPS_WORD に相当
+pub var both_shifts_enable: bool = false;
+
+/// Shift ダブルタップで Caps Word を有効化する
+/// C版 DOUBLE_TAP_SHIFT_TURNS_ON_CAPS_WORD に相当
+pub var double_tap_shift_enable: bool = false;
+
+/// ダブルタップの判定時間（ミリ秒）
+pub var double_tap_shift_term: u16 = 200;
+
 /// Caps Word が有効かどうか
 var caps_word_active: bool = false;
 
 /// 最後のキー入力時刻（アイドルタイムアウト用）
 var last_key_time: u16 = 0;
+
+/// BothShifts: 現在の Shift 押下状態
+var lshift_pressed: bool = false;
+var rshift_pressed: bool = false;
+
+/// DoubleTapShift: 前回の Shift タップ時刻
+var last_shift_tap_time: u16 = 0;
+/// DoubleTapShift: 前回の Shift タップ回数
+var shift_tap_count: u8 = 0;
 
 /// Caps Word の有効/無効を取得
 pub fn isActive() bool {
@@ -128,10 +148,64 @@ pub fn checkTimeout() void {
     }
 }
 
+/// Shift キーイベントを処理して BothShifts / DoubleTapShift を検出する
+/// keyboard.zig のキーイベント処理から呼ばれる。
+/// 戻り値: true = Caps Word が有効化された
+pub fn checkShiftTrigger(kc: keycode.Keycode, pressed: bool) bool {
+    if (caps_word_active) return false;
+
+    const is_lshift = (kc == KC.LEFT_SHIFT);
+    const is_rshift = (kc == KC.RIGHT_SHIFT);
+    if (!is_lshift and !is_rshift) {
+        // Shift 以外のキー → ダブルタップカウンタをリセット
+        if (pressed) {
+            shift_tap_count = 0;
+        }
+        return false;
+    }
+
+    // BothShifts チェック
+    if (both_shifts_enable and pressed) {
+        if (is_lshift) lshift_pressed = true;
+        if (is_rshift) rshift_pressed = true;
+        if (lshift_pressed and rshift_pressed) {
+            lshift_pressed = false;
+            rshift_pressed = false;
+            shift_tap_count = 0;
+            activate();
+            return true;
+        }
+    }
+    if (!pressed) {
+        if (is_lshift) lshift_pressed = false;
+        if (is_rshift) rshift_pressed = false;
+    }
+
+    // DoubleTapShift チェック
+    if (double_tap_shift_enable) {
+        if (pressed) {
+            const now = timer.read();
+            if (shift_tap_count > 0 and timer.elapsed(last_shift_tap_time) <= double_tap_shift_term) {
+                shift_tap_count = 0;
+                activate();
+                return true;
+            }
+            shift_tap_count = 1;
+            last_shift_tap_time = now;
+        }
+    }
+
+    return false;
+}
+
 /// 状態のリセット
 pub fn reset() void {
     caps_word_active = false;
     last_key_time = 0;
+    lshift_pressed = false;
+    rshift_pressed = false;
+    last_shift_tap_time = 0;
+    shift_tap_count = 0;
 }
 
 // ============================================================
@@ -326,4 +400,129 @@ test "caps word: idle timeout 0 disables timeout" {
     timer.mockSet(60000);
     checkTimeout();
     try testing.expect(isActive());
+}
+
+// ============================================================
+// BothShifts Tests
+// ============================================================
+
+test "caps word: both shifts activates" {
+    reset();
+    host.hostReset();
+    both_shifts_enable = true;
+    defer {
+        both_shifts_enable = false;
+    }
+
+    try testing.expect(!isActive());
+
+    // LSHIFT を押す
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(!isActive());
+
+    // RSHIFT を押す → BothShifts で有効化
+    const activated = checkShiftTrigger(KC.RIGHT_SHIFT, true);
+    try testing.expect(activated);
+    try testing.expect(isActive());
+}
+
+test "caps word: both shifts disabled by default" {
+    reset();
+    host.hostReset();
+    both_shifts_enable = false;
+
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    _ = checkShiftTrigger(KC.RIGHT_SHIFT, true);
+    try testing.expect(!isActive()); // 有効化されない
+}
+
+test "caps word: both shifts order reversed" {
+    reset();
+    host.hostReset();
+    both_shifts_enable = true;
+    defer {
+        both_shifts_enable = false;
+    }
+
+    // RSHIFT → LSHIFT でも有効化
+    _ = checkShiftTrigger(KC.RIGHT_SHIFT, true);
+    const activated = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(activated);
+    try testing.expect(isActive());
+}
+
+test "caps word: both shifts does not trigger when already active" {
+    reset();
+    host.hostReset();
+    both_shifts_enable = true;
+    defer {
+        both_shifts_enable = false;
+    }
+
+    activate(); // 既に有効
+
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    const result = checkShiftTrigger(KC.RIGHT_SHIFT, true);
+    try testing.expect(!result); // 既に有効なので false
+}
+
+// ============================================================
+// DoubleTapShift Tests
+// ============================================================
+
+test "caps word: double tap shift activates" {
+    reset();
+    host.hostReset();
+    double_tap_shift_enable = true;
+    defer {
+        double_tap_shift_enable = false;
+    }
+
+    timer.mockSet(100);
+
+    // 1回目のタップ
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(!isActive());
+
+    // 2回目のタップ（200ms 以内）
+    timer.mockSet(200);
+    const activated = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(activated);
+    try testing.expect(isActive());
+}
+
+test "caps word: double tap shift timeout" {
+    reset();
+    host.hostReset();
+    double_tap_shift_enable = true;
+    defer {
+        double_tap_shift_enable = false;
+    }
+
+    timer.mockSet(100);
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+
+    // 201ms 後（タイムアウト超過）
+    timer.mockSet(301);
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(!isActive()); // タイムアウトで有効化されない
+}
+
+test "caps word: double tap shift reset by other key" {
+    reset();
+    host.hostReset();
+    double_tap_shift_enable = true;
+    defer {
+        double_tap_shift_enable = false;
+    }
+
+    timer.mockSet(100);
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+
+    // 別のキーを押す → ダブルタップカウンタリセット
+    _ = checkShiftTrigger(KC.A, true);
+
+    timer.mockSet(200);
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+    try testing.expect(!isActive()); // リセットされたので有効化されない
 }
