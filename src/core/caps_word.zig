@@ -322,7 +322,7 @@ test "caps word: idle timeout 0 disables timeout" {
     timer.mockSet(0);
     activate();
 
-    // いくら時間が経過してもタイムアウトしない（u16ラップ相当）
+    // idle_timeout = 0 のためタイムアウトが無効化されている
     timer.mockSet(60000);
     checkTimeout();
     try testing.expect(isActive());
