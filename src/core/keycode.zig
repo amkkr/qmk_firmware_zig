@@ -515,6 +515,16 @@ pub const UC_PREV: Keycode = QK_UNICODE_MODE_PREV;
 pub const QK_UNICODE: Keycode = 0x8000;
 pub const QK_UNICODE_MAX: Keycode = 0xFFFF;
 
+// Unicode Map (0x8000-0xBFFF): インデックスベースの32bitコードポイント参照
+// C版 QK_UNICODEMAP / QK_UNICODEMAP_MAX に相当
+pub const QK_UNICODEMAP: Keycode = 0x8000;
+pub const QK_UNICODEMAP_MAX: Keycode = 0xBFFF;
+
+// Unicode Map Pair (0xC000-0xFFFF): Shift対応ペア
+// C版 QK_UNICODEMAP_PAIR / QK_UNICODEMAP_PAIR_MAX に相当
+pub const QK_UNICODEMAP_PAIR: Keycode = 0xC000;
+pub const QK_UNICODEMAP_PAIR_MAX: Keycode = 0xFFFF;
+
 // ============================================================
 // Modifier bit constants
 // ============================================================
@@ -742,14 +752,53 @@ pub inline fn isUnicode(kc: Keycode) bool {
     return kc >= QK_UNICODE and kc <= QK_UNICODE_MAX;
 }
 
+/// Unicode Map キーコード範囲かどうか（0x8000-0xBFFF）
+pub inline fn isUnicodeMap(kc: Keycode) bool {
+    return kc >= QK_UNICODEMAP and kc <= QK_UNICODEMAP_MAX;
+}
+
+/// Unicode Map Pair キーコード範囲かどうか（0xC000-0xFFFF）
+pub inline fn isUnicodeMapPair(kc: Keycode) bool {
+    return kc >= QK_UNICODEMAP_PAIR and kc <= QK_UNICODEMAP_PAIR_MAX;
+}
+
 /// Unicode キーコードからコードポイントを取得する（下位15bit）
 pub inline fn unicodeGetCodePoint(kc: Keycode) u15 {
     return @truncate(kc & 0x7FFF);
 }
 
-/// コードポイントから Unicode キーコードを生成する
+/// Unicode Map キーコードからインデックスを取得する（下位14bit）
+pub inline fn unicodeMapGetIndex(kc: Keycode) u14 {
+    return @truncate(kc & 0x3FFF);
+}
+
+/// Unicode Map Pair キーコードから通常/Shift時のインデックスペアを取得する
+/// レイアウト: 0xC000 | (normal_index[6:0] << 7) | shifted_index[6:0]
+/// 各インデックスは7bit（0-127）
+pub inline fn unicodeMapPairGetIndices(kc: Keycode) struct { normal: u14, shifted: u14 } {
+    const data = kc & 0x3FFF;
+    return .{
+        .normal = @truncate((data >> 7) & 0x7F),
+        .shifted = @truncate(data & 0x7F),
+    };
+}
+
+/// コードポイントから Unicode キーコードを生成する（Basic Unicode, 15bit）
 pub inline fn UC(code_point: u15) Keycode {
     return QK_UNICODE | @as(Keycode, code_point);
+}
+
+/// Unicode Map インデックスからキーコードを生成する
+/// C版 UM(i) に相当
+pub inline fn UM(index: u14) Keycode {
+    return QK_UNICODEMAP | @as(Keycode, index);
+}
+
+/// Unicode Map Pair キーコードを生成する
+/// C版 UP(i, j) に相当
+/// normal: 通常時のインデックス (7bit), shifted: Shift時のインデックス (7bit)
+pub inline fn UP(normal: u7, shifted: u7) Keycode {
+    return QK_UNICODEMAP_PAIR | (@as(Keycode, normal) << 7) | @as(Keycode, shifted);
 }
 
 // ============================================================
