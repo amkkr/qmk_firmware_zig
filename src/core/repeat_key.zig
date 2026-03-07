@@ -138,6 +138,9 @@ pub fn processRepeatKey(pressed: bool, time: u16) void {
 /// Auto Shift 連携時の Repeat Key 処理
 /// C版の repeat_key_invoke → process_record → process_auto_shift の流れを再現する。
 /// press 時にタイムスタンプを記録して保留し、release 時に保持時間で Shift を判定する。
+/// NOTE: OSM mods は Auto Shift パスでは適用されない（C版も同様に未対応）。
+/// Auto Shift の press では sendKeyboardReport が呼ばれないため OSM が消費されず、
+/// OSM + Auto Shift Repeat の組み合わせは想定外の動作になる。
 fn processRepeatKeyAutoShift(pressed: bool, time: u16) void {
     if (pressed) {
         registered_keycode = extractBasicKeycode(last_keycode);
