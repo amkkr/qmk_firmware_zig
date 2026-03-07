@@ -230,10 +230,6 @@ test "combo_osmshift_tapped" {
     var press_x = KeyRecord{ .event = KeyEvent.keyPress(0, 4, timer.read()) };
     _ = combo.processCombo(&press_x);
 
-    // OSM タップではキーボードレポートは送信されない
-    // （oneshot_mods を設定するのみ）
-    const count_after_combo = driver.keyboard_count;
-
     // Z をリリース
     timer.mockAdvance(1);
     var release_z = KeyRecord{ .event = KeyEvent.keyRelease(0, 3, timer.read()) };
@@ -243,6 +239,10 @@ test "combo_osmshift_tapped" {
     timer.mockAdvance(1);
     var release_x = KeyRecord{ .event = KeyEvent.keyRelease(0, 4, timer.read()) };
     _ = combo.processCombo(&release_x);
+
+    // press・release 両方でレポートが送信されていないことを確認
+    // （OSM タップは次キーまで保留）
+    const count_after_combo = driver.keyboard_count;
 
     // oneshot_mods に LSHIFT が設定されている
     try testing.expect(host.getOneshotMods() & report_mod.ModBit.LSHIFT != 0);
@@ -298,6 +298,6 @@ test "combo_osmshift_tapped" {
     action.actionExec(&release_i2);
     try testing.expect(driver.lastKeyboardReport().isEmpty());
 
-    // コンボ発動時にレポートが送信されていないことを確認（OSMタップは次キーまで保留）
+    // コンボの press・release でレポートが送信されていないことを確認
     try testing.expectEqual(@as(usize, 0), count_after_combo);
 }
