@@ -64,6 +64,8 @@ test "DT_UP saturates at max" {
 }
 
 test "DT_PRNT consumes keycode" {
+    // CDC 出力はテスト環境では no-op（usb_driver == null のため cdc_console.print() はスキップされる）。
+    // フォーマット文字列の正当性はコンパイル時に検証される。
     const result = process(keycode.DT_PRNT, true);
     try testing.expectEqual(false, result);
 }
