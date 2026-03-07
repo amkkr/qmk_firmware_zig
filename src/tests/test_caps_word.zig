@@ -23,8 +23,9 @@
 //!  11. IgnoresLayerLockKey           — Layer Lock キーが Caps Word を継続
 //!
 //! 注意:
-//!   - IdleTimeout: PR #333 で実装済み
-//!   - BothShifts/DoubleTapShift: PR #334 で実装済み
+//!   - IdleTimeout: 実装済み（PR #333）。ユニットテストは caps_word.zig に存在。統合テストも追加済み。
+//!   - BothShifts/DoubleTapShift: 実装済み（PR #334）。ユニットテストは caps_word.zig に存在。
+//!     統合テストも追加済み。caps_word.both_shifts_enable / caps_word.double_tap_shift_enable で有効化。
 
 const std = @import("std");
 const testing = std.testing;
@@ -684,21 +685,331 @@ test "CapsWordPressUser: OSM(MOD_LSFT) で Caps Word が継続する" {
 // 8. BothShifts: 左右 Shift 同時押しで Caps Word 有効化
 //    C版 TEST_P(CapsWordBothShifts, PressLRLR/PressLRRL)
 //
-//    注意: C版では config.h の BOTH_SHIFTS_TURNS_ON_CAPS_WORD で有効化される機能。
-//    PR #334 で実装済み。統合テストは PR #343 で追加済み。
+//    caps_word.both_shifts_enable = true で有効化。
+//    keyboard.zig 内の checkShiftTrigger() 経由で統合テスト。
 // ============================================================
 
-// BothShifts 統合テストは PR #343 (test_caps_word.zig) で追加済み
+// 8a. BothShifts PressLRLR: LSHIFT → RSHIFT → (release) → LSHIFT → RSHIFT
+//     C版 TEST_P(CapsWordBothShifts, PressLRLR) PlainShifts
+test "BothShifts PressLRLR: 左右 Shift 同時押しで Caps Word が有効化される" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.both_shifts_enable = true;
+    defer {
+        caps_word.both_shifts_enable = false;
+    }
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+        KeymapKey.init(0, 0, 1, KC.RIGHT_SHIFT),
+        KeymapKey.init(0, 0, 2, KC.A),
+    });
+
+    // LSHIFT を押す
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expect(!caps_word.isActive());
+
+    // RSHIFT を押す → BothShifts で Caps Word 有効化
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    try testing.expect(caps_word.isActive());
+
+    // 両方離す
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+
+    // Caps Word が有効な状態で A をタップ → Shift+A
+    fixture.pressKey(0, 2);
+    fixture.runOneScanLoop();
+    try testing.expect(lastReportHasKey(&fixture, @truncate(KC.A)));
+    try testing.expect(lastReportMods(&fixture) & report_mod.ModBit.LSHIFT != 0);
+    fixture.releaseKey(0, 2);
+    fixture.runOneScanLoop();
+
+    try testing.expect(caps_word.isActive());
+}
+
+// 8b. BothShifts PressLRRL: LSHIFT → RSHIFT → RSHIFT release → LSHIFT release
+//     C版 TEST_P(CapsWordBothShifts, PressLRRL) PlainShifts
+test "BothShifts PressLRRL: LSHIFT→RSHIFT→RSHIFT解放→LSHIFT解放 で Caps Word 有効化" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.both_shifts_enable = true;
+    defer {
+        caps_word.both_shifts_enable = false;
+    }
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+        KeymapKey.init(0, 0, 1, KC.RIGHT_SHIFT),
+        KeymapKey.init(0, 0, 2, KC.A),
+    });
+
+    // LSHIFT を押す
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expect(!caps_word.isActive());
+
+    // RSHIFT を押す → BothShifts で Caps Word 有効化
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    try testing.expect(caps_word.isActive());
+
+    // RSHIFT を先に離す、次に LSHIFT を離す
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+
+    // Caps Word が有効な状態で A をタップ → Shift+A
+    fixture.pressKey(0, 2);
+    fixture.runOneScanLoop();
+    try testing.expect(lastReportHasKey(&fixture, @truncate(KC.A)));
+    try testing.expect(lastReportMods(&fixture) & report_mod.ModBit.LSHIFT != 0);
+    fixture.releaseKey(0, 2);
+    fixture.runOneScanLoop();
+
+    try testing.expect(caps_word.isActive());
+}
+
+// 8c. BothShifts 無効時: 左右 Shift 同時押しでも Caps Word は有効化されない
+test "BothShifts Disabled: both_shifts_enable = false なら有効化されない" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.both_shifts_enable = false;
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+        KeymapKey.init(0, 0, 1, KC.RIGHT_SHIFT),
+    });
+
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+
+    try testing.expect(!caps_word.isActive());
+
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+}
 
 // ============================================================
 // 9. DoubleTapShift: Shift ダブルタップで Caps Word 有効化
 //    C版 TEST_P(CapsWordDoubleTapShift, Activation/Interrupted/SlowTaps)
 //
-//    注意: C版では config.h の DOUBLE_TAP_SHIFT_TURNS_ON_CAPS_WORD で有効化。
-//    PR #334 で実装済み。統合テストは PR #343 で追加済み。
+//    caps_word.double_tap_shift_enable = true で有効化。
+//    keyboard.zig 内の checkShiftTrigger() 経由で統合テスト。
 // ============================================================
 
-// DoubleTapShift 統合テストは PR #343 (test_caps_word.zig) で追加済み
+// 9a. DoubleTapShift Activation: LSHIFT を素早く2回タップで Caps Word 有効化
+//     C版 TEST_P(CapsWordDoubleTapShift, Activation)
+test "DoubleTapShift Activation: Shift ダブルタップで Caps Word が有効化される" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.double_tap_shift_enable = true;
+    defer {
+        caps_word.double_tap_shift_enable = false;
+    }
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+        KeymapKey.init(0, 0, 1, KC.A),
+    });
+
+    // 1回目のタップ
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+
+    // 2回目のタップ（素早く）→ Caps Word 有効化
+    tapKey(&fixture, 0, 0);
+    try testing.expect(caps_word.isActive());
+
+    // A をタップ → Shift+A
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    try testing.expect(lastReportHasKey(&fixture, @truncate(KC.A)));
+    try testing.expect(lastReportMods(&fixture) & report_mod.ModBit.LSHIFT != 0);
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+}
+
+// 9b. DoubleTapShift Interrupted: 2つの Shift タップの間に別キーを挟むと有効化されない
+//     C版 TEST_P(CapsWordDoubleTapShift, Interrupted)
+test "DoubleTapShift Interrupted: 間に別キーを挟むと有効化されない" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.double_tap_shift_enable = true;
+    defer {
+        caps_word.double_tap_shift_enable = false;
+    }
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+        KeymapKey.init(0, 0, 1, KC.A),
+    });
+
+    // 1回目のタップ
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+
+    // 別のキーをタップ → ダブルタップカウンタリセット
+    tapKey(&fixture, 0, 1);
+
+    // 2回目のタップ → カウンタがリセットされているため有効化されない
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+}
+
+// 9c. DoubleTapShift SlowTaps: 2つの Shift タップの間隔が長すぎると有効化されない
+//     C版 TEST_P(CapsWordDoubleTapShift, SlowTaps)
+test "DoubleTapShift SlowTaps: タップ間隔が長すぎると有効化されない" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.double_tap_shift_enable = true;
+    defer {
+        caps_word.double_tap_shift_enable = false;
+    }
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+    });
+
+    // 1回目のタップ
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+
+    // double_tap_shift_term (200ms) を超える時間待機
+    fixture.idleFor(caps_word.double_tap_shift_term + 1);
+
+    // 2回目のタップ → タイムアウトで有効化されない
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+}
+
+// 9d. DoubleTapShift 無効時: ダブルタップしても Caps Word は有効化されない
+test "DoubleTapShift Disabled: double_tap_shift_enable = false なら有効化されない" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.double_tap_shift_enable = false;
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
+    });
+
+    tapKey(&fixture, 0, 0);
+    tapKey(&fixture, 0, 0);
+    try testing.expect(!caps_word.isActive());
+}
+
+// ============================================================
+// IdleTimeout: アイドルタイムアウトの統合テスト
+//    caps_word.idle_timeout で設定（デフォルト 5000ms）。
+//    keyboard.zig の task() ループ内で checkTimeout() が呼ばれる。
+// ============================================================
+
+// IdleTimeout: Caps Word 有効中にキー入力なしで idle_timeout 経過すると自動解除
+test "IdleTimeout: アイドルタイムアウトで Caps Word が自動解除される" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.A),
+    });
+
+    caps_word.idle_timeout = 5000;
+    defer {
+        caps_word.idle_timeout = 5000;
+    }
+
+    caps_word.activate();
+    try testing.expect(caps_word.isActive());
+
+    // 4999ms アイドル → まだアクティブ
+    fixture.idleFor(4999);
+    try testing.expect(caps_word.isActive());
+
+    // さらに 1ms → 5000ms 到達で自動解除
+    fixture.runOneScanLoop();
+    try testing.expect(!caps_word.isActive());
+}
+
+// IdleTimeout: キー入力でタイマーリセット
+test "IdleTimeout: キー入力でアイドルタイマーがリセットされる" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.A),
+    });
+
+    caps_word.idle_timeout = 5000;
+    defer {
+        caps_word.idle_timeout = 5000;
+    }
+
+    caps_word.activate();
+
+    // 3000ms アイドル後にキー入力 → タイマーリセット
+    fixture.idleFor(3000);
+    try testing.expect(caps_word.isActive());
+
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try testing.expect(caps_word.isActive());
+
+    // リリース後（timer=3002）から 4998ms アイドル → timer=8000
+    // last_key_time はプレス時（timer=3001）に更新されるため、
+    // elapsed(3001) = 8000 - 3001 = 4999ms < 5000ms → まだアクティブ
+    fixture.idleFor(4998);
+    try testing.expect(caps_word.isActive());
+
+    // さらに 1ms → リセットから 5000ms 到達で自動解除
+    fixture.runOneScanLoop();
+    try testing.expect(!caps_word.isActive());
+}
+
+// IdleTimeout: idle_timeout = 0 でタイムアウト無効
+test "IdleTimeout: idle_timeout = 0 ならタイムアウト無効" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    caps_word.idle_timeout = 0;
+    defer {
+        caps_word.idle_timeout = 5000;
+    }
+
+    caps_word.activate();
+    try testing.expect(caps_word.isActive());
+
+    // 長時間アイドルでもタイムアウトしない
+    fixture.idleFor(10000);
+    try testing.expect(caps_word.isActive());
+}
 
 // ============================================================
 // 10. IgnoresOSLHold: OSL ホールド中に Caps Word が継続し、

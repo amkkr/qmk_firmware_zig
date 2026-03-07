@@ -297,6 +297,8 @@ fn activateCombo(combo_index: usize) void {
     combo_timer = 0;
 
     // 結果キーコードをプレスとして発動
+    // C版互換: コンボはタップとして処理する（tap.count=1）
+    // これにより OSM 等のタップアクションが正しく動作する
     var press_record = KeyRecord{
         .event = KeyEvent{
             .key = .{ .row = 0, .col = 0 },
@@ -304,6 +306,7 @@ fn activateCombo(combo_index: usize) void {
             .event_type = .combo,
             .pressed = true,
         },
+        .tap = .{ .count = 1 },
     };
     action.processAction(&press_record, act);
 
@@ -326,6 +329,7 @@ fn deactivateCombo(combo_index: usize) void {
     const result_kc = combo_table[combo_index].result;
     const act = action_code.keycodeToAction(result_kc);
 
+    // C版互換: コンボはタップとして処理する（tap.count=1）
     var release_record = KeyRecord{
         .event = KeyEvent{
             .key = .{ .row = 0, .col = 0 },
@@ -333,6 +337,7 @@ fn deactivateCombo(combo_index: usize) void {
             .event_type = .combo,
             .pressed = false,
         },
+        .tap = .{ .count = 1 },
     };
     action.processAction(&release_record, act);
 
