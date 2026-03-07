@@ -237,6 +237,9 @@ pub fn task() void {
     layer_lock.task();
     layer_lock.syncWithLayerState();
 
+    // Caps Word アイドルタイムアウト処理
+    caps_word.checkTimeout();
+
     // EEPROM: dirty ならフラッシュに書き込み
     eeprom.flush();
 

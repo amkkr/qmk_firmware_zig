@@ -14,10 +14,19 @@
 const host = @import("host.zig");
 const report_mod = @import("report.zig");
 const keycode = @import("keycode.zig");
+const timer = @import("../hal/timer.zig");
 const KC = keycode.KC;
+
+/// Caps Word アイドルタイムアウト（ミリ秒）
+/// 0 の場合はタイムアウト無効（手動解除のみ）。
+/// C版 CAPS_WORD_IDLE_TIMEOUT のデフォルト値: 5000ms
+pub var idle_timeout: u16 = 5000;
 
 /// Caps Word が有効かどうか
 var caps_word_active: bool = false;
+
+/// 最後のキー入力時刻（アイドルタイムアウト用）
+var last_key_time: u16 = 0;
 
 /// Caps Word の有効/無効を取得
 pub fn isActive() bool {
@@ -37,6 +46,7 @@ pub fn toggle() void {
 /// C版 caps_word_on() と同様に、有効化時にモッドをクリアする
 pub fn activate() void {
     caps_word_active = true;
+    last_key_time = timer.read();
     host.setMods(0);
     host.clearWeakMods();
     host.clearOneshotMods();
@@ -56,6 +66,11 @@ pub fn deactivate() void {
 /// 戻り値: true = キーは通常通り処理される、false = キーを飲み込む（送信しない）
 pub fn process(kc: u8, pressed: bool) bool {
     if (!caps_word_active) return true;
+
+    // キー入力時刻を更新（アイドルタイムアウト用）
+    if (pressed) {
+        last_key_time = timer.read();
+    }
 
     // リリース時: weak mods の LSHIFT をクリアして通常通り処理
     // C版 process_caps_word() の release パスと同様
@@ -101,9 +116,22 @@ pub fn process(kc: u8, pressed: bool) bool {
     return true;
 }
 
+/// アイドルタイムアウトチェック
+/// keyboard_task() のメインループから毎サイクル呼ばれる。
+/// Caps Word が有効かつタイムアウト設定が有効な場合、
+/// 最後のキー入力から idle_timeout ミリ秒経過していたら自動解除する。
+pub fn checkTimeout() void {
+    if (!caps_word_active) return;
+    if (idle_timeout == 0) return;
+    if (timer.elapsed(last_key_time) >= idle_timeout) {
+        deactivate();
+    }
+}
+
 /// 状態のリセット
 pub fn reset() void {
     caps_word_active = false;
+    last_key_time = 0;
 }
 
 // ============================================================
@@ -240,4 +268,62 @@ test "caps word: reset clears state" {
 
     reset();
     try testing.expect(!isActive());
+}
+
+test "caps word: idle timeout deactivates" {
+    reset();
+    host.hostReset();
+
+    idle_timeout = 5000;
+    timer.mockSet(1000);
+    activate();
+    try testing.expect(isActive());
+
+    // 4999ms 経過 → まだアクティブ
+    timer.mockSet(5999);
+    checkTimeout();
+    try testing.expect(isActive());
+
+    // 5000ms 経過 → 自動解除
+    timer.mockSet(6000);
+    checkTimeout();
+    try testing.expect(!isActive());
+}
+
+test "caps word: key press resets idle timer" {
+    reset();
+    host.hostReset();
+
+    idle_timeout = 5000;
+    timer.mockSet(1000);
+    activate();
+
+    // 3000ms 後にキー入力
+    timer.mockSet(4000);
+    _ = process(KC.A, true);
+    try testing.expect(isActive());
+
+    // 元の有効化から5000ms経過しても、キー入力からはまだ2000msしか経っていない
+    timer.mockSet(6000);
+    checkTimeout();
+    try testing.expect(isActive());
+
+    // キー入力から5000ms経過 → 自動解除
+    timer.mockSet(9000);
+    checkTimeout();
+    try testing.expect(!isActive());
+}
+
+test "caps word: idle timeout 0 disables timeout" {
+    reset();
+    host.hostReset();
+
+    idle_timeout = 0;
+    timer.mockSet(0);
+    activate();
+
+    // idle_timeout = 0 のためタイムアウトが無効化されている
+    timer.mockSet(60000);
+    checkTimeout();
+    try testing.expect(isActive());
 }
