@@ -339,11 +339,16 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
     }
 
     if (ev.pressed) {
+        // Repeat Key: addMods 前のモッド状態を保存（Modified keycode 由来のモッドを除外するため）
+        const pre_mods = host.getMods() | host.getWeakMods();
         if (mods_hid != 0) host.addMods(mods_hid);
         if (kc != 0) {
             host.registerCode(kc);
-            // Repeat Key 用に直前のキーを記録（weak_mods も含める：Caps Word の LSHIFT 等）
-            repeat_key.setLastKeycode(kc, host.getMods() | host.getWeakMods());
+            // Repeat Key 用に直前のキーを記録
+            // Modified keycode の場合は act.code（キーコード全体）を渡し、
+            // mods には addMods 前の値（物理キー由来 + Caps Word 等の weak_mods）を使う
+            const repeat_kc: keycode_mod.Keycode = if (mods_hid != 0) act.code else @as(keycode_mod.Keycode, kc);
+            repeat_key.setLastKeycode(repeat_kc, pre_mods);
         }
         host.sendKeyboardReport();
     } else {
@@ -398,7 +403,7 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                         }
                         host.registerCode(configured_kc);
                         // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
-                        repeat_key.setLastKeycode(configured_kc, host.getMods() | host.getWeakMods());
+                        repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_kc), host.getMods() | host.getWeakMods());
                         host.sendKeyboardReport();
                     }
                 } else {
@@ -590,7 +595,7 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
                 }
                 host.registerCode(configured_code);
                 // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
-                repeat_key.setLastKeycode(configured_code, host.getMods() | host.getWeakMods());
+                repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_code), host.getMods() | host.getWeakMods());
                 host.sendKeyboardReport();
             }
         } else {

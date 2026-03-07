@@ -24,7 +24,7 @@
 //! [移植済] SetRepeatKeyKeycode      - setLastKeycode/getLastKeycode API 直接呼び出し
 //! [スキップ] Macro                  - Zig版に SEND_STRING / process_record_user コールバック未実装
 //! [スキップ] MacroCustomRepeat      - Zig版に get_repeat_key_count / process_record_user 未実装
-//! [スキップ] ShiftedKeycode         - Zig版に S(KC_x) の Shifted Keycode 記録未対応
+//! [移植済] ShiftedKeycode            - S(KC_x) の Shifted Keycode 記録・再送
 //! [スキップ] WithOneShotShift       - OSM + Repeat の統合テスト（OSM の weak_mods がリピートに反映されない）
 //! [スキップ] AutoShift              - Zig版に Auto Shift + Repeat 統合未実装
 //! [スキップ] FilterRememberedMods   - Zig版に remember_last_key_user コールバック未実装
@@ -673,7 +673,7 @@ test "RepeatKey: NoKeyRecorded - repeat does nothing when no key recorded" {
     // レポートが送信されないこと（空のレポート）を確認
     try testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
     // last_keycode が 0 のままであることを確認
-    try testing.expectEqual(@as(u8, 0), repeat_key.getLastKeycode());
+    try testing.expectEqual(@as(keycode.Keycode, 0), repeat_key.getLastKeycode());
 }
 
 // ============================================================
@@ -695,6 +695,98 @@ test "RepeatKey: ResetClearsState - reset clears keycode and mods" {
 
     // reset() でクリア
     repeat_key.reset();
-    try testing.expectEqual(@as(u8, 0), repeat_key.getLastKeycode());
+    try testing.expectEqual(@as(keycode.Keycode, 0), repeat_key.getLastKeycode());
     try testing.expectEqual(@as(u8, 0), repeat_key.getLastMods());
+}
+
+// ============================================================
+// ShiftedKeycode: S(KC_1) を Repeat Key で再送信
+// C版 TEST_F(RepeatKey, ShiftedKeycode) に対応
+//
+// Keymap: S(KC_1)(0,0), KC_2(1,0), KC_LCTL(2,0), QK_REP(3,0)
+// 手順: S(KC_1) タップ → Repeat → Ctrl 押下 → Repeat × 2 → Ctrl リリース → Repeat → KC_2 タップ
+// 期待: Shift+1, Shift+1, Ctrl+Shift+1, Ctrl+Shift+1, Shift+1, 2
+// ============================================================
+test "RepeatKey: ShiftedKeycode - S(KC_1) is remembered and repeated with shift" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    const S_KC_1 = keycode.S(KC.@"1");
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, S_KC_1),
+        KeymapKey.init(0, 1, 0, KC.@"2"),
+        KeymapKey.init(0, 2, 0, KC.LEFT_CTRL),
+        KeymapKey.init(0, 3, 0, keycode.QK_REP),
+    });
+
+    // S(KC_1) をタップ → Shift+1 が送信される
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    var r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"1"));
+    try testing.expect(r.mods & ModBit.LSHIFT != 0);
+
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+
+    // last_keycode が S(KC_1) として記録されていること
+    try testing.expectEqual(S_KC_1, repeat_key.getLastKeycode());
+
+    // Repeat Key → Shift+1 が再送される
+    fixture.pressKey(3, 0);
+    fixture.runOneScanLoop();
+    r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"1"));
+    try testing.expect(r.mods & ModBit.LSHIFT != 0);
+    fixture.releaseKey(3, 0);
+    fixture.runOneScanLoop();
+
+    // Ctrl を押す
+    fixture.pressKey(2, 0);
+    fixture.runOneScanLoop();
+
+    // Ctrl + Repeat → Ctrl+Shift+1
+    fixture.pressKey(3, 0);
+    fixture.runOneScanLoop();
+    r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"1"));
+    try testing.expect(r.mods & ModBit.LSHIFT != 0);
+    try testing.expect(r.mods & ModBit.LCTRL != 0);
+    fixture.releaseKey(3, 0);
+    fixture.runOneScanLoop();
+
+    // Ctrl + Repeat もう一度 → Ctrl+Shift+1
+    fixture.pressKey(3, 0);
+    fixture.runOneScanLoop();
+    r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"1"));
+    try testing.expect(r.mods & ModBit.LSHIFT != 0);
+    try testing.expect(r.mods & ModBit.LCTRL != 0);
+    fixture.releaseKey(3, 0);
+    fixture.runOneScanLoop();
+
+    // Ctrl を離す
+    fixture.releaseKey(2, 0);
+    fixture.runOneScanLoop();
+
+    // Repeat → Shift+1（Ctrl なし）
+    fixture.pressKey(3, 0);
+    fixture.runOneScanLoop();
+    r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"1"));
+    try testing.expect(r.mods & ModBit.LSHIFT != 0);
+    try testing.expectEqual(@as(u8, 0), r.mods & ModBit.LCTRL);
+    fixture.releaseKey(3, 0);
+    fixture.runOneScanLoop();
+
+    // KC_2 をタップ → 2 のみ（Shift なし）
+    fixture.pressKey(1, 0);
+    fixture.runOneScanLoop();
+    r = fixture.driver.lastKeyboardReport();
+    try testing.expect(r.hasKey(KC.@"2"));
+    try testing.expectEqual(@as(u8, 0), r.mods & ModBit.LSHIFT);
+    fixture.releaseKey(1, 0);
+    fixture.runOneScanLoop();
 }
