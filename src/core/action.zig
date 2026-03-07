@@ -303,8 +303,9 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
             return true;
         },
         action_code.ACTION_ALT_REPEAT_KEY => {
-            // Alt Repeat Key は未実装（将来拡張用）
+            // C版同様: Alt Repeat Key は Caps Word の許可リストに含まれないため解除
             if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
+            repeat_key.processAltRepeatKey(ev.pressed);
             return true;
         },
         action_code.ACTION_LAYER_LOCK => {
