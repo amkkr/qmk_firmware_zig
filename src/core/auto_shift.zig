@@ -15,6 +15,7 @@
 const host = @import("host.zig");
 const report_mod = @import("report.zig");
 const keycode = @import("keycode.zig");
+const repeat_key = @import("repeat_key.zig");
 const KC = keycode.KC;
 
 /// Auto Shift のタイムアウト値（ミリ秒）
@@ -117,14 +118,21 @@ fn finishAutoShift(time: u16) void {
     const elapsed = time -% state.press_time;
     const shifted = elapsed >= AUTO_SHIFT_TIMEOUT;
 
+    // Repeat Key 連携: Auto Shift で処理されたキーも記録する
+    // Auto Shift の Shift は last_mods には含めない（C版互換:
+    // process_last_key は processAutoShift より前に呼ばれ、
+    // その時点では weak_mods にまだ LSHIFT が追加されていない）
+    const basic_kc: u8 = @truncate(state.pending_kc);
+    repeat_key.setLastKeycode(@as(keycode.Keycode, basic_kc), host.getMods() | host.getWeakMods() | host.getOneshotMods());
+
     if (shifted) {
         host.addWeakMods(report_mod.ModBit.LSHIFT);
     }
 
-    host.registerCode(@truncate(state.pending_kc));
+    host.registerCode(basic_kc);
     host.sendKeyboardReport();
 
-    host.unregisterCode(@truncate(state.pending_kc));
+    host.unregisterCode(basic_kc);
     if (shifted) {
         host.delWeakMods(report_mod.ModBit.LSHIFT);
     }

@@ -15,6 +15,8 @@
 
 const host = @import("host.zig");
 const keycode = @import("keycode.zig");
+const auto_shift = @import("auto_shift.zig");
+const report_mod = @import("report.zig");
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 
@@ -74,12 +76,32 @@ fn extractModsFromKeycode(kc: Keycode) u8 {
 /// ローリングプレスで last_keycode が変わってもキースタックを防ぐ
 var registered_keycode: u8 = 0;
 var registered_mods: u8 = 0;
+/// OSM 連携: press 時に追加した oneshot_mods を保持（release 時のクリーンアップ用）
+var registered_osm: u8 = 0;
+
+/// Auto Shift 連携用: Repeat Key の press 時刻を保持
+var repeat_press_time: u16 = 0;
+/// Auto Shift 連携用: Repeat Key で Auto Shift が適用されたかどうか
+var repeat_auto_shifted: bool = false;
 
 /// Repeat Key が押されたときの処理
 /// 直前に記録されたキーコードを送信する
 /// Modified keycode の場合、キーコード内のモッドも weak mods として適用する
-pub fn processRepeatKey(pressed: bool) void {
+///
+/// OSM 連携: press 時に oneshot_mods も weak mods に追加する（C版互換）。
+///   oneshot_mods は sendKeyboardReport 時にレポートに含まれた後クリアされるため、
+///   Repeat Key 2回目以降では自動的に適用されない（ワンショット動作を維持）。
+///
+/// Auto Shift 連携: 繰り返すキーが Auto Shift 対象の場合、
+///   press で保留し release 時に保持時間で Shift 適用を判定する（C版互換）。
+pub fn processRepeatKey(pressed: bool, time: u16) void {
     if (last_keycode == 0) return;
+
+    // Auto Shift 有効かつ繰り返すキーが Auto Shift 対象の場合は専用処理
+    if (auto_shift.isEnabled() and auto_shift.isAutoShiftable(@as(u16, extractBasicKeycode(last_keycode)))) {
+        processRepeatKeyAutoShift(pressed, time);
+        return;
+    }
 
     if (pressed) {
         // press 時のキーコード・修飾キーを保存（release 時に使用）
@@ -90,10 +112,57 @@ pub fn processRepeatKey(pressed: bool) void {
         if (registered_mods != 0) {
             host.addWeakMods(registered_mods);
         }
+        // OSM 連携: oneshot_mods も weak mods に追加して保持
+        // release 時にクリーンアップするため registered_osm に保存
+        registered_osm = host.getOneshotMods();
+        if (registered_osm != 0) {
+            host.addWeakMods(registered_osm);
+        }
         host.registerCode(registered_keycode);
         host.sendKeyboardReport();
     } else {
         host.unregisterCode(registered_keycode);
+        if (registered_mods != 0) {
+            host.delWeakMods(registered_mods);
+        }
+        if (registered_osm != 0) {
+            host.delWeakMods(registered_osm);
+            registered_osm = 0;
+        }
+        host.sendKeyboardReport();
+    }
+}
+
+/// Auto Shift 連携時の Repeat Key 処理
+/// C版の repeat_key_invoke → process_record → process_auto_shift の流れを再現する。
+/// press 時にタイムスタンプを記録して保留し、release 時に保持時間で Shift を判定する。
+fn processRepeatKeyAutoShift(pressed: bool, time: u16) void {
+    if (pressed) {
+        registered_keycode = extractBasicKeycode(last_keycode);
+        registered_mods = last_mods | extractModsFromKeycode(last_keycode);
+        repeat_press_time = time;
+        repeat_auto_shifted = false;
+        // Auto Shift: press 時は送信を保留する（release 時に判定）
+    } else {
+        // release: 保持時間を判定して Shift を適用
+        const elapsed = time -% repeat_press_time;
+        const shifted = elapsed >= auto_shift.AUTO_SHIFT_TIMEOUT;
+        repeat_auto_shifted = shifted;
+
+        if (shifted) {
+            host.addWeakMods(report_mod.ModBit.LSHIFT);
+        }
+        if (registered_mods != 0) {
+            host.addWeakMods(registered_mods);
+        }
+
+        host.registerCode(registered_keycode);
+        host.sendKeyboardReport();
+
+        host.unregisterCode(registered_keycode);
+        if (shifted) {
+            host.delWeakMods(report_mod.ModBit.LSHIFT);
+        }
         if (registered_mods != 0) {
             host.delWeakMods(registered_mods);
         }
@@ -166,6 +235,9 @@ pub fn reset() void {
     last_mods = 0;
     registered_keycode = 0;
     registered_mods = 0;
+    registered_osm = 0;
+    repeat_press_time = 0;
+    repeat_auto_shifted = false;
     alt_registered_keycode = 0;
     alt_registered_mods = 0;
 }
@@ -175,7 +247,6 @@ pub fn reset() void {
 // ============================================================
 
 const testing = @import("std").testing;
-const report_mod = @import("report.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 test "repeat key: initial state" {
@@ -228,6 +299,7 @@ test "repeat key: KC_NO is not recorded" {
 
 test "repeat key: processRepeatKey sends last key" {
     reset();
+    auto_shift.reset();
     host.hostReset();
     var mock = FixedTestDriver{};
     host.setDriver(host.HostDriver.from(&mock));
@@ -236,16 +308,17 @@ test "repeat key: processRepeatKey sends last key" {
     setLastKeycode(KC.A, 0);
 
     // Repeat Key を押す
-    processRepeatKey(true);
+    processRepeatKey(true, 0);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.A));
 
     // Repeat Key を離す
-    processRepeatKey(false);
+    processRepeatKey(false, 0);
     try testing.expect(!mock.lastKeyboardReport().hasKey(KC.A));
 }
 
 test "repeat key: processRepeatKey with mods" {
     reset();
+    auto_shift.reset();
     host.hostReset();
     var mock = FixedTestDriver{};
     host.setDriver(host.HostDriver.from(&mock));
@@ -253,16 +326,17 @@ test "repeat key: processRepeatKey with mods" {
 
     setLastKeycode(KC.A, 0x02); // LSHIFT
 
-    processRepeatKey(true);
+    processRepeatKey(true, 0);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.A));
     try testing.expectEqual(@as(u8, 0x02), mock.lastKeyboardReport().mods);
 
-    processRepeatKey(false);
+    processRepeatKey(false, 0);
     try testing.expect(!mock.lastKeyboardReport().hasKey(KC.A));
 }
 
 test "repeat key: processRepeatKey with shifted keycode" {
     reset();
+    auto_shift.reset();
     host.hostReset();
     var mock = FixedTestDriver{};
     host.setDriver(host.HostDriver.from(&mock));
@@ -272,17 +346,18 @@ test "repeat key: processRepeatKey with shifted keycode" {
     setLastKeycode(keycode.S(KC.@"1"), 0);
 
     // Repeat Key を押す → Shift+1 (= !) が送信される
-    processRepeatKey(true);
+    processRepeatKey(true, 0);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.@"1"));
     try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
 
     // Repeat Key を離す
-    processRepeatKey(false);
+    processRepeatKey(false, 0);
     try testing.expect(!mock.lastKeyboardReport().hasKey(KC.@"1"));
 }
 
 test "repeat key: processRepeatKey with shifted keycode and additional mods" {
     reset();
+    auto_shift.reset();
     host.hostReset();
     var mock = FixedTestDriver{};
     host.setDriver(host.HostDriver.from(&mock));
@@ -292,24 +367,25 @@ test "repeat key: processRepeatKey with shifted keycode and additional mods" {
     setLastKeycode(keycode.S(KC.@"1"), report_mod.ModBit.RALT);
 
     // Repeat Key を押す → RALT+Shift+1 が送信される
-    processRepeatKey(true);
+    processRepeatKey(true, 0);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.@"1"));
     try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
     try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.RALT != 0);
 
-    processRepeatKey(false);
+    processRepeatKey(false, 0);
     try testing.expect(!mock.lastKeyboardReport().hasKey(KC.@"1"));
 }
 
 test "repeat key: no-op when no key recorded" {
     reset();
+    auto_shift.reset();
     host.hostReset();
     var mock = FixedTestDriver{};
     host.setDriver(host.HostDriver.from(&mock));
     defer host.clearDriver();
 
     // 何も記録されていない状態で Repeat Key を押しても何も起こらない
-    processRepeatKey(true);
+    processRepeatKey(true, 0);
     try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
 }
 

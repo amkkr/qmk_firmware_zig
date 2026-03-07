@@ -299,7 +299,7 @@ fn processSpecialAction(ev: KeyEvent, act: Action) bool {
         action_code.ACTION_REPEAT_KEY => {
             // C版同様: Repeat Key は Caps Word の許可リストに含まれないため解除
             if (ev.pressed and caps_word.isActive()) caps_word.deactivate();
-            repeat_key.processRepeatKey(ev.pressed);
+            repeat_key.processRepeatKey(ev.pressed, ev.time);
             return true;
         },
         action_code.ACTION_ALT_REPEAT_KEY => {
@@ -340,7 +340,8 @@ fn processModsAction(ev: KeyEvent, act: Action) void {
 
     if (ev.pressed) {
         // Repeat Key: addMods 前のモッド状態を保存（Modified keycode 由来のモッドを除外するため）
-        const pre_mods = host.getMods() | host.getWeakMods();
+        // oneshot_mods も含める（C版 process_last_key の remembered_mods |= get_oneshot_mods() に相当）
+        const pre_mods = host.getMods() | host.getWeakMods() | host.getOneshotMods();
         if (mods_hid != 0) host.addMods(mods_hid);
         if (kc != 0) {
             host.registerCode(kc);
@@ -405,8 +406,8 @@ fn processModsTapAction(keyp: *KeyRecord, act: Action) void {
                             _ = caps_word.process(kc, true);
                         }
                         host.registerCode(configured_kc);
-                        // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
-                        repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_kc), host.getMods() | host.getWeakMods());
+                        // Repeat Key: タップキーも記録（weak_mods / oneshot_mods も含める）
+                        repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_kc), host.getMods() | host.getWeakMods() | host.getOneshotMods());
                         host.sendKeyboardReport();
                     }
                 } else {
@@ -597,8 +598,8 @@ fn processLayerTapAction(keyp: *KeyRecord, act: Action) void {
                     _ = caps_word.process(code, true);
                 }
                 host.registerCode(configured_code);
-                // Repeat Key: タップキーも記録（weak_mods も含める：Caps Word の LSHIFT 等）
-                repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_code), host.getMods() | host.getWeakMods());
+                // Repeat Key: タップキーも記録（weak_mods / oneshot_mods も含める）
+                repeat_key.setLastKeycode(@as(keycode_mod.Keycode, configured_code), host.getMods() | host.getWeakMods() | host.getOneshotMods());
                 host.sendKeyboardReport();
             }
         } else {

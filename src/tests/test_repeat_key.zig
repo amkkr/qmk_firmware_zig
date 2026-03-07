@@ -25,8 +25,8 @@
 //! [スキップ] Macro                  - Zig版に SEND_STRING / process_record_user コールバック未実装
 //! [スキップ] MacroCustomRepeat      - Zig版に get_repeat_key_count / process_record_user 未実装
 //! [移植済] ShiftedKeycode            - S(KC_x) の Shifted Keycode 記録・再送
-//! [スキップ] WithOneShotShift       - OSM + Repeat の統合テスト（OSM の weak_mods がリピートに反映されない）
-//! [スキップ] AutoShift              - Zig版に Auto Shift + Repeat 統合未実装
+//! [移植済] WithOneShotShift         - OSM + Repeat の統合テスト（OSM の oneshot_mods がリピートに反映）
+//! [移植済] AutoShift                - Auto Shift + Repeat 統合（長押し Repeat で Auto Shift 適用）
 //! [スキップ] FilterRememberedMods   - Zig版に remember_last_key_user コールバック未実装
 //! [スキップ] RepeatKeyInvoke        - Zig版に repeat_key_invoke() API 未実装
 
@@ -37,16 +37,20 @@ const keycode = @import("../core/keycode.zig");
 const report_mod = @import("../core/report.zig");
 const test_fixture = @import("../core/test_fixture.zig");
 const repeat_key = @import("../core/repeat_key.zig");
+const auto_shift = @import("../core/auto_shift.zig");
 const host = @import("../core/host.zig");
+const keymap_mod = @import("../core/keymap.zig");
 const layer = @import("../core/layer.zig");
 const timer = @import("../hal/timer.zig");
 
 const KC = keycode.KC;
+const Mod = keycode.Mod;
 const ModBit = report_mod.ModBit;
 const TestFixture = test_fixture.TestFixture;
 const KeymapKey = test_fixture.KeymapKey;
 const TAPPING_TERM = test_fixture.TAPPING_TERM;
 const KeyboardReport = report_mod.KeyboardReport;
+const AUTO_SHIFT_TIMEOUT = auto_shift.AUTO_SHIFT_TIMEOUT;
 
 // ============================================================
 // ヘルパー関数
@@ -63,6 +67,14 @@ fn setupFixture(fixture: *TestFixture) void {
 fn tapKey(fixture: *TestFixture, row: u8, col: u8) void {
     fixture.pressKey(row, col);
     fixture.runOneScanLoop();
+    fixture.releaseKey(row, col);
+    fixture.runOneScanLoop();
+}
+
+/// キーを指定時間ホールドしてからリリース
+fn tapKeyWithDuration(fixture: *TestFixture, row: u8, col: u8, duration_ms: u16) void {
+    fixture.pressKey(row, col);
+    fixture.idleFor(duration_ms);
     fixture.releaseKey(row, col);
     fixture.runOneScanLoop();
 }
@@ -789,4 +801,190 @@ test "RepeatKey: ShiftedKeycode - S(KC_1) is remembered and repeated with shift"
     try testing.expectEqual(@as(u8, 0), r.mods & ModBit.LSHIFT);
     fixture.releaseKey(1, 0);
     fixture.runOneScanLoop();
+}
+
+// ============================================================
+// WithOneShotShift: OSM(LSFT) + Repeat Key で Shift 付きリピート
+// C版 TEST_F(RepeatKey, WithOneShotShift) に対応
+//
+// 手順: A, OSM(LSFT), Repeat, Repeat → "aAa"
+// OSM タップ後の Repeat Key は oneshot_mods の LSHIFT 付きで
+// リピートされ "A" を送信する。
+// 2回目の Repeat は oneshot_mods が消費済みなので "a" になる。
+// ============================================================
+test "RepeatKey: WithOneShotShift - OSM shift applies to repeat" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    // oneshot_enable を有効にする
+    keymap_mod.keymap_config.oneshot_enable = true;
+    defer {
+        keymap_mod.keymap_config.oneshot_enable = false;
+    }
+
+    // Keymap: (0,0)=KC_A, (0,1)=OSM(LSFT), (0,2)=QK_REP
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.A),
+        KeymapKey.init(0, 0, 1, keycode.OSM(Mod.LSFT)),
+        KeymapKey.init(0, 0, 2, keycode.QK_REP),
+    });
+
+    // --- Step 1: KC_A をタップ → "a" ---
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    {
+        const r = fixture.driver.lastKeyboardReport();
+        try testing.expect(r.hasKey(KC.A));
+        try testing.expectEqual(@as(u8, 0), r.mods & ModBit.LSHIFT);
+    }
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+
+    try testing.expectEqual(KC.A, repeat_key.getLastKeycode());
+    try testing.expectEqual(@as(u8, 0), repeat_key.getLastMods());
+
+    // --- Step 2: OSM(LSFT) をタップ ---
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+    // タッピング完了を待つ
+    fixture.idleFor(TAPPING_TERM + 1);
+
+    // oneshot_mods に LSHIFT が設定されていることを確認
+    try testing.expect(host.getOneshotMods() & ModBit.LSHIFT != 0);
+
+    // --- Step 3: Repeat Key をタップ → "A" (OSM の LSHIFT 適用) ---
+    fixture.pressKey(0, 2);
+    fixture.runOneScanLoop();
+    {
+        const r = fixture.driver.lastKeyboardReport();
+        try testing.expect(r.hasKey(KC.A));
+        // OSM の LSHIFT がレポートに含まれる
+        try testing.expect(r.mods & ModBit.LSHIFT != 0);
+    }
+    fixture.releaseKey(0, 2);
+    fixture.runOneScanLoop();
+
+    // OSM は1回で消費されている
+    try testing.expectEqual(@as(u8, 0), host.getOneshotMods());
+
+    // --- Step 4: Repeat Key をもう一度タップ → "a" (OSM 消費済み) ---
+    fixture.pressKey(0, 2);
+    fixture.runOneScanLoop();
+    {
+        const r = fixture.driver.lastKeyboardReport();
+        try testing.expect(r.hasKey(KC.A));
+        // OSM は消費済みなので LSHIFT なし
+        try testing.expectEqual(@as(u8, 0), r.mods & ModBit.LSHIFT);
+    }
+    fixture.releaseKey(0, 2);
+    fixture.runOneScanLoop();
+}
+
+// ============================================================
+// AutoShift: Auto Shift + Repeat Key の統合
+// C版 TEST_F(RepeatKey, AutoShift) に対応
+//
+// 手順:
+//   tap_key(A) → "a" (短タップ、Auto Shift なし)
+//   tap_key(Repeat) → "a" (短タップ Repeat)
+//   tap_key(Repeat, AUTO_SHIFT_TIMEOUT+1) → "A" (長押し Repeat → Auto Shift)
+//   tap_key(B, AUTO_SHIFT_TIMEOUT+1) → "B" (B の長押し → Auto Shift)
+//   tap_key(Repeat) → "b" (短タップ Repeat、last_mods=0)
+//   tap_key(Repeat, AUTO_SHIFT_TIMEOUT+1) → "B" (長押し Repeat → Auto Shift)
+//
+// 期待出力: "aaABbB"
+// ============================================================
+test "RepeatKey: AutoShift - auto shift applies to long-press repeat" {
+    var fixture = TestFixture.init();
+    setupFixture(&fixture);
+    defer fixture.deinit();
+
+    // Auto Shift を有効化
+    auto_shift.enable();
+    defer auto_shift.reset();
+
+    // Keymap: (0,0)=KC_A, (0,1)=KC_B, (0,2)=QK_REP
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.A),
+        KeymapKey.init(0, 0, 1, KC.B),
+        KeymapKey.init(0, 0, 2, keycode.QK_REP),
+    });
+
+    // --- Step 1: KC_A を短タップ → "a" ---
+    // Auto Shift 対象だが短タップなのでシフトなし
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    // Auto Shift: press で保留される（レポートはまだ送信されない）
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    // Auto Shift: release で確定（短タップ → シフトなし）
+
+    try testing.expectEqual(KC.A, repeat_key.getLastKeycode());
+    try testing.expectEqual(@as(u8, 0), repeat_key.getLastMods());
+
+    // --- Step 2: Repeat Key を短タップ → "a" ---
+    tapKey(&fixture, 0, 2);
+
+    // --- Step 3: Repeat Key を長押し → "A" (Auto Shift 適用) ---
+    tapKeyWithDuration(&fixture, 0, 2, AUTO_SHIFT_TIMEOUT + 1);
+
+    // キーボードレポートの中に Shift + A のレポートがあることを確認
+    {
+        var found_shifted_a = false;
+        var i: usize = 0;
+        while (i < fixture.driver.keyboard_count) : (i += 1) {
+            const r = fixture.driver.keyboard_reports[i];
+            if (r.hasKey(KC.A) and (r.mods & ModBit.LSHIFT != 0)) {
+                found_shifted_a = true;
+                break;
+            }
+        }
+        try testing.expect(found_shifted_a);
+    }
+
+    // --- Step 4: KC_B を長押し → "B" (Auto Shift 適用) ---
+    fixture.pressKey(0, 1);
+    fixture.idleFor(AUTO_SHIFT_TIMEOUT + 1);
+    fixture.releaseKey(0, 1);
+    fixture.runOneScanLoop();
+
+    try testing.expectEqual(KC.B, repeat_key.getLastKeycode());
+    // Auto Shift で適用された Shift は last_mods に含まれない（C版互換）
+    try testing.expectEqual(@as(u8, 0), repeat_key.getLastMods());
+
+    // --- Step 5: Repeat Key を短タップ → "b" (Auto Shift なし) ---
+    const count_before_step5 = fixture.driver.keyboard_count;
+    tapKey(&fixture, 0, 2);
+    // 短タップなので Shift なしの B が送信される
+    {
+        var found_unshifted_b = false;
+        var i: usize = count_before_step5;
+        while (i < fixture.driver.keyboard_count) : (i += 1) {
+            const r = fixture.driver.keyboard_reports[i];
+            if (r.hasKey(KC.B) and (r.mods & ModBit.LSHIFT == 0)) {
+                found_unshifted_b = true;
+                break;
+            }
+        }
+        try testing.expect(found_unshifted_b);
+    }
+
+    // --- Step 6: Repeat Key を長押し → "B" (Auto Shift 適用) ---
+    const count_before_step6 = fixture.driver.keyboard_count;
+    tapKeyWithDuration(&fixture, 0, 2, AUTO_SHIFT_TIMEOUT + 1);
+    {
+        var found_shifted_b = false;
+        var i: usize = count_before_step6;
+        while (i < fixture.driver.keyboard_count) : (i += 1) {
+            const r = fixture.driver.keyboard_reports[i];
+            if (r.hasKey(KC.B) and (r.mods & ModBit.LSHIFT != 0)) {
+                found_shifted_b = true;
+                break;
+            }
+        }
+        try testing.expect(found_shifted_b);
+    }
 }
