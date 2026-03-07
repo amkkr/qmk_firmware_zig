@@ -10,7 +10,6 @@
 const std = @import("std");
 const testing = std.testing;
 const keycode = @import("../core/keycode.zig");
-const report_mod = @import("../core/report.zig");
 const test_fixture = @import("../core/test_fixture.zig");
 
 const KC = keycode.KC;
