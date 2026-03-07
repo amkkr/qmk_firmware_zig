@@ -685,21 +685,20 @@ test "CapsWordPressUser: OSM(MOD_LSFT) で Caps Word が継続する" {
 //    C版 TEST_P(CapsWordBothShifts, PressLRLR/PressLRRL)
 //
 //    注意: C版では config.h の BOTH_SHIFTS_TURNS_ON_CAPS_WORD で有効化される機能。
-//    Zig版では未実装のため、PlainShifts ペアのみテスト可能。
-//    PlainShifts でも Zig版では Caps Word は有効化されない（機能未実装のため）。
+//    PR #334 で実装済み。統合テストは PR #343 で追加済み。
 // ============================================================
 
-// BothShifts テストはスキップ（Zig版未実装機能）
+// BothShifts 統合テストは PR #343 (test_caps_word.zig) で追加済み
 
 // ============================================================
 // 9. DoubleTapShift: Shift ダブルタップで Caps Word 有効化
 //    C版 TEST_P(CapsWordDoubleTapShift, Activation/Interrupted/SlowTaps)
 //
 //    注意: C版では config.h の DOUBLE_TAP_SHIFT_TURNS_ON_CAPS_WORD で有効化。
-//    Zig版では未実装のためスキップ。
+//    PR #334 で実装済み。統合テストは PR #343 で追加済み。
 // ============================================================
 
-// DoubleTapShift テストはスキップ（Zig版未実装機能）
+// DoubleTapShift 統合テストは PR #343 (test_caps_word.zig) で追加済み
 
 // ============================================================
 // 10. IgnoresOSLHold: OSL ホールド中に Caps Word が継続し、
