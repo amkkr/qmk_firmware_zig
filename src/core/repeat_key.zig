@@ -15,6 +15,10 @@
 
 const host = @import("host.zig");
 const keycode = @import("keycode.zig");
+// NOTE: circular import with auto_shift.zig
+// repeat_key → auto_shift: isEnabled / isAutoShiftable / AUTO_SHIFT_TIMEOUT を参照
+// auto_shift → repeat_key: finishAutoShift 内で setLastKeycode を呼び出す
+// Zig はファイル単位の循環参照を許容するため、この構造は意図的なものである。
 const auto_shift = @import("auto_shift.zig");
 const report_mod = @import("report.zig");
 const Keycode = keycode.Keycode;
@@ -81,8 +85,6 @@ var registered_osm: u8 = 0;
 
 /// Auto Shift 連携用: Repeat Key の press 時刻を保持
 var repeat_press_time: u16 = 0;
-/// Auto Shift 連携用: Repeat Key で Auto Shift が適用されたかどうか
-var repeat_auto_shifted: bool = false;
 
 /// Repeat Key が押されたときの処理
 /// 直前に記録されたキーコードを送信する
@@ -141,13 +143,11 @@ fn processRepeatKeyAutoShift(pressed: bool, time: u16) void {
         registered_keycode = extractBasicKeycode(last_keycode);
         registered_mods = last_mods | extractModsFromKeycode(last_keycode);
         repeat_press_time = time;
-        repeat_auto_shifted = false;
         // Auto Shift: press 時は送信を保留する（release 時に判定）
     } else {
         // release: 保持時間を判定して Shift を適用
         const elapsed = time -% repeat_press_time;
         const shifted = elapsed >= auto_shift.AUTO_SHIFT_TIMEOUT;
-        repeat_auto_shifted = shifted;
 
         if (shifted) {
             host.addWeakMods(report_mod.ModBit.LSHIFT);
@@ -237,7 +237,6 @@ pub fn reset() void {
     registered_mods = 0;
     registered_osm = 0;
     repeat_press_time = 0;
-    repeat_auto_shifted = false;
     alt_registered_keycode = 0;
     alt_registered_mods = 0;
 }

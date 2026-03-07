@@ -15,6 +15,10 @@
 const host = @import("host.zig");
 const report_mod = @import("report.zig");
 const keycode = @import("keycode.zig");
+// NOTE: circular import with repeat_key.zig
+// auto_shift → repeat_key: finishAutoShift 内で setLastKeycode を呼び出す
+// repeat_key → auto_shift: isEnabled / isAutoShiftable / AUTO_SHIFT_TIMEOUT を参照
+// Zig はファイル単位の循環参照を許容するため、この構造は意図的なものである。
 const repeat_key = @import("repeat_key.zig");
 const KC = keycode.KC;
 
