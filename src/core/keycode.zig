@@ -678,6 +678,18 @@ pub inline fn isMods(kc: Keycode) bool {
     return kc >= QK_MODS and kc <= QK_MODS_MAX;
 }
 
+/// Modified keycode から 5-bit mod encoding を取得する
+/// C版 QK_MODS_GET_MODS(kc) に相当: (kc >> 8) & 0x1F
+pub inline fn modsGetMods(kc: Keycode) u5 {
+    return @truncate((kc >> 8) & 0x1F);
+}
+
+/// Modified keycode から basic keycode を取得する
+/// C版 QK_MODS_GET_BASIC_KEYCODE(kc) に相当: kc & 0xFF
+pub inline fn modsGetBasicKeycode(kc: Keycode) u8 {
+    return @truncate(kc & 0xFF);
+}
+
 pub inline fn isModTap(kc: Keycode) bool {
     return kc >= QK_MOD_TAP and kc <= QK_MOD_TAP_MAX;
 }

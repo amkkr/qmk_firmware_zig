@@ -8,23 +8,32 @@
 //! C版 quantum/repeat_key.c に相当
 //!
 //! Repeat Key は直前に押したキーを再送信するキー。
-//! 直前のキーコード（basic keycode）を記録し、Repeat Key 押下時に
+//! 直前のキーコード（Keycode, u16）を記録し、Repeat Key 押下時に
 //! register/unregister を実行する。
+//! Modified keycode（S(KC_x) 等）にも対応し、キーコードに含まれる
+//! モッド情報を weak mods として再適用する。
 
 const host = @import("host.zig");
 const keycode = @import("keycode.zig");
+const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 
-/// 直前に押されたキーコード（basic keycode, u8）
-var last_keycode: u8 = 0;
+/// 直前に押されたキーコード（Keycode, u16）
+/// Basic keycode (0x00-0xFF) または Modified keycode (S(KC_x) 等, 0x0100-0x1FFF) を保持
+var last_keycode: Keycode = 0;
 /// 直前のキー押下時に適用されていた修飾キー（8bit HID format）
+/// Modified keycode 内のモッドとは別に、物理的に押されている修飾キー等を記録
 var last_mods: u8 = 0;
 
 /// 直前のキーコードを記録する
 /// action.zig の processModsAction 等から呼び出される
-pub fn setLastKeycode(kc: u8, mods: u8) void {
-    // 修飾キー自体は記録しない
-    if (kc >= 0xE0 and kc <= 0xE7) return;
+///
+/// kc: Basic keycode または Modified keycode (S(KC_x) 等)
+/// mods: キー押下時のアクティブな修飾キー（8bit HID format）
+///       Modified keycode 内のモッドは含めない（keycode 自体に埋め込まれているため）
+pub fn setLastKeycode(kc: Keycode, mods: u8) void {
+    // 修飾キー自体は記録しない（basic keycode 範囲の修飾キー: 0xE0-0xE7）
+    if (kc >= KC.LEFT_CTRL and kc <= KC.RIGHT_GUI) return;
     // KC_NO は記録しない
     if (kc == 0) return;
     last_keycode = kc;
@@ -32,13 +41,33 @@ pub fn setLastKeycode(kc: u8, mods: u8) void {
 }
 
 /// 記録されている直前のキーコードを取得
-pub fn getLastKeycode() u8 {
+/// Basic keycode または Modified keycode (S(KC_x) 等) を返す
+pub fn getLastKeycode() Keycode {
     return last_keycode;
 }
 
 /// 記録されている直前の修飾キーを取得
 pub fn getLastMods() u8 {
     return last_mods;
+}
+
+/// Keycode から basic keycode を抽出する
+/// Modified keycode の場合は下位8bitを返し、basic keycode はそのまま返す
+fn extractBasicKeycode(kc: Keycode) u8 {
+    if (keycode.isMods(kc)) {
+        return keycode.modsGetBasicKeycode(kc);
+    }
+    return @truncate(kc);
+}
+
+/// Keycode に含まれるモッドを 8bit HID format で抽出する
+/// Modified keycode の場合は 5-bit mod encoding → 8bit HID に変換して返す
+/// Basic keycode の場合は 0 を返す
+fn extractModsFromKeycode(kc: Keycode) u8 {
+    if (keycode.isMods(kc)) {
+        return host.modFiveBitToEightBit(keycode.modsGetMods(kc));
+    }
+    return 0;
 }
 
 /// press 時に登録したキーコード・修飾キーを保持する（C版 registered_record 相当）
@@ -48,13 +77,15 @@ var registered_mods: u8 = 0;
 
 /// Repeat Key が押されたときの処理
 /// 直前に記録されたキーコードを送信する
+/// Modified keycode の場合、キーコード内のモッドも weak mods として適用する
 pub fn processRepeatKey(pressed: bool) void {
     if (last_keycode == 0) return;
 
     if (pressed) {
         // press 時のキーコード・修飾キーを保存（release 時に使用）
-        registered_keycode = last_keycode;
-        registered_mods = last_mods;
+        registered_keycode = extractBasicKeycode(last_keycode);
+        // last_mods（物理キー由来）+ keycode 内のモッド（Modified keycode 由来）を統合
+        registered_mods = last_mods | extractModsFromKeycode(last_keycode);
         // 直前のキーの修飾キーを一時的に適用
         if (registered_mods != 0) {
             host.addWeakMods(registered_mods);
@@ -81,8 +112,10 @@ var alt_registered_mods: u8 = 0;
 /// デフォルトの代替キーコードマッピング
 /// C版 get_alt_repeat_key_keycode() のデフォルト実装に相当。
 /// ナビゲーションキーの方向を反転する。
-fn getAltKeycode(kc: u8) u8 {
-    return switch (kc) {
+/// basic keycode 部分で判定するため、Modified keycode にも対応。
+fn getAltKeycode(kc: Keycode) Keycode {
+    const basic_kc = extractBasicKeycode(kc);
+    return switch (basic_kc) {
         KC.LEFT => KC.RIGHT,
         KC.RIGHT => KC.LEFT,
         KC.UP => KC.DOWN,
@@ -108,9 +141,10 @@ pub fn processAltRepeatKey(pressed: bool) void {
             alt_registered_mods = 0;
             return;
         }
-        alt_registered_keycode = alt_kc;
+        alt_registered_keycode = extractBasicKeycode(alt_kc);
         // 代替キーには元のキーと同じ修飾キーを適用
-        alt_registered_mods = last_mods;
+        // last_mods + keycode 内のモッドを統合
+        alt_registered_mods = last_mods | extractModsFromKeycode(last_keycode);
         if (alt_registered_mods != 0) {
             host.addWeakMods(alt_registered_mods);
         }
@@ -141,19 +175,20 @@ pub fn reset() void {
 // ============================================================
 
 const testing = @import("std").testing;
+const report_mod = @import("report.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver(32, 4);
 
 test "repeat key: initial state" {
     reset();
-    try testing.expectEqual(@as(u8, 0), getLastKeycode());
+    try testing.expectEqual(@as(Keycode, 0), getLastKeycode());
     try testing.expectEqual(@as(u8, 0), getLastMods());
 }
 
-test "repeat key: setLastKeycode records key" {
+test "repeat key: setLastKeycode records basic key" {
     reset();
 
     setLastKeycode(KC.A, 0);
-    try testing.expectEqual(@as(u8, KC.A), getLastKeycode());
+    try testing.expectEqual(KC.A, getLastKeycode());
     try testing.expectEqual(@as(u8, 0), getLastMods());
 }
 
@@ -161,16 +196,26 @@ test "repeat key: setLastKeycode records mods" {
     reset();
 
     setLastKeycode(KC.A, 0x02); // LSHIFT
-    try testing.expectEqual(@as(u8, KC.A), getLastKeycode());
+    try testing.expectEqual(KC.A, getLastKeycode());
     try testing.expectEqual(@as(u8, 0x02), getLastMods());
+}
+
+test "repeat key: setLastKeycode records shifted keycode" {
+    reset();
+
+    // S(KC_1) = LSFT(KC.@"1") = 0x021E
+    const shifted_1 = keycode.S(KC.@"1");
+    setLastKeycode(shifted_1, 0);
+    try testing.expectEqual(shifted_1, getLastKeycode());
+    try testing.expectEqual(@as(u8, 0), getLastMods());
 }
 
 test "repeat key: modifier keys are not recorded" {
     reset();
 
     setLastKeycode(KC.A, 0);
-    setLastKeycode(0xE1, 0); // LSHIFT keycode
-    try testing.expectEqual(@as(u8, KC.A), getLastKeycode()); // 変わらない
+    setLastKeycode(KC.LEFT_SHIFT, 0); // LSHIFT keycode (0xE1)
+    try testing.expectEqual(KC.A, getLastKeycode()); // 変わらない
 }
 
 test "repeat key: KC_NO is not recorded" {
@@ -178,7 +223,7 @@ test "repeat key: KC_NO is not recorded" {
 
     setLastKeycode(KC.A, 0);
     setLastKeycode(0, 0);
-    try testing.expectEqual(@as(u8, KC.A), getLastKeycode()); // 変わらない
+    try testing.expectEqual(KC.A, getLastKeycode()); // 変わらない
 }
 
 test "repeat key: processRepeatKey sends last key" {
@@ -216,6 +261,46 @@ test "repeat key: processRepeatKey with mods" {
     try testing.expect(!mock.lastKeyboardReport().hasKey(KC.A));
 }
 
+test "repeat key: processRepeatKey with shifted keycode" {
+    reset();
+    host.hostReset();
+    var mock = FixedTestDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // S(KC_1) を記録（Modified keycode: LSFT + KC_1）
+    setLastKeycode(keycode.S(KC.@"1"), 0);
+
+    // Repeat Key を押す → Shift+1 (= !) が送信される
+    processRepeatKey(true);
+    try testing.expect(mock.lastKeyboardReport().hasKey(KC.@"1"));
+    try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
+
+    // Repeat Key を離す
+    processRepeatKey(false);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(KC.@"1"));
+}
+
+test "repeat key: processRepeatKey with shifted keycode and additional mods" {
+    reset();
+    host.hostReset();
+    var mock = FixedTestDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // S(KC_1) を RALT 押下中に記録
+    setLastKeycode(keycode.S(KC.@"1"), report_mod.ModBit.RALT);
+
+    // Repeat Key を押す → RALT+Shift+1 が送信される
+    processRepeatKey(true);
+    try testing.expect(mock.lastKeyboardReport().hasKey(KC.@"1"));
+    try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.LSHIFT != 0);
+    try testing.expect(mock.lastKeyboardReport().mods & report_mod.ModBit.RALT != 0);
+
+    processRepeatKey(false);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(KC.@"1"));
+}
+
 test "repeat key: no-op when no key recorded" {
     reset();
     host.hostReset();
@@ -230,10 +315,10 @@ test "repeat key: no-op when no key recorded" {
 
 test "repeat key: reset clears state" {
     setLastKeycode(KC.B, 0x04);
-    try testing.expectEqual(@as(u8, KC.B), getLastKeycode());
+    try testing.expectEqual(KC.B, getLastKeycode());
 
     reset();
-    try testing.expectEqual(@as(u8, 0), getLastKeycode());
+    try testing.expectEqual(@as(Keycode, 0), getLastKeycode());
     try testing.expectEqual(@as(u8, 0), getLastMods());
 }
 
