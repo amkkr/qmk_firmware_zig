@@ -2,17 +2,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 //! Unicode 入力処理
-//! C版 quantum/process_keycode/process_unicode.c, process_unicode_common.c に相当
+//! C版 quantum/unicode/unicode.c, quantum/unicode/ucis.c に相当
 //!
-//! OS別のUnicode入力方式を管理し、Basic Unicode キーコード（0x8000-0xFFFF）を
+//! OS別のUnicode入力方式を管理し、Unicode キーコードを
 //! OS固有のキーシーケンスに変換して送信する。
+//!
+//! サポートする入力方式:
+//!   - Basic Unicode: キーコードに直接15bitコードポイントを埋め込む（U+0000-U+7FFF）
+//!   - Unicode Map: comptime テーブルのインデックスで32bitコードポイントを参照（U+10FFFF まで）
+//!   - UCIS (Unicode Input System): ニーモニック文字列でコードポイントを検索・入力
 //!
 //! 入力フロー:
 //!   1. unicodeInputStart(): OS別の開始シーケンスを送信
-//!   2. registerHex(): コードポイントを16進数で一桁ずつ入力
+//!   2. registerHex32(): コードポイントを16進数で一桁ずつ入力
 //!   3. unicodeInputFinish(): OS別の終了シーケンスを送信
-//!
-//! 将来対応: Unicode Map (32bit コードポイント), UCIS
 
 const keycode_mod = @import("keycode.zig");
 const host = @import("host.zig");
@@ -38,6 +41,183 @@ var unicode_mode: UnicodeMode = .linux;
 /// Unicode 入力中に保存する修飾キー状態
 var saved_mods: u8 = 0;
 
+// ============================================================
+// Unicode Map テーブル（comptime 設定）
+// ============================================================
+
+/// Unicode Map テーブル型: 32bit コードポイントの配列
+/// ユーザーは setUnicodeMap() で comptime テーブルを設定する。
+/// C版 unicode_map[] に相当。
+var unicode_map: ?[]const u32 = null;
+
+/// Unicode Map テーブルを設定する
+pub fn setUnicodeMap(map: []const u32) void {
+    unicode_map = map;
+}
+
+/// Unicode Map テーブルをクリアする（テスト用）
+pub fn clearUnicodeMap() void {
+    unicode_map = null;
+}
+
+/// Unicode Map インデックスからコードポイントを取得する
+/// C版 unicodemap_get_code_point() に相当
+pub fn unicodeMapGetCodePoint(index: u14) ?u32 {
+    if (unicode_map) |map| {
+        if (index < map.len) {
+            return map[index];
+        }
+    }
+    return null;
+}
+
+// ============================================================
+// UCIS (Unicode Input System)
+// ============================================================
+
+/// UCIS シンボル定義: ニーモニック文字列と対応するコードポイント列
+/// C版 ucis_symbol_t に相当
+pub const UcisSymbol = struct {
+    /// ニーモニック文字列（例: "smile", "heart"）
+    mnemonic: []const u8,
+    /// 対応するコードポイント列（最大 UCIS_MAX_CODE_POINTS 個、0 でターミネート）
+    code_points: []const u32,
+};
+
+/// UCIS 最大入力長
+pub const UCIS_MAX_INPUT_LENGTH: u8 = 32;
+
+/// UCIS 状態
+var ucis_active: bool = false;
+var ucis_count: u8 = 0;
+var ucis_input: [UCIS_MAX_INPUT_LENGTH]u8 = .{0} ** UCIS_MAX_INPUT_LENGTH;
+
+/// UCIS シンボルテーブル（ユーザーが設定）
+var ucis_symbol_table: ?[]const UcisSymbol = null;
+
+/// UCIS シンボルテーブルを設定する
+pub fn setUcisSymbolTable(table: []const UcisSymbol) void {
+    ucis_symbol_table = table;
+}
+
+/// UCIS シンボルテーブルをクリアする（テスト用）
+pub fn clearUcisSymbolTable() void {
+    ucis_symbol_table = null;
+}
+
+/// UCIS セッションを開始する
+/// C版 ucis_start() に相当
+pub fn ucisStart() void {
+    ucis_active = true;
+    ucis_count = 0;
+    ucis_input = .{0} ** UCIS_MAX_INPUT_LENGTH;
+}
+
+/// UCIS がアクティブかどうか
+pub fn ucisIsActive() bool {
+    return ucis_active;
+}
+
+/// UCIS 入力バッファのカウント
+pub fn ucisGetCount() u8 {
+    return ucis_count;
+}
+
+/// キーコードを文字に変換する（A-Z, 0-9 のみ対応）
+/// C版 keycode_to_char() に相当
+fn keycodeToChar(kc: Keycode) ?u8 {
+    if (kc >= KC.A and kc <= KC.Z) {
+        return @as(u8, 'a') + @as(u8, @truncate(kc - KC.A));
+    } else if (kc >= KC.@"1" and kc <= KC.@"9") {
+        return @as(u8, '1') + @as(u8, @truncate(kc - KC.@"1"));
+    } else if (kc == KC.@"0") {
+        return '0';
+    }
+    return null;
+}
+
+/// UCIS 入力バッファに文字を追加する
+/// C版 ucis_add() に相当
+/// 戻り値: true = 追加成功, false = 変換不可 or バッファフル
+pub fn ucisAdd(kc: Keycode) bool {
+    if (ucis_count >= UCIS_MAX_INPUT_LENGTH) return false;
+    if (keycodeToChar(kc)) |c| {
+        ucis_input[ucis_count] = c;
+        ucis_count += 1;
+        return true;
+    }
+    return false;
+}
+
+/// UCIS 入力バッファから最後の文字を削除する
+/// C版 ucis_remove_last() に相当
+pub fn ucisRemoveLast() bool {
+    if (ucis_count > 0) {
+        ucis_count -= 1;
+        ucis_input[ucis_count] = 0;
+        return true;
+    }
+    return false;
+}
+
+/// ニーモニック文字列と入力バッファを照合する
+/// C版 match_mnemonic() に相当
+fn matchMnemonic(mnemonic: []const u8) bool {
+    if (mnemonic.len != ucis_count) return false;
+    for (0..ucis_count) |i| {
+        if (ucis_input[i] != mnemonic[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// UCIS 入力を確定し、マッチしたシンボルの Unicode コードポイントを送信する
+/// C版 ucis_finish() に相当
+/// 戻り値: true = マッチ成功, false = マッチなし
+pub fn ucisFinish() bool {
+    var found = false;
+    var found_index: usize = 0;
+
+    if (ucis_symbol_table) |table| {
+        for (table, 0..) |sym, i| {
+            if (matchMnemonic(sym.mnemonic)) {
+                found = true;
+                found_index = i;
+                break;
+            }
+        }
+    }
+
+    if (found) {
+        // 入力した文字を Backspace で削除
+        for (0..ucis_count) |_| {
+            tapCode(KC.BACKSPACE);
+        }
+        // マッチしたシンボルのコードポイントを送信
+        if (ucis_symbol_table) |table| {
+            for (table[found_index].code_points) |cp| {
+                if (cp == 0) break;
+                registerUnicode(cp);
+            }
+        }
+    }
+
+    ucis_active = false;
+    return found;
+}
+
+/// UCIS セッションをキャンセルする
+/// C版 ucis_cancel() に相当
+pub fn ucisCancel() void {
+    ucis_active = false;
+    ucis_count = 0;
+}
+
+// ============================================================
+// モード管理
+// ============================================================
+
 /// 現在の Unicode 入力モードを取得する
 pub fn getMode() UnicodeMode {
     return unicode_mode;
@@ -59,6 +239,10 @@ pub fn cycleMode(forward: bool) void {
     unicode_mode = @enumFromInt(next);
 }
 
+// ============================================================
+// キーコード処理
+// ============================================================
+
 /// Unicode キーコードを処理する
 /// 戻り値: true = 通常処理続行, false = キーを消費（Unicode として処理済み）
 pub fn process(kc: Keycode, pressed: bool) bool {
@@ -76,13 +260,54 @@ pub fn process(kc: Keycode, pressed: bool) bool {
         return false;
     }
 
-    // Basic Unicode (0x8000-0xFFFF)
+    // Unicode Map Pair (0xC000-0xFFFF): Shift対応ペア
+    // isUnicodeMapPair は isUnicodeMap より先にチェック（範囲が重ならないため順序は重要）
+    if (keycode_mod.isUnicodeMapPair(kc)) {
+        if (pressed) {
+            const indices = keycode_mod.unicodeMapPairGetIndices(kc);
+            const shifted = (host.getMods() & 0x22) != 0; // LSFT | RSFT
+            const index = if (shifted) indices.shifted else indices.normal;
+            if (unicodeMapGetCodePoint(index)) |cp| {
+                // Shift を一時的に解除してコードポイントを送信
+                if (shifted) {
+                    const mods = host.getMods();
+                    host.setMods(mods & ~@as(u8, 0x22));
+                    host.sendKeyboardReport();
+                    registerUnicode(cp);
+                    host.setMods(mods);
+                    host.sendKeyboardReport();
+                } else {
+                    registerUnicode(cp);
+                }
+            }
+        }
+        return false;
+    }
+
+    // Unicode Map (0x8000-0xBFFF): unicode_map テーブルが設定されている場合はインデックス参照
+    // テーブル未設定時は Basic Unicode として直接コードポイントを使用（後方互換）
+    if (keycode_mod.isUnicodeMap(kc)) {
+        if (pressed) {
+            if (unicode_map != null) {
+                // Unicode Map モード: テーブルからコードポイントを取得
+                const index = keycode_mod.unicodeMapGetIndex(kc);
+                if (unicodeMapGetCodePoint(index)) |cp| {
+                    registerUnicode(cp);
+                }
+            } else {
+                // レガシーモード: 下位15bitをコードポイントとして直接使用
+                const code_point = keycode_mod.unicodeGetCodePoint(kc);
+                registerUnicode(@as(u32, code_point));
+            }
+        }
+        return false;
+    }
+
+    // Basic Unicode 上位範囲 (0xC000-0xFFFF) — unicode_map 未設定時のフォールバック
     if (keycode_mod.isUnicode(kc)) {
         if (pressed) {
             const code_point = keycode_mod.unicodeGetCodePoint(kc);
-            unicodeInputStart();
-            registerHex(@as(u32, code_point));
-            unicodeInputFinish();
+            registerUnicode(@as(u32, code_point));
         }
         return false;
     }
@@ -91,8 +316,101 @@ pub fn process(kc: Keycode, pressed: bool) bool {
     return true;
 }
 
+// ============================================================
+// Unicode 入力シーケンス
+// ============================================================
+
+/// 32bit コードポイントを登録（入力シーケンス全体を送信）する
+/// C版 register_unicode() に相当
+/// macOS の UTF-16 サロゲートペア対応を含む
+pub fn registerUnicode(code_point: u32) void {
+    if (code_point > 0x10FFFF) return;
+
+    // Windows モードは BMP のみサポート
+    if (code_point > 0xFFFF and unicode_mode == .windows) return;
+
+    unicodeInputStart();
+
+    if (code_point > 0xFFFF and unicode_mode == .macos) {
+        // macOS: UTF-16 サロゲートペアに変換
+        const cp = code_point - 0x10000;
+        const hi = (cp >> 10) + 0xD800;
+        const lo = (cp & 0x3FF) + 0xDC00;
+        registerHex32(hi);
+        registerHex32(lo);
+    } else {
+        registerHex32(code_point);
+    }
+
+    unicodeInputFinish();
+}
+
+/// UTF-8 文字列の各文字を Unicode として送信する
+/// C版 send_unicode_string() に相当
+pub fn sendUnicodeString(str: []const u8) void {
+    var i: usize = 0;
+    while (i < str.len) {
+        const result = decodeUtf8(str[i..]);
+        if (result.code_point) |cp| {
+            registerUnicode(cp);
+        }
+        i += result.bytes_consumed;
+    }
+}
+
+/// UTF-8 デコード結果
+pub const Utf8DecodeResult = struct {
+    code_point: ?u32,
+    bytes_consumed: usize,
+};
+
+/// UTF-8 バイト列から1文字をデコードする
+/// C版 decode_utf8() に相当
+pub fn decodeUtf8(bytes: []const u8) Utf8DecodeResult {
+    if (bytes.len == 0) {
+        return .{ .code_point = null, .bytes_consumed = 0 };
+    }
+
+    const b0 = bytes[0];
+
+    // 1バイト文字 (0xxxxxxx)
+    if (b0 < 0x80) {
+        return .{ .code_point = b0, .bytes_consumed = 1 };
+    }
+
+    // 2バイト文字 (110xxxxx 10xxxxxx)
+    if (b0 >= 0xC0 and b0 < 0xE0) {
+        if (bytes.len < 2) return .{ .code_point = null, .bytes_consumed = 1 };
+        const cp = (@as(u32, b0 & 0x1F) << 6) |
+            @as(u32, bytes[1] & 0x3F);
+        return .{ .code_point = cp, .bytes_consumed = 2 };
+    }
+
+    // 3バイト文字 (1110xxxx 10xxxxxx 10xxxxxx)
+    if (b0 >= 0xE0 and b0 < 0xF0) {
+        if (bytes.len < 3) return .{ .code_point = null, .bytes_consumed = 1 };
+        const cp = (@as(u32, b0 & 0x0F) << 12) |
+            (@as(u32, bytes[1] & 0x3F) << 6) |
+            @as(u32, bytes[2] & 0x3F);
+        return .{ .code_point = cp, .bytes_consumed = 3 };
+    }
+
+    // 4バイト文字 (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+    if (b0 >= 0xF0 and b0 < 0xF8) {
+        if (bytes.len < 4) return .{ .code_point = null, .bytes_consumed = 1 };
+        const cp = (@as(u32, b0 & 0x07) << 18) |
+            (@as(u32, bytes[1] & 0x3F) << 12) |
+            (@as(u32, bytes[2] & 0x3F) << 6) |
+            @as(u32, bytes[3] & 0x3F);
+        return .{ .code_point = cp, .bytes_consumed = 4 };
+    }
+
+    // 不正なバイト
+    return .{ .code_point = null, .bytes_consumed = 1 };
+}
+
 /// OS別の Unicode 入力開始シーケンスを送信する
-fn unicodeInputStart() void {
+pub fn unicodeInputStart() void {
     // 既存の修飾キーを保存して一旦クリアする
     saved_mods = host.getMods();
     host.setMods(0);
@@ -138,7 +456,7 @@ fn unicodeInputStart() void {
 }
 
 /// OS別の Unicode 入力終了シーケンスを送信する
-fn unicodeInputFinish() void {
+pub fn unicodeInputFinish() void {
     switch (unicode_mode) {
         .macos => {
             // macOS: Option キーを離す
@@ -171,17 +489,60 @@ fn unicodeInputFinish() void {
     host.sendKeyboardReport();
 }
 
-/// コードポイントを16進数で入力する（上位の0は省略）
-fn registerHex(code_point: u32) void {
-    // 最大桁数を決定（上位0を省略するため、最上位の非0桁から開始）
-    // コードポイント 0 の場合は "0" を入力する
-    var started = false;
+/// OS別の Unicode 入力キャンセルシーケンスを送信する
+/// C版 unicode_input_cancel() に相当
+pub fn unicodeInputCancel() void {
+    switch (unicode_mode) {
+        .macos => {
+            host.unregisterCode(KC.LEFT_ALT);
+            host.sendKeyboardReport();
+        },
+        .linux, .bsd => {
+            tapCode(KC.ESCAPE);
+        },
+        .windows => {
+            host.unregisterCode(KC.LEFT_ALT);
+            host.sendKeyboardReport();
+        },
+        .wincompose => {
+            tapCode(KC.ESCAPE);
+        },
+        .emacs => {
+            // Ctrl+G でキャンセル
+            host.registerCode(KC.LEFT_CTRL);
+            host.sendKeyboardReport();
+            tapCode(KC.G);
+            host.unregisterCode(KC.LEFT_CTRL);
+            host.sendKeyboardReport();
+        },
+    }
 
-    // 15bit なので最大 0x7FFF (4桁)
-    var shift: u5 = 12;
+    // 保存した修飾キーを復元する
+    host.setMods(saved_mods);
+    host.sendKeyboardReport();
+}
+
+/// コードポイントを16進数で入力する（32bit 対応、上位の0は省略）
+/// C版 register_hex32() に相当
+/// WinCompose モードでは先頭が A-F の場合にリーディングゼロを付加
+fn registerHex32(code_point: u32) void {
+    var started = false;
+    const needs_leading_zero = (unicode_mode == .wincompose);
+
+    // 最大 8 ニブル（32bit）
+    var shift: u5 = 28;
     while (true) : (shift -= 4) {
         const digit: u4 = @truncate((code_point >> shift) & 0xF);
-        if (digit != 0 or started or shift == 0) {
+
+        // WinCompose: 先頭が A-F の場合にリーディングゼロを付加
+        if (!started and needs_leading_zero and digit > 9) {
+            tapCode(hexToKeycode(0));
+        }
+
+        // 下位16bit（4ニブル）以降は常に送信
+        const must_send = shift < 16;
+
+        if (digit != 0 or started or must_send) {
             started = true;
             tapCode(hexToKeycode(digit));
         }
@@ -223,6 +584,9 @@ fn tapCode(kc: u8) void {
 pub fn reset() void {
     unicode_mode = .linux;
     saved_mods = 0;
+    ucis_active = false;
+    ucis_count = 0;
+    ucis_input = .{0} ** UCIS_MAX_INPUT_LENGTH;
 }
 
 // ============================================================
@@ -323,4 +687,195 @@ test "process: 通常キーコードは消費されない" {
     try testing.expect(process(KC.A, true));
     try testing.expect(process(KC.SPACE, false));
     try testing.expect(process(0x7C16, true)); // Grave Escape
+}
+
+// ============================================================
+// Unicode Map テスト
+// ============================================================
+
+test "unicodeMapGetCodePoint: テーブル設定前は null" {
+    clearUnicodeMap();
+    try testing.expectEqual(@as(?u32, null), unicodeMapGetCodePoint(0));
+}
+
+test "unicodeMapGetCodePoint: テーブルからコードポイントを取得" {
+    const map = [_]u32{ 0x00E9, 0x1F600, 0x10FFFF };
+    setUnicodeMap(&map);
+    defer clearUnicodeMap();
+
+    try testing.expectEqual(@as(?u32, 0x00E9), unicodeMapGetCodePoint(0));
+    try testing.expectEqual(@as(?u32, 0x1F600), unicodeMapGetCodePoint(1));
+    try testing.expectEqual(@as(?u32, 0x10FFFF), unicodeMapGetCodePoint(2));
+}
+
+test "unicodeMapGetCodePoint: 範囲外インデックスは null" {
+    const map = [_]u32{0x00E9};
+    setUnicodeMap(&map);
+    defer clearUnicodeMap();
+
+    try testing.expectEqual(@as(?u32, null), unicodeMapGetCodePoint(1));
+    try testing.expectEqual(@as(?u32, null), unicodeMapGetCodePoint(100));
+}
+
+test "UM() / isUnicodeMap キーコード" {
+    // UM(0) = 0x8000
+    try testing.expectEqual(@as(Keycode, 0x8000), keycode_mod.UM(0));
+    // UM(0x3FFF) = 0xBFFF
+    try testing.expectEqual(@as(Keycode, 0xBFFF), keycode_mod.UM(0x3FFF));
+    // 範囲チェック
+    try testing.expect(keycode_mod.isUnicodeMap(0x8000));
+    try testing.expect(keycode_mod.isUnicodeMap(0xBFFF));
+    try testing.expect(!keycode_mod.isUnicodeMap(0xC000));
+    try testing.expect(!keycode_mod.isUnicodeMap(0x7FFF));
+}
+
+test "UP() / isUnicodeMapPair キーコード" {
+    // UP(0, 1) = 0xC000 | (0 << 7) | 1 = 0xC001
+    try testing.expectEqual(@as(Keycode, 0xC001), keycode_mod.UP(0, 1));
+    // 範囲チェック
+    try testing.expect(keycode_mod.isUnicodeMapPair(0xC000));
+    try testing.expect(keycode_mod.isUnicodeMapPair(0xFFFF));
+    try testing.expect(!keycode_mod.isUnicodeMapPair(0xBFFF));
+    try testing.expect(!keycode_mod.isUnicodeMapPair(0x7FFF));
+}
+
+// ============================================================
+// UCIS テスト
+// ============================================================
+
+test "UCIS: 初期状態は非アクティブ" {
+    reset();
+    try testing.expect(!ucisIsActive());
+    try testing.expectEqual(@as(u8, 0), ucisGetCount());
+}
+
+test "UCIS: ucisStart でアクティブになる" {
+    reset();
+    ucisStart();
+    try testing.expect(ucisIsActive());
+    try testing.expectEqual(@as(u8, 0), ucisGetCount());
+}
+
+test "UCIS: ucisAdd で文字が追加される" {
+    reset();
+    ucisStart();
+    try testing.expect(ucisAdd(KC.A));
+    try testing.expectEqual(@as(u8, 1), ucisGetCount());
+    try testing.expect(ucisAdd(KC.B));
+    try testing.expectEqual(@as(u8, 2), ucisGetCount());
+}
+
+test "UCIS: ucisAdd で数字が追加される" {
+    reset();
+    ucisStart();
+    try testing.expect(ucisAdd(KC.@"1"));
+    try testing.expect(ucisAdd(KC.@"0"));
+    try testing.expectEqual(@as(u8, 2), ucisGetCount());
+}
+
+test "UCIS: ucisAdd で無効なキーコードは拒否される" {
+    reset();
+    ucisStart();
+    try testing.expect(!ucisAdd(KC.SPACE));
+    try testing.expect(!ucisAdd(KC.ENTER));
+    try testing.expectEqual(@as(u8, 0), ucisGetCount());
+}
+
+test "UCIS: ucisRemoveLast で文字が削除される" {
+    reset();
+    ucisStart();
+    _ = ucisAdd(KC.A);
+    _ = ucisAdd(KC.B);
+    try testing.expectEqual(@as(u8, 2), ucisGetCount());
+
+    try testing.expect(ucisRemoveLast());
+    try testing.expectEqual(@as(u8, 1), ucisGetCount());
+
+    try testing.expect(ucisRemoveLast());
+    try testing.expectEqual(@as(u8, 0), ucisGetCount());
+
+    // 空の状態で削除は失敗
+    try testing.expect(!ucisRemoveLast());
+}
+
+test "UCIS: ucisCancel で非アクティブになる" {
+    reset();
+    ucisStart();
+    _ = ucisAdd(KC.A);
+    ucisCancel();
+    try testing.expect(!ucisIsActive());
+}
+
+test "UCIS: ucisFinish でテーブルなしは false" {
+    reset();
+    clearUcisSymbolTable();
+    ucisStart();
+    _ = ucisAdd(KC.A);
+    try testing.expect(!ucisFinish());
+    try testing.expect(!ucisIsActive());
+}
+
+test "UCIS: matchMnemonic 一致テスト" {
+    reset();
+    ucisStart();
+    _ = ucisAdd(KC.A);
+    _ = ucisAdd(KC.B);
+    _ = ucisAdd(KC.C);
+
+    try testing.expect(matchMnemonic("abc"));
+    try testing.expect(!matchMnemonic("ab"));
+    try testing.expect(!matchMnemonic("abcd"));
+    try testing.expect(!matchMnemonic("abd"));
+}
+
+test "UCIS: keycodeToChar 変換" {
+    try testing.expectEqual(@as(?u8, 'a'), keycodeToChar(KC.A));
+    try testing.expectEqual(@as(?u8, 'z'), keycodeToChar(KC.Z));
+    try testing.expectEqual(@as(?u8, '0'), keycodeToChar(KC.@"0"));
+    try testing.expectEqual(@as(?u8, '1'), keycodeToChar(KC.@"1"));
+    try testing.expectEqual(@as(?u8, '9'), keycodeToChar(KC.@"9"));
+    try testing.expectEqual(@as(?u8, null), keycodeToChar(KC.SPACE));
+}
+
+// ============================================================
+// UTF-8 デコードテスト
+// ============================================================
+
+test "decodeUtf8: ASCII" {
+    const result = decodeUtf8("A");
+    try testing.expectEqual(@as(?u32, 'A'), result.code_point);
+    try testing.expectEqual(@as(usize, 1), result.bytes_consumed);
+}
+
+test "decodeUtf8: 2バイト文字" {
+    // U+00E9 (e with acute) = 0xC3 0xA9
+    const result = decodeUtf8("\xC3\xA9");
+    try testing.expectEqual(@as(?u32, 0x00E9), result.code_point);
+    try testing.expectEqual(@as(usize, 2), result.bytes_consumed);
+}
+
+test "decodeUtf8: 3バイト文字" {
+    // U+3042 (hiragana a) = 0xE3 0x81 0x82
+    const result = decodeUtf8("\xE3\x81\x82");
+    try testing.expectEqual(@as(?u32, 0x3042), result.code_point);
+    try testing.expectEqual(@as(usize, 3), result.bytes_consumed);
+}
+
+test "decodeUtf8: 4バイト文字" {
+    // U+1F600 (grinning face) = 0xF0 0x9F 0x98 0x80
+    const result = decodeUtf8("\xF0\x9F\x98\x80");
+    try testing.expectEqual(@as(?u32, 0x1F600), result.code_point);
+    try testing.expectEqual(@as(usize, 4), result.bytes_consumed);
+}
+
+test "decodeUtf8: 空バイト列" {
+    const result = decodeUtf8("");
+    try testing.expectEqual(@as(?u32, null), result.code_point);
+    try testing.expectEqual(@as(usize, 0), result.bytes_consumed);
+}
+
+test "decodeUtf8: 不完全な2バイト文字" {
+    const result = decodeUtf8("\xC3");
+    try testing.expectEqual(@as(?u32, null), result.code_point);
+    try testing.expectEqual(@as(usize, 1), result.bytes_consumed);
 }
