@@ -175,6 +175,12 @@ pub fn task() void {
 
                     // キーコードを解決し、Tap Dance / Leader Key ならインターセプト
                     const kc = resolveKeycode(ev);
+
+                    // Caps Word: BothShifts / DoubleTapShift トリガー検出
+                    if (caps_word.checkShiftTrigger(kc, pressed)) {
+                        continue; // Caps Word が有効化された場合、このキーイベントを消費
+                    }
+
                     if (keycode.isTapDance(kc)) {
                         // Tap Dance プリプロセス: 別キー押下でアクティブな TD を確定
                         _ = tap_dance.preprocess(kc, pressed);
