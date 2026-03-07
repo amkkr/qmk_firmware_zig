@@ -2,10 +2,11 @@
 //! C版 quantum/process_keycode/process_dynamic_tapping_term.c に相当
 //!
 //! ランタイムでタッピングターム（タップ/ホールド判定の閾値）を増減するキーコード処理。
-//! DT_UP で +5ms、DT_DOWN で -5ms、DT_PRNT で現在値を出力（現在は no-op）。
+//! DT_UP で +5ms、DT_DOWN で -5ms、DT_PRNT で現在値を CDC コンソールに出力。
 
 const keycode = @import("keycode.zig");
 const tapping = @import("action_tapping.zig");
+const cdc_console = @import("../hal/cdc_console.zig");
 
 const Keycode = keycode.Keycode;
 
@@ -18,7 +19,7 @@ pub const DYNAMIC_TAPPING_TERM_INCREMENT: u16 = 5;
 pub fn process(kc: Keycode, pressed: bool) bool {
     if (kc == keycode.DT_PRNT) {
         if (pressed) {
-            // TODO: HID debug 出力（現在は no-op）
+            cdc_console.print("tapping_term = {d}ms\r\n", .{tapping.tapping_term});
         }
         return false;
     } else if (kc == keycode.DT_UP) {
