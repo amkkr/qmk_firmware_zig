@@ -12,7 +12,6 @@ const testing = std.testing;
 const keycode = @import("../core/keycode.zig");
 const report_mod = @import("../core/report.zig");
 const test_fixture = @import("../core/test_fixture.zig");
-const key_lock = @import("../core/key_lock.zig");
 
 const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;
@@ -22,7 +21,6 @@ test "QK_LOCK then key press locks the key" {
     var fixture = TestFixture.init();
     fixture.setup();
     defer fixture.deinit();
-    key_lock.reset();
 
     fixture.setKeymap(&.{
         KeymapKey.init(0, 0, 0, keycode.QK_LOCK),
@@ -56,11 +54,10 @@ test "QK_LOCK then key press locks the key" {
     try testing.expect(!fixture.driver.lastKeyboardReport().hasKey(KC.A));
 }
 
-test "QK_LOCK without subsequent key does not lock" {
+test "QK_LOCK pressed twice cancels watching" {
     var fixture = TestFixture.init();
     fixture.setup();
     defer fixture.deinit();
-    key_lock.reset();
 
     fixture.setKeymap(&.{
         KeymapKey.init(0, 0, 0, keycode.QK_LOCK),
