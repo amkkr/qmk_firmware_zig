@@ -439,3 +439,36 @@ test "SH_OS (one-shot) no deactivation when inactive" {
     oneshotCheck(false);
     try testing.expect(!isSwapHandsOn());
 }
+
+test "SH_OS (one-shot) held while pressing another key (momentary-like)" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const act = Action{ .code = action_code.ACTION_SWAP_HANDS_ONESHOT() };
+
+    // SH_OS 押下 → pressed 状態
+    var sh_press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processSwapHandsAction(&sh_press, act);
+    try testing.expect(isSwapHandsOn());
+
+    // SH_OS をホールドしたまま別キーを押す（pressed 状態のまま）
+    oneshotCheck(true);
+    try testing.expect(isSwapHandsOn()); // swap_hands は有効
+
+    // 別キーをリリース（pressed 状態なので何もしない）
+    oneshotCheck(false);
+    try testing.expect(isSwapHandsOn()); // まだ有効
+
+    // SH_OS をリリース → armed 状態に遷移
+    var sh_release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 300) };
+    processSwapHandsAction(&sh_release, act);
+    try testing.expect(isSwapHandsOn()); // armed で維持
+
+    // 次のキー押下→リリースで one-shot が解除される
+    oneshotCheck(true);
+    try testing.expect(isSwapHandsOn());
+    oneshotCheck(false);
+    try testing.expect(!isSwapHandsOn()); // 解除
+}
