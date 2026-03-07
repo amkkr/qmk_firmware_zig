@@ -102,7 +102,12 @@ pub fn processAltRepeatKey(pressed: bool) void {
 
     if (pressed) {
         const alt_kc = getAltKeycode(last_keycode);
-        if (alt_kc == 0) return; // マッピングなし
+        if (alt_kc == 0) {
+            // マッピングなし: stale 値をクリアして早期リターン
+            alt_registered_keycode = 0;
+            alt_registered_mods = 0;
+            return;
+        }
         alt_registered_keycode = alt_kc;
         // 代替キーには元のキーと同じ修飾キーを適用
         alt_registered_mods = last_mods;
@@ -276,6 +281,7 @@ test "alt repeat key: HOME reverses to END" {
     processAltRepeatKey(true);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.END));
     processAltRepeatKey(false);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(KC.END));
 }
 
 test "alt repeat key: PGUP reverses to PGDN" {
@@ -289,6 +295,7 @@ test "alt repeat key: PGUP reverses to PGDN" {
     processAltRepeatKey(true);
     try testing.expect(mock.lastKeyboardReport().hasKey(KC.PAGE_DOWN));
     processAltRepeatKey(false);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(KC.PAGE_DOWN));
 }
 
 test "alt repeat key: no mapping for regular key" {
@@ -328,4 +335,31 @@ test "alt repeat key: no-op when no key recorded" {
 
     processAltRepeatKey(true);
     try testing.expectEqual(@as(usize, 0), mock.keyboard_count);
+}
+
+test "alt repeat key: no stale unregister after mapping miss" {
+    // 再現シナリオ: マッピングあり → マッピングなし → release で stale unregister が起きないこと
+    reset();
+    host.hostReset();
+    var mock = FixedTestDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    // 1. LEFT → RIGHT を送信（成功）
+    setLastKeycode(KC.LEFT, 0x02);
+    processAltRepeatKey(true);
+    try testing.expect(mock.lastKeyboardReport().hasKey(KC.RIGHT));
+    processAltRepeatKey(false);
+    try testing.expect(!mock.lastKeyboardReport().hasKey(KC.RIGHT));
+
+    const count_after_first = mock.keyboard_count;
+
+    // 2. KC.A はマッピングなし → press は no-op
+    setLastKeycode(KC.A, 0);
+    processAltRepeatKey(true);
+    try testing.expectEqual(count_after_first, mock.keyboard_count); // 送信なし
+
+    // 3. release でも stale な unregisterCode が呼ばれないこと
+    processAltRepeatKey(false);
+    try testing.expectEqual(count_after_first, mock.keyboard_count); // 送信なし
 }
