@@ -126,6 +126,8 @@ fn finishAutoShift(time: u16) void {
     // Auto Shift の Shift は last_mods には含めない（C版互換:
     // process_last_key は processAutoShift より前に呼ばれ、
     // その時点では weak_mods にまだ LSHIFT が追加されていない）
+    // ただし OSM mods は含める（C版 process_last_key の
+    // remembered_mods |= get_oneshot_mods() に相当）
     const basic_kc: u8 = @truncate(state.pending_kc);
     repeat_key.setLastKeycode(@as(keycode.Keycode, basic_kc), host.getMods() | host.getWeakMods() | host.getOneshotMods());
 
