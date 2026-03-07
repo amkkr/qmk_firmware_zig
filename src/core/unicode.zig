@@ -35,6 +35,9 @@ pub const UnicodeMode = enum(u8) {
 /// Unicode モード数
 const MODE_COUNT = @typeInfo(UnicodeMode).@"enum".fields.len;
 
+/// Shift キービットマスク（LSFT = 0x02, RSFT = 0x20）
+const SHIFT_MODS_MASK: u8 = 0x02 | 0x20;
+
 /// 現在の Unicode 入力モード
 var unicode_mode: UnicodeMode = .linux;
 
@@ -195,11 +198,11 @@ pub fn ucisFinish() bool {
             tapCode(KC.BACKSPACE);
         }
         // マッチしたシンボルのコードポイントを送信
-        if (ucis_symbol_table) |table| {
-            for (table[found_index].code_points) |cp| {
-                if (cp == 0) break;
-                registerUnicode(cp);
-            }
+        // found == true の場合 ucis_symbol_table は常に non-null が保証されている
+        const table = ucis_symbol_table orelse unreachable;
+        for (table[found_index].code_points) |cp| {
+            if (cp == 0) break;
+            registerUnicode(cp);
         }
     }
 
@@ -265,13 +268,13 @@ pub fn process(kc: Keycode, pressed: bool) bool {
     if (keycode_mod.isUnicodeMapPair(kc)) {
         if (pressed) {
             const indices = keycode_mod.unicodeMapPairGetIndices(kc);
-            const shifted = (host.getMods() & 0x22) != 0; // LSFT | RSFT
+            const shifted = (host.getMods() & SHIFT_MODS_MASK) != 0;
             const index = if (shifted) indices.shifted else indices.normal;
             if (unicodeMapGetCodePoint(index)) |cp| {
                 // Shift を一時的に解除してコードポイントを送信
                 if (shifted) {
                     const mods = host.getMods();
-                    host.setMods(mods & ~@as(u8, 0x22));
+                    host.setMods(mods & ~SHIFT_MODS_MASK);
                     host.sendKeyboardReport();
                     registerUnicode(cp);
                     host.setMods(mods);
@@ -299,15 +302,6 @@ pub fn process(kc: Keycode, pressed: bool) bool {
                 const code_point = keycode_mod.unicodeGetCodePoint(kc);
                 registerUnicode(@as(u32, code_point));
             }
-        }
-        return false;
-    }
-
-    // Basic Unicode 上位範囲 (0xC000-0xFFFF) — unicode_map 未設定時のフォールバック
-    if (keycode_mod.isUnicode(kc)) {
-        if (pressed) {
-            const code_point = keycode_mod.unicodeGetCodePoint(kc);
-            registerUnicode(@as(u32, code_point));
         }
         return false;
     }
@@ -366,6 +360,11 @@ pub const Utf8DecodeResult = struct {
 
 /// UTF-8 バイト列から1文字をデコードする
 /// C版 decode_utf8() に相当
+///
+/// 注意: 組み込み用途の簡略実装のため、継続バイト（10xxxxxx）の妥当性検証を省略している。
+/// 不正なバイト列（例: 0x80-0xBF から始まる列や、継続バイトが 10xxxxxx でないもの）は
+/// 誤ったコードポイントとして解釈される可能性がある。
+/// 正しい入力（有効な UTF-8 文字列）が前提であり、不正入力の検証は呼び出し元の責任とする。
 pub fn decodeUtf8(bytes: []const u8) Utf8DecodeResult {
     if (bytes.len == 0) {
         return .{ .code_point = null, .bytes_consumed = 0 };
