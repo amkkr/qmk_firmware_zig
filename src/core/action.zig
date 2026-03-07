@@ -197,11 +197,17 @@ pub fn shouldRetainReleaseDuringTapping(event: KeyEvent, tap_count: u8) bool {
 pub fn processAction(keyp: *KeyRecord, act: Action) void {
     if (act.code == action_code.ACTION_NO or act.code == action_code.ACTION_TRANSPARENT) return;
 
-    // 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
-    if (processSpecialAction(keyp.event, act)) return;
-
     const ev = keyp.event;
     const kind = act.kind.id;
+
+    // One-Shot Swap Hands チェック: swap_hands 以外のキーイベントで解除判定
+    // processSpecialAction の前に配置し、early return でスキップされないようにする
+    if (kind != .swap_hands) {
+        swap_hands.oneshotCheck(ev.pressed);
+    }
+
+    // 特殊アクション（Caps Word, Repeat Key, Layer Lock, Grave Escape）の処理
+    if (processSpecialAction(ev, act)) return;
 
     // ---- do_release_oneshot 前処理（C版 process_action の先頭ロジック） ----
     // OSL がアクティブで、修飾キー以外のキーが押された場合、

@@ -49,6 +49,20 @@ pub const OP_SH_ONESHOT: u8 = 0xF6; // One-shot Swap Hands
 /// Swap Hands が現在有効かどうか
 var swap_hands: bool = false;
 
+/// One-Shot Swap Hands の状態
+const OneshotState = enum {
+    /// 無効（通常状態）
+    inactive,
+    /// SH_OS キーが押されている
+    pressed,
+    /// SH_OS キーがリリース済み、次のキー入力を待っている
+    armed,
+    /// 次のキーが押された、そのキーのリリースで swap_hands を解除する
+    used,
+};
+
+var oneshot_state: OneshotState = .inactive;
+
 // ============================================================
 // 公開 API
 // ============================================================
@@ -76,6 +90,29 @@ pub fn isSwapHandsOn() bool {
 /// 状態をリセットする（テスト用）
 pub fn reset() void {
     swap_hands = false;
+    oneshot_state = .inactive;
+}
+
+/// One-Shot Swap Hands の状態チェック
+/// processAction() から非 swap_hands キーイベント時に呼ばれる。
+/// 次のキーの press/release に応じて one-shot を解除する。
+pub fn oneshotCheck(pressed: bool) void {
+    switch (oneshot_state) {
+        .armed => {
+            if (pressed) {
+                // 次のキーが押された: このキーのリリースで解除する
+                oneshot_state = .used;
+            }
+        },
+        .used => {
+            if (!pressed) {
+                // 次のキーがリリースされた: swap_hands を解除
+                swap_hands = false;
+                oneshot_state = .inactive;
+            }
+        },
+        else => {},
+    }
 }
 
 // ============================================================
@@ -117,14 +154,18 @@ pub fn processSwapHandsAction(keyp: *KeyRecord, act: Action) void {
             }
         },
         OP_SH_ONESHOT => {
-            // TODO: One-shot Swap Hands は未実装（C版 set_oneshot_swaphands() 相当）
-            // C版では「次のキー入力まで swap_hands を維持し、そのキー後に自動 OFF」
-            // というセマンティクスだが、action_tapping との連携が必要なため簡易実装。
-            // 現状は SH_MON と同等の動作（モメンタリー ON/OFF）。
+            // One-Shot Swap Hands (C版 set_oneshot_swaphands() 相当)
+            // 押下→リリース後、次のキー入力が完了するまで swap_hands を維持し、
+            // そのキーのリリースで自動 OFF する。
             if (ev.pressed) {
                 swap_hands = true;
+                oneshot_state = .pressed;
             } else {
-                swap_hands = false;
+                if (oneshot_state == .pressed) {
+                    // SH_OS リリース: 次のキー入力を待つ
+                    oneshot_state = .armed;
+                }
+                // swap_hands は true のまま維持
             }
         },
         OP_SH_TAP_TOGGLE => {
@@ -344,4 +385,90 @@ test "SH_T(kc) hold enables swap hands" {
     var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 400) };
     processSwapHandsAction(&release, act);
     try testing.expect(!isSwapHandsOn());
+}
+
+test "SH_OS (one-shot) activates on press, stays active after release" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const act = Action{ .code = action_code.ACTION_SWAP_HANDS_ONESHOT() };
+
+    // SH_OS 押下 → swap_hands 有効化
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processSwapHandsAction(&press, act);
+    try testing.expect(isSwapHandsOn());
+
+    // SH_OS リリース → swap_hands は維持される（armed 状態）
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processSwapHandsAction(&release, act);
+    try testing.expect(isSwapHandsOn());
+}
+
+test "SH_OS (one-shot) deactivates after next key press-release" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const act = Action{ .code = action_code.ACTION_SWAP_HANDS_ONESHOT() };
+
+    // SH_OS 押下→リリース（armed 状態にする）
+    var press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processSwapHandsAction(&press, act);
+    var release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 200) };
+    processSwapHandsAction(&release, act);
+    try testing.expect(isSwapHandsOn());
+
+    // 次のキーを押す → swap_hands はまだ有効（used 状態）
+    oneshotCheck(true);
+    try testing.expect(isSwapHandsOn());
+
+    // 次のキーをリリース → swap_hands が自動的に無効化
+    oneshotCheck(false);
+    try testing.expect(!isSwapHandsOn());
+}
+
+test "SH_OS (one-shot) no deactivation when inactive" {
+    reset();
+
+    // one-shot が inactive の状態では oneshotCheck は何もしない
+    oneshotCheck(true);
+    try testing.expect(!isSwapHandsOn());
+    oneshotCheck(false);
+    try testing.expect(!isSwapHandsOn());
+}
+
+test "SH_OS (one-shot) held while pressing another key (momentary-like)" {
+    reset();
+    var mock = MockDriver{};
+    host.setDriver(host.HostDriver.from(&mock));
+    defer host.clearDriver();
+
+    const act = Action{ .code = action_code.ACTION_SWAP_HANDS_ONESHOT() };
+
+    // SH_OS 押下 → pressed 状態
+    var sh_press = KeyRecord{ .event = KeyEvent.keyPress(0, 0, 100) };
+    processSwapHandsAction(&sh_press, act);
+    try testing.expect(isSwapHandsOn());
+
+    // SH_OS をホールドしたまま別キーを押す（pressed 状態のまま）
+    oneshotCheck(true);
+    try testing.expect(isSwapHandsOn()); // swap_hands は有効
+
+    // 別キーをリリース（pressed 状態なので何もしない）
+    oneshotCheck(false);
+    try testing.expect(isSwapHandsOn()); // まだ有効
+
+    // SH_OS をリリース → armed 状態に遷移
+    var sh_release = KeyRecord{ .event = KeyEvent.keyRelease(0, 0, 300) };
+    processSwapHandsAction(&sh_release, act);
+    try testing.expect(isSwapHandsOn()); // armed で維持
+
+    // 次のキー押下→リリースで one-shot が解除される
+    oneshotCheck(true);
+    try testing.expect(isSwapHandsOn());
+    oneshotCheck(false);
+    try testing.expect(!isSwapHandsOn()); // 解除
 }
