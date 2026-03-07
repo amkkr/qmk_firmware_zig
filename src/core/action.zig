@@ -234,6 +234,11 @@ pub fn processAction(keyp: *KeyRecord, act: Action) void {
         }
     }
 
+    // One-Shot Swap Hands チェック: swap_hands 以外のキーイベントで解除判定
+    if (kind != .swap_hands) {
+        swap_hands.oneshotCheck(ev.pressed);
+    }
+
     switch (kind) {
         .mods, .rmods => processModsAction(ev, act),
         .mods_tap, .rmods_tap => processModsTapAction(keyp, act),
