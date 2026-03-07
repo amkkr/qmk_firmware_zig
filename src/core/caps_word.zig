@@ -70,6 +70,10 @@ pub fn activate() void {
     host.setMods(0);
     host.clearWeakMods();
     host.clearOneshotMods();
+    // BothShifts / DoubleTapShift の stale state を防ぐ
+    lshift_pressed = false;
+    rshift_pressed = false;
+    shift_tap_count = 0;
 }
 
 /// Caps Word を無効化する
@@ -158,6 +162,8 @@ pub fn checkShiftTrigger(kc: keycode.Keycode, pressed: bool) bool {
     const is_rshift = (kc == KC.RIGHT_SHIFT);
     if (!is_lshift and !is_rshift) {
         // Shift 以外のキー → ダブルタップカウンタをリセット
+        // 注意: C版はタイマーのみで判定するが、Zig版では意図的に
+        // 非Shiftキー割り込みでカウンタをリセットし、誤発火を防ぐ
         if (pressed) {
             shift_tap_count = 0;
         }
@@ -525,4 +531,27 @@ test "caps word: double tap shift reset by other key" {
     timer.mockSet(200);
     _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
     try testing.expect(!isActive()); // リセットされたので有効化されない
+}
+
+test "caps word: activate clears stale shift state" {
+    reset();
+    host.hostReset();
+    both_shifts_enable = true;
+    defer {
+        both_shifts_enable = false;
+    }
+
+    // LSHIFT を押す → lshift_pressed = true
+    _ = checkShiftTrigger(KC.LEFT_SHIFT, true);
+
+    // CW_TOGG 等で外部から有効化 → stale state がリセットされる
+    activate();
+    try testing.expect(isActive());
+
+    // caps_word を無効化
+    deactivate();
+
+    // RSHIFT だけで誤発火しないことを確認
+    _ = checkShiftTrigger(KC.RIGHT_SHIFT, true);
+    try testing.expect(!isActive()); // lshift_pressed がリセットされているので発火しない
 }
