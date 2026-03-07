@@ -15,12 +15,11 @@
 //!
 //! C版との差異:
 //! - AUDIO_ENABLE ソング再生: 省略
-//! - EE_HANDS_LEFT/RIGHT (eeconfig_update_handedness): 省略
-//!   （スプリット判定のハンドシェイクは本ファームウェアでは未実装）
 
 const keycode_mod = @import("keycode.zig");
 const keymap_mod = @import("keymap.zig");
 const host = @import("host.zig");
+const eeconfig = @import("eeconfig.zig");
 const Keycode = keycode_mod.Keycode;
 const KeymapConfig = keymap_mod.KeymapConfig;
 
@@ -125,10 +124,16 @@ pub fn process(kc: Keycode, pressed: bool) bool {
             config.nkro = !config.nkro;
         },
 
-        // EE_HANDS_LEFT/RIGHT は省略（スプリット判定のハンドシェイク未実装）
-        // 通常アクションパイプラインに流さず、ここで消費する
-        // C版同様に clearKeyboard() でスタック防止
-        keycode_mod.EH_LEFT, keycode_mod.EH_RGHT => {
+        // EE_HANDS_LEFT/RIGHT: スプリットキーボードの左右ハンド判定
+        // EEPROM に handedness を書き込み、起動時に読み出して左右を判定する。
+        // C版 process_magic() の eeconfig_update_handedness() に相当。
+        keycode_mod.EH_LEFT => {
+            eeconfig.updateHandedness(true);
+            host.clearKeyboard();
+            return false;
+        },
+        keycode_mod.EH_RGHT => {
+            eeconfig.updateHandedness(false);
             host.clearKeyboard();
             return false;
         },
@@ -335,11 +340,61 @@ test "非 Magic キーコードは無視される" {
 
 test "EEPROM 永続化: 設定変更後に EEPROM に書き込まれる" {
     setupTest();
-    const eeconfig = @import("eeconfig.zig");
     eeconfig.enable();
     _ = process(keycode_mod.CL_SWAP, true);
     // EEPROM から読み直して一致を確認
     const raw = eeprom.readWord(eeconfig.EECONFIG_KEYMAP_ADDR);
     const saved: KeymapConfig = @bitCast(raw);
     try testing.expect(saved.swap_control_capslock);
+}
+
+test "EH_LEFT: 左手側の handedness を EEPROM に書き込む" {
+    setupTest();
+    // 初期状態: 未初期化（右手側として扱われる）
+    try testing.expect(!eeconfig.readHandedness());
+
+    // EH_LEFT を押下 → 左手側に設定
+    try testing.expect(!process(keycode_mod.EH_LEFT, true)); // 消費される
+    try testing.expect(eeconfig.readHandedness()); // 左手側に設定された
+
+    // EEPROM の raw 値を確認
+    try testing.expectEqual(@as(u8, 1), eeprom.readByte(eeconfig.EECONFIG_HANDEDNESS_ADDR));
+}
+
+test "EH_RGHT: 右手側の handedness を EEPROM に書き込む" {
+    setupTest();
+    // まず左手側に設定
+    eeconfig.updateHandedness(true);
+    try testing.expect(eeconfig.readHandedness());
+
+    // EH_RGHT を押下 → 右手側に設定
+    try testing.expect(!process(keycode_mod.EH_RGHT, true)); // 消費される
+    try testing.expect(!eeconfig.readHandedness()); // 右手側に設定された
+
+    // EEPROM の raw 値を確認
+    try testing.expectEqual(@as(u8, 0), eeprom.readByte(eeconfig.EECONFIG_HANDEDNESS_ADDR));
+}
+
+test "EH_LEFT/EH_RGHT: release イベントは無視される" {
+    setupTest();
+    // release イベントは Magic 共通で無視される（true が返る）
+    try testing.expect(process(keycode_mod.EH_LEFT, false));
+    try testing.expect(process(keycode_mod.EH_RGHT, false));
+    // handedness は変更されていない（EEPROM 未初期化のまま）
+    try testing.expect(!eeconfig.readHandedness());
+}
+
+test "EH_LEFT → EH_RGHT: 左右を切り替えられる" {
+    setupTest();
+    // 左手側に設定
+    _ = process(keycode_mod.EH_LEFT, true);
+    try testing.expect(eeconfig.readHandedness());
+
+    // 右手側に切り替え
+    _ = process(keycode_mod.EH_RGHT, true);
+    try testing.expect(!eeconfig.readHandedness());
+
+    // もう一度左手側に切り替え
+    _ = process(keycode_mod.EH_LEFT, true);
+    try testing.expect(eeconfig.readHandedness());
 }
