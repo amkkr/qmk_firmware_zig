@@ -292,10 +292,9 @@ fn wheelUnitKinetic() u8 {
     } else if (mousekey_accel & (1 << 2) != 0) {
         speed = kinetic_speed_config.wheel_accelerated_movements;
     } else if (mousekey_wheel_repeat != 0 and mouse_timer != 0) {
-        // C版 upstream と同様に kinetic_wheel_interval を wheel_base_movements と比較する。
-        // initial_interval と比較すると、最初の呼び出し後に interval が initial_interval と等しくなり、
-        // 以降の加速計算が常にスキップされてしまう不具合を修正。
-        if (kinetic_wheel_interval != kinetic_speed_config.wheel_base_movements) {
+        // kinetic_wheel_interval (ms) が最大速度時のインターバル (1000/wheel_base_movements ms) より
+        // 大きい場合、まだ加速の余地があるので加速計算を実行する。
+        if (kinetic_wheel_interval > 1000 / @as(u16, kinetic_speed_config.wheel_base_movements)) {
             const time_elapsed: u32 = @as(u32, timer.elapsed(mouse_timer)) / 50;
             speed = @as(u32, kinetic_speed_config.wheel_initial_movements) +
                 1 * time_elapsed +
@@ -1719,9 +1718,8 @@ test "kinetic_speed - ホイール動作" {
 }
 
 test "kinetic_speed - ホイール kinetic 加速で kinetic_wheel_interval が変化する" {
-    // 修正前バグ: kinetic_wheel_interval を initial_interval と比較すると
-    // 1回目の呼び出し後に等しくなり、加速計算が永遠にスキップされた。
-    // 修正後: wheel_base_movements と比較するため、常に加速計算が実行される。
+    // kinetic_wheel_interval (ms) と 1000/wheel_base_movements (ms) を比較し、
+    // 最大速度に達するまで加速計算を実行する。
     _ = setupTest();
     defer teardownTest();
 
