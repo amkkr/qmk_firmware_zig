@@ -396,7 +396,7 @@ build.zig 使用 API について 0.16.0 リリースノート確認 + ローカ
 - `picotool info` でファーム情報を見られる手段がない
 
 **提案**
-1. `build.zig` で `git rev-parse --short=12 HEAD` を実行 (`--abbrev=12` 固定で reproducible)
+1. `build.zig` で `git rev-parse --short=12 HEAD` を実行 (`--short=12` 固定で reproducible)
 2. 結果を `build_options.GIT_HASH` として expose
 3. UF2 ファイル全体 (`{name}.uf2`) の SHA256 を計算し、ビルドログに stderr 表示
 4. オプション: USB string descriptor の serial に GIT_HASH を含める
