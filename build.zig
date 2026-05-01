@@ -25,7 +25,7 @@ const Flasher = enum {
 /// build エラー早期化が目的 (b.addSystemCommand は execve 経由のため
 /// shell injection は発生しないが、 ファイルパス組み立てやエラー診断容易性
 /// のために制限する)。
-fn validateIdentifier(b: *std.Build, name: []const u8, value: []const u8) void {
+fn validateIdentifier(name: []const u8, value: []const u8) void {
     if (value.len == 0) {
         std.debug.panic("Error: --{s} の値が空です", .{name});
     }
@@ -38,7 +38,6 @@ fn validateIdentifier(b: *std.Build, name: []const u8, value: []const u8) void {
             std.debug.panic("Error: --{s} の値 '{s}' に許可されていない文字が含まれています ([A-Za-z0-9_-]+ のみ許可)", .{ name, value });
         }
     }
-    _ = b;
 }
 
 pub fn build(b: *std.Build) void {
@@ -50,8 +49,8 @@ pub fn build(b: *std.Build) void {
     const flasher = b.option(Flasher, "flasher", "Flash backend (bootsel|picotool|openocd|probers, default: bootsel)") orelse .bootsel;
 
     // 入力検証 (build エラー早期化、 ファイルパス組み立て前にチェック)
-    validateIdentifier(b, "keyboard", keyboard);
-    validateIdentifier(b, "keymap", keymap);
+    validateIdentifier("keyboard", keyboard);
+    validateIdentifier("keymap", keymap);
 
     const kb_config = keyboard_configs.get(keyboard) orelse
         std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
@@ -270,7 +269,9 @@ fn addOpenocdFlashStep(
     const scripts_dir = resolveOpenocdScriptsDir(b);
 
     const elf_path = b.getInstallPath(.bin, b.fmt("{s}_{s}", .{ keyboard, keymap }));
-    const program_cmd = b.fmt("program {s} verify reset exit", .{elf_path});
+    // openocd の -c は TCL インタープリタに渡されるため、 path は double quote で囲む
+    // (パスにスペースが含まれる場合の誤動作防止)
+    const program_cmd = b.fmt("program \"{s}\" verify reset exit", .{elf_path});
 
     const run = b.addSystemCommand(&.{
         tool_path,
