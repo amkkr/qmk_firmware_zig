@@ -27,7 +27,7 @@ qmk lint -kb madbd34              # キーボード定義のlint
 
 ### Zig版（移行中）
 
-Zig バージョン: **0.15.2**
+Zig バージョン: **0.16.0**
 
 ```bash
 zig build                         # ファームウェアビルド (ELF + UF2 を zig-out/ へ出力)
