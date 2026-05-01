@@ -922,9 +922,9 @@ pub const UsbDriver = struct {
             // buffer に溜まっている分を先に流す
             self.drv.cdcWrite(writer.buffer[0..writer.end]);
             writer.end = 0;
+            // data.len は std.Io.Writer.VTable.drain 規約で必ず非ゼロ。
             // data の最終要素以外を順に書く
             var consumed: usize = 0;
-            if (data.len == 0) return 0;
             for (data[0 .. data.len - 1]) |chunk| {
                 self.drv.cdcWrite(chunk);
                 consumed += chunk.len;

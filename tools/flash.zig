@@ -215,7 +215,7 @@ fn resolveBootselPath(io: std.Io, environ: std.process.Environ, allocator: std.m
 
     // BOOTSEL 自動リセットを試行 (CDC 1200bps タッチ、 ファーム側 D1 と協調)
     if (args.auto_reset) {
-        attempt1200bpsTouch(io, environ, allocator, args.verbose);
+        attempt1200bpsTouch(io, allocator, args.verbose);
         // タッチ後の BOOTSEL ドライブ出現を待つ (短時間)
         const auto_reset_max_iter = 10 * std.time.ms_per_s / poll_interval_ms;
         for (0..auto_reset_max_iter) |_| {
@@ -274,7 +274,7 @@ fn selectBootselFromDetected(io: std.Io, environ: std.process.Environ, allocator
 /// (Arduino / picotool 互換)。 ファーム側の set_line_coding ハンドラが dwDTERate == 1200
 /// を検出して bootloader.jump() を呼ぶことで RP2040 が BOOTSEL モードへ再起動する。
 /// 失敗しても warning を出すだけでフォールバック (BOOTSEL ドライブ検出待ち) を継続する。
-fn attempt1200bpsTouch(io: std.Io, environ: std.process.Environ, allocator: std.mem.Allocator, verbose: bool) void {
+fn attempt1200bpsTouch(io: std.Io, allocator: std.mem.Allocator, verbose: bool) void {
     const ports = findCdcPorts(io, allocator) catch |err| {
         if (verbose) std.debug.print("詳細: CDC ポート検索失敗 ({s})、 1200bps タッチをスキップ\n", .{@errorName(err)});
         return;
@@ -291,7 +291,7 @@ fn attempt1200bpsTouch(io: std.Io, environ: std.process.Environ, allocator: std.
 
     for (ports) |port| {
         std.debug.print("RP2040 を BOOTSEL に遷移中 ({s} を 1200bps でタッチ)...\n", .{port});
-        runStty1200bps(io, environ, port, verbose) catch |err| {
+        runStty1200bps(io, port, verbose) catch |err| {
             std.debug.print("Warning: {s} の 1200bps タッチ失敗 ({s})、 次のポートを試行\n", .{ port, @errorName(err) });
             continue;
         };
@@ -335,14 +335,13 @@ fn findCdcPorts(io: std.Io, allocator: std.mem.Allocator) ![][]const u8 {
 /// stty コマンドで指定 tty を 1200bps に設定して短時間 open する (1200bps タッチ)。
 /// macOS は `-f`、 Linux は `-F` でデバイスを指定する。
 /// 非対応 OS では findCdcPorts が空配列を返すため本関数は呼ばれない (else は unreachable)。
-fn runStty1200bps(io: std.Io, environ: std.process.Environ, port: []const u8, verbose: bool) !void {
+fn runStty1200bps(io: std.Io, port: []const u8, verbose: bool) !void {
     const flag = switch (builtin.os.tag) {
         .macos => "-f",
         .linux => "-F",
         else => unreachable,
     };
 
-    _ = environ;
     var child = try std.process.spawn(io, .{
         .argv = &.{ "stty", flag, port, "1200" },
         .stdin = .ignore,

@@ -405,7 +405,6 @@ fn gitHash(b: *std.Build) []const u8 {
         std.debug.print("warning: git rev-parse の出力読み取りに失敗、 GIT_HASH を空文字に設定\n", .{});
         return "";
     };
-    errdefer b.allocator.free(stdout);
 
     const term = child.wait(io) catch |err| {
         std.debug.print("warning: git rev-parse の wait に失敗 ({s})、 GIT_HASH を空文字に設定\n", .{@errorName(err)});
