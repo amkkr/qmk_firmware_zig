@@ -307,12 +307,8 @@ fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
         ports.deinit(allocator);
     }
 
-    const dir_path: []const u8 = switch (builtin.os.tag) {
-        .macos => "/dev",
-        .linux => "/dev",
-        else => return ports.toOwnedSlice(allocator),
-    };
-
+    // 対応 OS は /dev 配下にデバイスファイルを作るため dir_path は共通
+    const dir_path: []const u8 = "/dev";
     const prefix: []const u8 = switch (builtin.os.tag) {
         .macos => "cu.usbmodem",
         .linux => "ttyACM",
@@ -326,6 +322,9 @@ fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
     while (try iter.next()) |entry| {
         if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
         const port = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
+        // append 失敗時のリーク防止 (errdefer は ports.items に入った要素しか解放しないため、
+        // append 前に確保したばかりの port を独立に守る必要がある)
+        errdefer allocator.free(port);
         try ports.append(allocator, port);
     }
     return ports.toOwnedSlice(allocator);
