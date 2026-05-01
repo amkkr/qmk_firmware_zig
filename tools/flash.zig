@@ -277,11 +277,12 @@ test "verifyBootselDrive rejects directory with disallowed prefix" {
     try testing.expect(!verifyBootselDrive(testing.allocator, tmp_path));
 }
 
-test "verifyBootselDrive rejects when INFO_UF2.TXT is missing under allowed prefix" {
+test "verifyBootselDrive rejects non-existent path matching allowed-prefix pattern" {
     // 許可 prefix 内 (例: /Volumes/, /run/media/) に書込権限を持つ CI 環境は通常存在しないため、
-    // INFO_UF2.TXT 不存在の検証経路は実装側のフォールバック挙動 (openFile catch return false) に
-    // 依存する。 ここでは実存しない許可 prefix パスを与えて、 realpath が失敗 → false を返すこと
-    // のみを確認する。
+    // INFO_UF2.TXT 不存在の検証経路を直接テストすることは難しい。 ここでは存在しないパスを与え、
+    // realpath が失敗して false が返る経路のみを確認する。
+    // 「INFO_UF2.TXT 不存在で false を返す」経路は openFile catch return false の挙動に依拠しており、
+    // 別途 integration test もしくは実機検証で確認する。
     const testing = std.testing;
     const fake_path = switch (builtin.os.tag) {
         .macos => "/Volumes/__nonexistent_qmk_test__",
