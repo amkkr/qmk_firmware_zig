@@ -898,17 +898,47 @@ pub const UsbDriver = struct {
 
     /// Formatted print to CDC TX buffer
     pub fn cdcPrint(self: *UsbDriver, comptime fmt: []const u8, args: anytype) void {
-        const CdcWriter = struct {
-            drv: *UsbDriver,
-
-            pub fn write(ctx: @This(), data: []const u8) error{}!usize {
-                ctx.drv.cdcWrite(data);
-                return data.len;
-            }
+        // 一旦スタック上の固定バッファに整形した結果を書き出し、 cdcWrite で TX リングへ流し込む。
+        // バッファ溢れ時は最後の writableSlice より大きい部分が drain でリングへ即座に消費されるため、
+        // 1 行 256 byte 程度の通常用途では十分。
+        var stack_buf: [256]u8 = undefined;
+        var w: CdcPrintWriter = .{
+            .drv = self,
+            .writer = .{
+                .vtable = &.{ .drain = CdcPrintWriter.drain },
+                .buffer = &stack_buf,
+            },
         };
-        const writer = std.io.GenericWriter(CdcWriter, error{}, CdcWriter.write){ .context = .{ .drv = self } };
-        std.fmt.format(writer, fmt, args) catch {};
+        w.writer.print(fmt, args) catch {};
+        w.writer.flush() catch {};
     }
+
+    const CdcPrintWriter = struct {
+        drv: *UsbDriver,
+        writer: std.Io.Writer,
+
+        fn drain(writer: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+            const self: *CdcPrintWriter = @fieldParentPtr("writer", writer);
+            // buffer に溜まっている分を先に流す
+            self.drv.cdcWrite(writer.buffer[0..writer.end]);
+            writer.end = 0;
+            // data の最終要素以外を順に書く
+            var consumed: usize = 0;
+            if (data.len == 0) return 0;
+            for (data[0 .. data.len - 1]) |chunk| {
+                self.drv.cdcWrite(chunk);
+                consumed += chunk.len;
+            }
+            // 最終要素を splat 回繰り返す
+            const last = data[data.len - 1];
+            var i: usize = 0;
+            while (i < splat) : (i += 1) {
+                self.drv.cdcWrite(last);
+                consumed += last.len;
+            }
+            return consumed;
+        }
+    };
 
     /// Flush CDC TX ring buffer to EP6 IN
     pub fn cdcFlush(self: *UsbDriver) void {
