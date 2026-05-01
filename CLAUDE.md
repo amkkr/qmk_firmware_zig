@@ -30,10 +30,11 @@ qmk lint -kb madbd34              # キーボード定義のlint
 Zig バージョン: **0.15.2**
 
 ```bash
-zig build                         # ファームウェアビルド（RP2040 クロスコンパイル）
+zig build                         # ファームウェアビルド (ELF + UF2 を zig-out/ へ出力)
+zig build elf                     # ELF のみ生成 (UF2 変換なし)
+zig build uf2                     # UF2 形式に変換 (zig build と等価)
 zig build test                    # 全テスト実行（ホストネイティブ）
 zig build verify                  # CI用: テスト + ファームウェアコンパイル検証
-zig build uf2                     # UF2 形式に変換
 zig build flash                   # UF2 ビルド → RP2040 BOOTSEL ドライブへコピー
 ```
 
