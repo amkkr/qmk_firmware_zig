@@ -76,9 +76,8 @@ pub fn build(b: *std.Build) void {
 
     // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
     const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
-    const flash_run = addFlashStep(b, uf2_install, native_target, keyboard, keymap);
+    const flash_run = addFlashStep(b, uf2_install, uf2_size_step, native_target, keyboard, keymap);
     flash_step.dependOn(&flash_run.step);
-    flash_step.dependOn(uf2_size_step);
 
     // Test module
     const test_mod = b.createModule(.{
@@ -120,6 +119,7 @@ pub fn build(b: *std.Build) void {
 fn addFlashStep(
     b: *std.Build,
     uf2_install: *std.Build.Step.InstallFile,
+    uf2_size_step: *std.Build.Step,
     native_target: std.Build.ResolvedTarget,
     keyboard: []const u8,
     keymap: []const u8,
@@ -135,6 +135,8 @@ fn addFlashStep(
     const flash_run = b.addRunArtifact(flash_tool);
     flash_run.addArg(b.getInstallPath(.prefix, b.fmt("{s}_{s}.uf2", .{ keyboard, keymap })));
     flash_run.step.dependOn(&uf2_install.step);
+    // UF2 サイズ表示 → flash 実行 の順序を保証 (出力混在防止)
+    flash_run.step.dependOn(uf2_size_step);
 
     return flash_run;
 }
