@@ -332,11 +332,12 @@ fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
 
 /// stty コマンドで指定 tty を 1200bps に設定して短時間 open する (1200bps タッチ)。
 /// macOS は `-f`、 Linux は `-F` でデバイスを指定する。
+/// 非対応 OS では findCdcPorts が空配列を返すため本関数は呼ばれない (else は unreachable)。
 fn runStty1200bps(allocator: std.mem.Allocator, port: []const u8, verbose: bool) !void {
     const flag = switch (builtin.os.tag) {
         .macos => "-f",
         .linux => "-F",
-        else => return error.UnsupportedOs,
+        else => unreachable,
     };
 
     var child = std.process.Child.init(&.{ "stty", flag, port, "1200" }, allocator);
