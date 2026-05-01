@@ -82,8 +82,8 @@ fn printUsage() void {
     , .{});
 }
 
-fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
-    var positional = std.ArrayList([]const u8){};
+fn parseArgs(raw_args: []const [:0]const u8) ArgsError!Args {
+    var positional: std.ArrayList([]const u8) = .empty;
     defer positional.deinit(std.heap.page_allocator);
 
     var family_id: u32 = RP2040_FAMILY_ID_DEFAULT;
@@ -134,10 +134,12 @@ fn stripHexPrefix(s: []const u8) []const u8 {
     return s;
 }
 
-pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-    const raw_args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, raw_args);
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
+    const arena = init.arena.allocator();
+
+    const raw_args = try init.minimal.args.toSlice(arena);
 
     const args = parseArgs(raw_args) catch |err| switch (err) {
         ArgsError.InvalidArgs, ArgsError.InvalidNumber => {
@@ -147,10 +149,13 @@ pub fn main() !void {
     };
 
     // 入力 raw バイナリを読み込み
-    const input_file = try std.fs.cwd().openFile(args.input_path, .{});
-    defer input_file.close();
-    const firmware_data = try input_file.readToEndAlloc(allocator, MAX_FIRMWARE_SIZE + 1);
-    defer allocator.free(firmware_data);
+    const cwd = std.Io.Dir.cwd();
+    const input_file = try cwd.openFile(io, args.input_path, .{});
+    defer input_file.close(io);
+    var read_buf: [4096]u8 = undefined;
+    var input_reader = input_file.reader(io, &read_buf);
+    const firmware_data = try input_reader.interface.allocRemaining(gpa, .limited(MAX_FIRMWARE_SIZE + 1));
+    defer gpa.free(firmware_data);
 
     // サイズ上限チェック (EEPROM 予約領域を侵食しない)
     if (firmware_data.len > MAX_FIRMWARE_SIZE) {
@@ -161,8 +166,8 @@ pub fn main() !void {
         return GenError.FirmwareTooLarge;
     }
 
-    const output_file = try std.fs.cwd().createFile(args.output_path, .{});
-    defer output_file.close();
+    const output_file = try cwd.createFile(io, args.output_path, .{});
+    defer output_file.close(io);
 
     // RP2040 のデフォルト構成のときのみ EEPROM 領域 (0x101FF000-) を保護。
     // それ以外 (--flash-base が変更された場合) は EEPROM チェックをスキップ
@@ -173,9 +178,9 @@ pub fn main() !void {
         null;
 
     var num_blocks: u32 = undefined;
-    const blocks = try generateUf2Blocks(allocator, firmware_data, args.family_id, args.flash_base, eeprom_protect_start, &num_blocks);
-    defer allocator.free(blocks);
-    try output_file.writeAll(blocks);
+    const blocks = try generateUf2Blocks(gpa, firmware_data, args.family_id, args.flash_base, eeprom_protect_start, &num_blocks);
+    defer gpa.free(blocks);
+    try output_file.writeStreamingAll(io, blocks);
 
     std.debug.print("Created {s}: {d} blocks, {d} bytes (family=0x{X:0>8}, base=0x{X:0>8})\n", .{
         args.output_path,
