@@ -36,7 +36,7 @@ zig build -Dkeymap=default        # 対象キーマップ（デフォルト: def
 
 ## トラブルシューティング
 
-### `zig build flash` で「タイムアウト。 RP2040 が検出されませんでした」と表示される
+### `zig build flash` で `Error: タイムアウト。RP2040 が検出されませんでした。` と表示される
 
 - BOOT ボタンを押した状態で USB を再接続したか確認
 - USB ハブ経由ではなくマシンに直接接続してみる
