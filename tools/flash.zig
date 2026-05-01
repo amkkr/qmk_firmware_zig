@@ -9,13 +9,19 @@
 //!
 //! The tool searches for the RP2040 BOOTSEL drive ("RPI-RP2") at:
 //!   - macOS:   /Volumes/RPI-RP2
-//!   - Linux:   /media/<user>/RPI-RP2, /mnt/RPI-RP2, /run/media/<user>/RPI-RP2
-//!   - Windows: D:\ through Z:\ (checks volume label "RPI-RP2")
+//!   - Linux:   /run/media/<user>/RPI-RP2, /media/<user>/RPI-RP2, /mnt/RPI-RP2
+//!   - Windows: D:\ through Z:\ (checks INFO_UF2.TXT)
+//!
+//! 検出されたパスは INFO_UF2.TXT の内容と realpath での正規化結果で検証する。
+//! USER 環境変数は許可リスト [A-Za-z0-9._-]{1,32} で内容を検証し、 違反時は次経路へ fallback する。
 
 const std = @import("std");
 const builtin = @import("builtin");
 
 const BOOTSEL_VOLUME_NAME = "RPI-RP2";
+
+/// USER 環境変数として許可される最大長 (path injection 緩和)
+const MAX_USER_LEN: usize = 32;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -52,6 +58,12 @@ pub fn main() !void {
     defer allocator.free(dest_path);
 
     std.debug.print("フラッシュ中: {s} -> {s}\n", .{ uf2_path, dest_path });
+
+    // TOCTOU 緩和: 書込直前にもう一度ドライブ妥当性を検証
+    if (!verifyBootselDrive(allocator, bootsel_path)) {
+        std.debug.print("Error: 書込直前の検証で BOOTSEL ドライブが妥当でないと判定されました: {s}\n", .{bootsel_path});
+        return error.BootselNotFound;
+    }
 
     std.fs.cwd().copyFile(uf2_path, std.fs.cwd(), dest_path, .{}) catch |err| {
         std.debug.print("Error: UF2 ファイルのコピーに失敗しました: {}\n", .{err});
@@ -99,32 +111,35 @@ fn detectBootselDrive(allocator: std.mem.Allocator) ![]const u8 {
 
 fn detectBootselMacos(allocator: std.mem.Allocator) ![]const u8 {
     const path = "/Volumes/" ++ BOOTSEL_VOLUME_NAME;
-    if (isDirectory(path)) {
+    if (verifyBootselDrive(allocator, path)) {
         return try allocator.dupe(u8, path);
     }
     return error.BootselNotFound;
 }
 
 fn detectBootselLinux(allocator: std.mem.Allocator) ![]const u8 {
-    // Try /media/$USER/RPI-RP2
+    // USER 環境変数を許可リストで検証 (違反時は次経路へ fallback)
     if (std.posix.getenv("USER")) |user| {
-        const media_path = try std.fmt.allocPrint(allocator, "/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
-        if (isDirectory(media_path)) {
-            return media_path;
-        }
-        allocator.free(media_path);
+        if (isValidUser(user)) {
+            // /run/media/$USER/RPI-RP2 を最優先 (systemd-mount, 近年のディストリの既定)
+            const run_media_path = try std.fmt.allocPrint(allocator, "/run/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
+            if (verifyBootselDrive(allocator, run_media_path)) {
+                return run_media_path;
+            }
+            allocator.free(run_media_path);
 
-        // Try /run/media/$USER/RPI-RP2
-        const run_media_path = try std.fmt.allocPrint(allocator, "/run/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
-        if (isDirectory(run_media_path)) {
-            return run_media_path;
+            // /media/$USER/RPI-RP2 (旧 udisks)
+            const media_path = try std.fmt.allocPrint(allocator, "/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
+            if (verifyBootselDrive(allocator, media_path)) {
+                return media_path;
+            }
+            allocator.free(media_path);
         }
-        allocator.free(run_media_path);
     }
 
-    // Try /mnt/RPI-RP2
+    // /mnt/RPI-RP2 (手動 mount のフォールバック)
     const mnt_path = "/mnt/" ++ BOOTSEL_VOLUME_NAME;
-    if (isDirectory(mnt_path)) {
+    if (verifyBootselDrive(allocator, mnt_path)) {
         return try allocator.dupe(u8, mnt_path);
     }
 
@@ -132,21 +147,12 @@ fn detectBootselLinux(allocator: std.mem.Allocator) ![]const u8 {
 }
 
 fn detectBootselWindows(allocator: std.mem.Allocator) ![]const u8 {
-    // Check drive letters D: through Z:
+    // ドライブレター D: 〜 Z: をスキャン
     const drive_letters = "DEFGHIJKLMNOPQRSTUVWXYZ";
     for (drive_letters) |letter| {
         const drive_path = try std.fmt.allocPrint(allocator, "{c}:\\", .{letter});
-        errdefer allocator.free(drive_path);
-
-        // Check if the drive exists and is accessible
-        if (isDirectory(drive_path)) {
-            // Check for INFO_UF2.TXT which is present on RP2040 BOOTSEL drives
-            const info_path = try std.fmt.allocPrint(allocator, "{c}:\\INFO_UF2.TXT", .{letter});
-            defer allocator.free(info_path);
-
-            if (fileExists(info_path)) {
-                return drive_path;
-            }
+        if (verifyBootselDrive(allocator, drive_path)) {
+            return drive_path;
         }
         allocator.free(drive_path);
     }
@@ -154,15 +160,155 @@ fn detectBootselWindows(allocator: std.mem.Allocator) ![]const u8 {
     return error.BootselNotFound;
 }
 
-fn isDirectory(path: []const u8) bool {
-    var dir = std.fs.cwd().openDir(path, .{}) catch return false;
-    dir.close();
+/// USER 環境変数の内容を許可リスト [A-Za-z0-9._-]{1,MAX_USER_LEN} で検証する。
+/// path injection (`USER=../../tmp/x` 等) や log injection (制御文字) を防ぐ。
+fn isValidUser(user: []const u8) bool {
+    if (user.len == 0 or user.len > MAX_USER_LEN) return false;
+    for (user) |c| {
+        const ok = (c >= 'A' and c <= 'Z') or
+            (c >= 'a' and c <= 'z') or
+            (c >= '0' and c <= '9') or
+            c == '.' or c == '_' or c == '-';
+        if (!ok) return false;
+    }
     return true;
 }
 
-fn fileExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
-    return true;
+/// realpath で正規化されたパスが各 OS の許可された prefix で始まるかを検証する。
+/// symlink で意図しないディレクトリを指している場合に拒否する。
+fn isAllowedRealPath(real_path: []const u8) bool {
+    return switch (builtin.os.tag) {
+        .macos => std.mem.startsWith(u8, real_path, "/Volumes/"),
+        .linux => std.mem.startsWith(u8, real_path, "/run/media/") or
+            std.mem.startsWith(u8, real_path, "/media/") or
+            std.mem.startsWith(u8, real_path, "/mnt/"),
+        // Windows はドライブレター直下なので prefix チェックを行わない
+        else => true,
+    };
+}
+
+/// 与えられたパスが RP2040 BOOTSEL ドライブとして妥当かを検証する。
+/// 1. realpath で正規化、 OS 別の許可 prefix を満たすか (symlink 拒否)
+/// 2. INFO_UF2.TXT が存在し、 "UF2 Bootloader" または "RPI-RP2" を含むか
+///
+/// 注: 本検証は **誤書込防止** が目的であり、 敵対的な攻撃 (偽 INFO_UF2.TXT 配置) は防げない。
+/// 強い真贋検証が必要な場合は picotool バックエンドの USB VID/PID 検証を使うこと。
+fn verifyBootselDrive(allocator: std.mem.Allocator, path: []const u8) bool {
+    // 1. realpath で正規化
+    var realbuf: [std.fs.max_path_bytes]u8 = undefined;
+    const real_path = std.fs.realpath(path, &realbuf) catch return false;
+    if (!isAllowedRealPath(real_path)) return false;
+
+    // 2. INFO_UF2.TXT 読み込み + 内容検証
+    const info_path = std.fs.path.join(allocator, &.{ path, "INFO_UF2.TXT" }) catch return false;
+    defer allocator.free(info_path);
+
+    var file = std.fs.cwd().openFile(info_path, .{}) catch return false;
+    defer file.close();
+
+    var buf: [1024]u8 = undefined;
+    const n = file.readAll(&buf) catch return false;
+    const content = buf[0..n];
+
+    // "UF2 Bootloader" (BOOTSEL の標準ヘッダ) か "RPI-RP2" (Board-ID) のどちらかを含む
+    return std.mem.indexOf(u8, content, "UF2 Bootloader") != null or
+        std.mem.indexOf(u8, content, "RPI-RP2") != null;
+}
+
+test "isValidUser accepts allowed characters" {
+    const testing = std.testing;
+    try testing.expect(isValidUser("alice"));
+    try testing.expect(isValidUser("bob123"));
+    try testing.expect(isValidUser("user.name"));
+    try testing.expect(isValidUser("user_name"));
+    try testing.expect(isValidUser("user-name"));
+    try testing.expect(isValidUser("a"));
+    try testing.expect(isValidUser("A_B.C-1"));
+}
+
+test "isValidUser rejects invalid characters and lengths" {
+    const testing = std.testing;
+    try testing.expect(!isValidUser(""));
+    try testing.expect(!isValidUser("user/name"));
+    try testing.expect(!isValidUser("../etc"));
+    try testing.expect(!isValidUser("user name"));
+    try testing.expect(!isValidUser("user;name"));
+    try testing.expect(!isValidUser("user\nname"));
+    try testing.expect(!isValidUser("user\x00null"));
+    // 33 文字 (上限 32 を超える)
+    try testing.expect(!isValidUser("a" ** 33));
+}
+
+test "isAllowedRealPath enforces OS prefix" {
+    const testing = std.testing;
+    switch (builtin.os.tag) {
+        .macos => {
+            try testing.expect(isAllowedRealPath("/Volumes/RPI-RP2"));
+            try testing.expect(!isAllowedRealPath("/tmp/RPI-RP2"));
+            try testing.expect(!isAllowedRealPath("/Users/x/RPI-RP2"));
+        },
+        .linux => {
+            try testing.expect(isAllowedRealPath("/run/media/alice/RPI-RP2"));
+            try testing.expect(isAllowedRealPath("/media/alice/RPI-RP2"));
+            try testing.expect(isAllowedRealPath("/mnt/RPI-RP2"));
+            try testing.expect(!isAllowedRealPath("/tmp/RPI-RP2"));
+            try testing.expect(!isAllowedRealPath("/home/alice/RPI-RP2"));
+        },
+        .windows => {
+            // Windows はドライブレター直下なので true 固定
+            try testing.expect(isAllowedRealPath("D:\\"));
+        },
+        else => {},
+    }
+}
+
+test "verifyBootselDrive rejects directory without INFO_UF2.TXT" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const testing = std.testing;
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+
+    // INFO_UF2.TXT が存在しないディレクトリは妥当でない
+    // 注: tmp_path は OS 別 prefix を満たさない可能性が高いので、
+    //     prefix チェック単独でも false が返るはず。 内容検証も合わせて false。
+    try testing.expect(!verifyBootselDrive(testing.allocator, tmp_path));
+}
+
+test "verifyBootselDrive rejects symlink to outside directory" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest; // symlink テストは POSIX のみ
+    const testing = std.testing;
+
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+
+    // tmp_dir 内に target_dir を作り、 INFO_UF2.TXT を BOOTSEL らしく配置 (偽装)
+    try tmp_dir.dir.makeDir("target_dir");
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "target_dir/INFO_UF2.TXT",
+        .data = "UF2 Bootloader v3.0\nBoard-ID: RPI-RP2\n",
+    });
+
+    // target_dir の絶対パスと、 tmp_path 内に置く symlink "RPI-RP2" の絶対パス
+    const target_abs = try std.fs.path.join(testing.allocator, &.{ tmp_path, "target_dir" });
+    defer testing.allocator.free(target_abs);
+    const link_abs = try std.fs.path.join(testing.allocator, &.{ tmp_path, "RPI-RP2" });
+    defer testing.allocator.free(link_abs);
+
+    std.posix.symlink(target_abs, link_abs) catch |err| switch (err) {
+        // CI 環境等で symlink が許可されない場合はスキップ
+        error.AccessDenied => return error.SkipZigTest,
+        else => return err,
+    };
+
+    // tmp_path は /Volumes/ や /run/media/ 等の許可 prefix にないため、
+    // realpath が許可 prefix を満たさず、 verifyBootselDrive は false を返すはず
+    try testing.expect(!verifyBootselDrive(testing.allocator, link_abs));
 }
 
 test "copyFile copies file contents correctly" {
