@@ -51,7 +51,7 @@ zig build -Dkeymap=default        # 対象キーマップ（デフォルト: def
 ### Bootmagic で意図せずブートローダーに入る
 
 - `zig build -DBOOTMAGIC_ROW=N -DBOOTMAGIC_COLUMN=M` で位置を変更
-- デフォルトは `(0, 0)` (各キーボードの定義により異なる)
+- デフォルトは常に `(0, 0)` (build.zig 既定値)。 該当する物理キーはキーボード定義 (`src/keyboards/<name>.zig` の LAYOUT) により異なる
 
 ## アーキテクチャ
 
