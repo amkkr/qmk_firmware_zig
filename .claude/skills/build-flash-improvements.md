@@ -310,7 +310,8 @@ build.zig 使用 API について 0.16.0 リリースノート確認 + ローカ
 - [ ] picotool 不在時に明示エラー + `brew install picotool` 案内
 - [ ] デフォルト動作不変（後方互換）
 - [ ] 入力検証 (UX): keyboard/keymap 引数を `[A-Za-z0-9_-]+` のみ許可、違反で build エラー
-- [ ] openocd の検索ディレクトリ絶対パス指定 (`-s <abs>`) で PATH 攻撃対策
+- [ ] openocd の検索ディレクトリ絶対パス指定 (`-s <abs>`) で **設定ファイルインジェクション対策** (CWD ベースで `interface/cmsis-dap.cfg` 等が読み込まれるのを防ぐ)
+- [ ] 外部ツール本体 (`picotool`, `openocd`, `probe-rs`) は `which`/`where` 解決済の絶対パスで起動し、 **PATH 攻撃対策** (PATH 上の偽バイナリ実行を防ぐ)
 
 **依存**: I1
 
