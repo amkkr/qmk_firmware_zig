@@ -41,6 +41,7 @@ const Args = struct {
     device_path: ?[]const u8,
     device_index: usize,
     verbose: bool,
+    auto_reset: bool,
 };
 
 const ArgsError = error{
@@ -58,6 +59,7 @@ fn printUsage() void {
         \\  --device-path=<パス>    検出をスキップして直接指定するパス
         \\  --device-index=<n>      複数検出時、 0-indexed で n 番目を選ぶ (default: 0)
         \\  --verbose               詳細ログ
+        \\  --no-auto-reset         CDC 1200bps タッチによる BOOTSEL 自動リセットを無効化
         \\  --help, -h              このヘルプを表示
         \\
     , .{default_timeout_seconds});
@@ -69,6 +71,7 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
     var device_path: ?[]const u8 = null;
     var device_index: usize = 0;
     var verbose = false;
+    var auto_reset = true;
 
     // 環境変数 QMK_FLASH_TIMEOUT_SEC で default 上書き
     if (std.posix.getenv("QMK_FLASH_TIMEOUT_SEC")) |env_val| {
@@ -100,6 +103,8 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
             };
         } else if (std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
+        } else if (std.mem.eql(u8, arg, "--no-auto-reset")) {
+            auto_reset = false;
         } else if (std.mem.startsWith(u8, arg, "--")) {
             std.debug.print("Error: 未知のオプション: {s}\n", .{arg});
             return ArgsError.InvalidArgs;
@@ -123,6 +128,7 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
         .device_path = device_path,
         .device_index = device_index,
         .verbose = verbose,
+        .auto_reset = auto_reset,
     };
 }
 
@@ -191,7 +197,8 @@ pub fn main() !void {
 /// args に基づいて BOOTSEL パスを取得する。
 /// - --device-path 指定時はそのパスを検証して返す
 /// - それ以外は detect → 1 件なら採用、 複数なら --device-index で選択
-/// - 見つからなければ args.timeout_seconds 待機して再検出
+/// - 見つからなければ auto-reset を試行 (CDC 1200bps タッチで BOOTSEL モードへ遷移)
+/// - それでも見つからなければ args.timeout_seconds 待機して再検出
 fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
     if (args.device_path) |path| {
         if (!verifyBootselDrive(allocator, path)) {
@@ -204,10 +211,21 @@ fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
     // 検出 (1 回目)
     if (try selectBootselFromDetected(allocator, args)) |path| return path;
 
+    // BOOTSEL 自動リセットを試行 (CDC 1200bps タッチ、 ファーム側 D1 と協調)
+    if (args.auto_reset) {
+        attempt1200bpsTouch(allocator, args.verbose);
+        // タッチ後の BOOTSEL ドライブ出現を待つ (短時間)
+        const auto_reset_max_iter = 10 * std.time.ms_per_s / poll_interval_ms;
+        for (0..auto_reset_max_iter) |_| {
+            std.Thread.sleep(poll_interval_ms * std.time.ns_per_ms);
+            if (try selectBootselFromDetected(allocator, args)) |path| return path;
+        }
+    }
+
     // 待機ループ
     std.debug.print(
         \\RP2040 を BOOTSEL モードで接続してください...
-        \\  (BOOT ボタンを押しながら USB ケーブルを接続)
+        \\  (BOOT ボタンを押しながら USB ケーブルを接続、 または --no-auto-reset を指定)
         \\  {d}秒以内に検出されない場合はタイムアウトします。
         \\
     , .{args.timeout_seconds});
@@ -248,6 +266,88 @@ fn selectBootselFromDetected(allocator: std.mem.Allocator, args: Args) !?[]const
 
     // 選択された候補だけ複製、 残りは defer で解放
     return try allocator.dupe(u8, candidates.items[args.device_index]);
+}
+
+/// CDC ACM の line_coding を 1200bps に設定して BOOTSEL モードへの遷移をトリガする
+/// (Arduino / picotool 互換)。 ファーム側の set_line_coding ハンドラが dwDTERate == 1200
+/// を検出して bootloader.jump() を呼ぶことで RP2040 が BOOTSEL モードへ再起動する。
+/// 失敗しても warning を出すだけでフォールバック (BOOTSEL ドライブ検出待ち) を継続する。
+fn attempt1200bpsTouch(allocator: std.mem.Allocator, verbose: bool) void {
+    const ports = findCdcPorts(allocator) catch |err| {
+        if (verbose) std.debug.print("詳細: CDC ポート検索失敗 ({s})、 1200bps タッチをスキップ\n", .{@errorName(err)});
+        return;
+    };
+    defer {
+        for (ports) |p| allocator.free(p);
+        allocator.free(ports);
+    }
+
+    if (ports.len == 0) {
+        if (verbose) std.debug.print("詳細: CDC ポートが見つからず、 1200bps タッチをスキップ\n", .{});
+        return;
+    }
+
+    for (ports) |port| {
+        std.debug.print("RP2040 を BOOTSEL に遷移中 ({s} を 1200bps でタッチ)...\n", .{port});
+        runStty1200bps(allocator, port, verbose) catch |err| {
+            std.debug.print("Warning: {s} の 1200bps タッチ失敗 ({s})、 次のポートを試行\n", .{ port, @errorName(err) });
+            continue;
+        };
+    }
+}
+
+/// CDC ACM 用のシリアルポートを列挙する。 OS 別:
+/// - macOS: /dev/cu.usbmodem* を glob
+/// - Linux: /dev/ttyACM* を glob
+/// - その他: 空配列を返す (未対応)
+fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
+    var ports = std.ArrayList([]const u8){};
+    errdefer {
+        for (ports.items) |p| allocator.free(p);
+        ports.deinit(allocator);
+    }
+
+    // 対応 OS は /dev 配下にデバイスファイルを作るため dir_path は共通
+    const dir_path: []const u8 = "/dev";
+    const prefix: []const u8 = switch (builtin.os.tag) {
+        .macos => "cu.usbmodem",
+        .linux => "ttyACM",
+        else => return ports.toOwnedSlice(allocator),
+    };
+
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return ports.toOwnedSlice(allocator);
+    defer dir.close();
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
+        const port = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
+        // append 失敗時のリーク防止 (errdefer は ports.items に入った要素しか解放しないため、
+        // append 前に確保したばかりの port を独立に守る必要がある)
+        errdefer allocator.free(port);
+        try ports.append(allocator, port);
+    }
+    return ports.toOwnedSlice(allocator);
+}
+
+/// stty コマンドで指定 tty を 1200bps に設定して短時間 open する (1200bps タッチ)。
+/// macOS は `-f`、 Linux は `-F` でデバイスを指定する。
+/// 非対応 OS では findCdcPorts が空配列を返すため本関数は呼ばれない (else は unreachable)。
+fn runStty1200bps(allocator: std.mem.Allocator, port: []const u8, verbose: bool) !void {
+    const flag = switch (builtin.os.tag) {
+        .macos => "-f",
+        .linux => "-F",
+        else => unreachable,
+    };
+
+    var child = std.process.Child.init(&.{ "stty", flag, port, "1200" }, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = if (verbose) .Inherit else .Ignore;
+
+    const term = try child.spawnAndWait();
+    if (term != .Exited or term.Exited != 0) {
+        return error.SttyFailed;
+    }
 }
 
 /// プラットフォーム依存の全候補列挙。 候補は BOOTSEL_VOLUME_NAME 名のディレクトリで、
@@ -580,6 +680,19 @@ test "parseArgs accepts positional and options" {
     try testing.expectEqual(@as(u64, 120), a.timeout_seconds);
     try testing.expectEqual(@as(usize, 2), a.device_index);
     try testing.expect(a.verbose);
+    // auto_reset は default で有効
+    try testing.expect(a.auto_reset);
+}
+
+test "parseArgs --no-auto-reset disables auto reset" {
+    const testing = std.testing;
+    var args_buf = [_][:0]u8{
+        @constCast("flash"),
+        @constCast("--no-auto-reset"),
+        @constCast("firmware.uf2"),
+    };
+    const a = try parseArgs(&args_buf);
+    try testing.expect(!a.auto_reset);
 }
 
 test "parseArgs accepts device-path" {

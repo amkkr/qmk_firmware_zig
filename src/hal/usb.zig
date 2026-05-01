@@ -13,6 +13,7 @@ const usb_descriptors = @import("usb_descriptors.zig");
 const report = @import("../core/report.zig");
 const host = @import("../core/host.zig");
 const timer = @import("timer.zig");
+const bootloader = @import("bootloader.zig");
 const KeyboardReport = report.KeyboardReport;
 const MouseReport = report.MouseReport;
 const ExtraReport = report.ExtraReport;
@@ -1274,6 +1275,12 @@ pub const UsbDriver = struct {
                 }
                 self.ep0_out_pending = .none;
                 self.sendStatusStageZlp();
+                // CDC 1200bps タッチで BOOTSEL モードへ遷移 (Arduino / picotool 互換)
+                // dwDTERate == 1200 の line_coding を受信したら ROM `reset_usb_boot` 経由で BOOTSEL に入る。
+                // テスト環境では bootloader.jump() が panic するため freestanding のみで実行。
+                if (is_freestanding and self.cdc_line_coding.dwDTERate == 1200) {
+                    bootloader.jump();
+                }
             },
             .none => {},
         }
