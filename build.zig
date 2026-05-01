@@ -57,11 +57,14 @@ pub fn build(b: *std.Build) void {
     firmware.setLinkerScript(b.path("src/hal/rp2040_linker.ld"));
     const install_firmware = b.addInstallArtifact(firmware, .{});
 
-    // ELF ファイルサイズ表示（zig build のデフォルトステップに接続）
+    // ELF ファイルサイズ表示
     const elf_name = b.fmt("{s}_{s}", .{ keyboard, keymap });
     const elf_size_step = addFileSizeStep(b, b.getInstallPath(.bin, elf_name), elf_name);
     elf_size_step.dependOn(&install_firmware.step);
-    b.getInstallStep().dependOn(elf_size_step);
+
+    // ELF のみ生成する step (後方互換: 旧 `zig build` の ELF-only 挙動を保つ)
+    const elf_step = b.step("elf", "Build firmware ELF only (no UF2 conversion)");
+    elf_step.dependOn(elf_size_step);
 
     // UF2 conversion step
     const uf2_step = b.step("uf2", "Convert firmware to UF2 format");
@@ -73,6 +76,11 @@ pub fn build(b: *std.Build) void {
     const uf2_size_step = addFileSizeStep(b, b.getInstallPath(.prefix, uf2_name), uf2_name);
     uf2_size_step.dependOn(&uf2_install.step);
     uf2_step.dependOn(uf2_size_step);
+
+    // `zig build` のデフォルトステップに ELF サイズ表示 + UF2 install を接続
+    // (QMK 慣習として flash 用成果物 .uf2 をデフォルト出力とする)
+    b.getInstallStep().dependOn(elf_size_step);
+    b.getInstallStep().dependOn(uf2_size_step);
 
     // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
     const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
