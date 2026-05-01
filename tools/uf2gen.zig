@@ -334,7 +334,7 @@ test "generateUf2Blocks honors custom family_id" {
     const data = [_]u8{0x11} ** 256;
     var num_blocks: u32 = 0;
     const custom_family: u32 = 0xe48bff59; // RP2350_ARM_S
-    const blocks = try generateUf2Blocks(testing.allocator, &data, custom_family, FLASH_BASE_DEFAULT, &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, custom_family, FLASH_BASE_DEFAULT, EEPROM_REGION_START, &num_blocks);
     defer testing.allocator.free(blocks);
 
     // family_id は block 内 offset 28
