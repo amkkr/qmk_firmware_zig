@@ -90,7 +90,7 @@ build.zig 使用 API について 0.16.0 リリースノート確認 + ローカ
 
 **実装方針 (addAnonymousImport 方式)**
 1. build.zig 側で `-Dkeyboard=<name>` から該当 `.zig` ファイルパスを解決
-2. `firmware_mod.addAnonymousImport("active_keyboard", b.createModule(.{ .root_source_file = b.path("src/keyboards/" ++ name ++ ".zig") }))` で固定名 import 提供
+2. `firmware_mod.addAnonymousImport("active_keyboard", .{ .root_source_file = b.path(b.fmt("src/keyboards/{s}.zig", .{keyboard})) })` で固定名 import 提供
 3. core 側は `const kb = @import("active_keyboard");` で参照、 `kb.rows`, `kb.cols` を直接使用
 4. 4 箇所の if 連鎖を削除可能
 
@@ -223,7 +223,7 @@ build.zig 使用 API について 0.16.0 リリースノート確認 + ローカ
 **Acceptance Criteria**
 - [ ] 上限超 .bin で uf2gen が非ゼロ終了 + 日本語エラー
 - [ ] target_addr が EEPROM 領域に到達しない assertion
-- [ ] 最終ブロックの 256B 境界処理が boot2 領域 (0x10000000-0x100000FF) を破壊しないテスト
+- [ ] 最終ブロックの 256B 境界処理が EEPROM 領域 (0x101FF000-0x101FFFFF) を破壊しないテスト
 - [ ] `generateUf2Blocks` 関数が単体テスト可能（境界値、超過、正常）
 - [ ] uf2gen に `--family-id=<hex>` `--flash-base=<hex>` オプション存在、default 動作不変
 - [ ] `zig build` 終了時に各セクションサイズ + 容量比 stderr 表示

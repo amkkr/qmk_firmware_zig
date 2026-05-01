@@ -35,10 +35,11 @@ build.zig 側で keyboard 名から該当ファイルパスを解決し、固定
 ```zig
 // build.zig
 const keyboard_path = b.fmt("src/keyboards/{s}.zig", .{keyboard});
-const keyboard_module = b.createModule(.{
+firmware_mod.addAnonymousImport("active_keyboard", .{
     .root_source_file = b.path(keyboard_path),
 });
-firmware_mod.addAnonymousImport("active_keyboard", keyboard_module);
+// 注: addAnonymousImport の第2引数は Module.CreateOptions struct。
+// 既存 Module を渡したい場合は addImport(name, module) を使う。
 ```
 
 core 側は `@import` 連鎖なしで:
