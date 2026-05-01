@@ -262,7 +262,7 @@ test "isAllowedRealPath enforces OS prefix" {
     }
 }
 
-test "verifyBootselDrive rejects directory without INFO_UF2.TXT" {
+test "verifyBootselDrive rejects directory with disallowed prefix" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
     const testing = std.testing;
     var tmp_dir = testing.tmpDir(.{});
@@ -271,10 +271,24 @@ test "verifyBootselDrive rejects directory without INFO_UF2.TXT" {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmp_path = try tmp_dir.dir.realpath(".", &buf);
 
-    // INFO_UF2.TXT が存在しないディレクトリは妥当でない
-    // 注: tmp_path は OS 別 prefix を満たさない可能性が高いので、
-    //     prefix チェック単独でも false が返るはず。 内容検証も合わせて false。
+    // testing.tmpDir() は通常 /tmp/... 配下に作られるため、 isAllowedRealPath が false を返す。
+    // verifyBootselDrive は INFO_UF2.TXT 内容検証に到達する前に拒否する。
+    // INFO_UF2.TXT 不存在の検証経路は許可 prefix 内ディレクトリが必要なため CI 環境では別途扱う。
     try testing.expect(!verifyBootselDrive(testing.allocator, tmp_path));
+}
+
+test "verifyBootselDrive rejects when INFO_UF2.TXT is missing under allowed prefix" {
+    // 許可 prefix 内 (例: /Volumes/, /run/media/) に書込権限を持つ CI 環境は通常存在しないため、
+    // INFO_UF2.TXT 不存在の検証経路は実装側のフォールバック挙動 (openFile catch return false) に
+    // 依存する。 ここでは実存しない許可 prefix パスを与えて、 realpath が失敗 → false を返すこと
+    // のみを確認する。
+    const testing = std.testing;
+    const fake_path = switch (builtin.os.tag) {
+        .macos => "/Volumes/__nonexistent_qmk_test__",
+        .linux => "/run/media/__nonexistent__/__nonexistent_qmk_test__",
+        else => return error.SkipZigTest,
+    };
+    try testing.expect(!verifyBootselDrive(testing.allocator, fake_path));
 }
 
 test "verifyBootselDrive rejects symlink to outside directory" {
