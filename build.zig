@@ -315,7 +315,11 @@ fn addProbersFlashStep(
 }
 
 /// 外部ツールバイナリの絶対パスを解決する (PATH 攻撃対策)。
-/// 候補ディレクトリで実体を探し、 見つからなければインストール案内を出して panic。
+/// 候補ディレクトリで実体を探し、 見つからなければ warning を出してツール名を返す。
+/// build graph 構築フェーズで panic しないため、 flash 以外のステップ (`zig build test` 等)
+/// は flasher オプション指定中でも問題なく実行できる。
+/// 候補に見つからなかった場合のフォールバックとして PATH 経由の解決に委ねる
+/// (PATH 攻撃対策は限定的になるが、 実用性を優先)。
 fn resolveExternalTool(b: *std.Build, name: []const u8, paths: []const []const u8) []const u8 {
     for (paths) |dir| {
         const candidate = b.fmt("{s}/{s}", .{ dir, name });
@@ -323,13 +327,15 @@ fn resolveExternalTool(b: *std.Build, name: []const u8, paths: []const []const u
             return candidate;
         } else |_| {}
     }
-    std.debug.panic(
-        "Error: 外部ツール '{s}' が見つかりません。 macOS では `brew install {s}`、 Linux ではディストリのパッケージマネージャでインストールしてください。",
+    std.debug.print(
+        "Warning: 外部ツール '{s}' が候補パスに見つかりません。 PATH 経由の解決に委ねます。 見つからない場合は flash 実行時に execvp が失敗します (macOS では `brew install {s}` でインストール可)。\n",
         .{ name, name },
     );
+    return b.dupe(name);
 }
 
 /// openocd の scripts ディレクトリ (interface/, target/ を含む) の絶対パスを解決する。
+/// 見つからない場合も build graph では panic せず、 デフォルト候補を返してエラーを実行時に遅延させる。
 fn resolveOpenocdScriptsDir(b: *std.Build) []const u8 {
     const candidates = [_][]const u8{
         "/opt/homebrew/share/openocd/scripts",
@@ -341,10 +347,11 @@ fn resolveOpenocdScriptsDir(b: *std.Build) []const u8 {
             return b.dupe(dir);
         } else |_| {}
     }
-    std.debug.panic(
-        "Error: openocd の scripts ディレクトリが見つかりません。 OpenOCD インストール先の share/openocd/scripts を確認してください。",
-        .{},
+    std.debug.print(
+        "Warning: openocd の scripts ディレクトリが候補パスに見つかりません。 デフォルト候補 '{s}' を使用します。 必要に応じて手動で調整してください。\n",
+        .{candidates[0]},
     );
+    return b.dupe(candidates[0]);
 }
 
 fn addUf2Step(
