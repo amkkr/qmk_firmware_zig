@@ -70,7 +70,35 @@ pub fn main() !void {
         return error.CopyFailed;
     };
 
-    std.debug.print("フラッシュ完了。RP2040 が自動的に再起動します。\n", .{});
+    std.debug.print("フラッシュ完了。RP2040 の再起動を確認しています...\n", .{});
+
+    // 書込後、 BOOTSEL ドライブが消失するのを 5 秒間ポーリング (RP2040 の再起動確認)。
+    // RP2040 のリブート + OS の unmount 反映には実測 2-3 秒かかるため、 5 秒の余裕を取る。
+    if (waitForBootselDisappear(bootsel_path)) {
+        std.debug.print("RP2040 の再起動を確認しました。\n", .{});
+    } else {
+        std.debug.print("Warning: 書込は完了しましたが RP2040 の再起動が {d} 秒以内に確認できませんでした。\n", .{reboot_confirm_seconds});
+        std.debug.print("        手動で USB 接続を確認してください。\n", .{});
+    }
+}
+
+const reboot_confirm_seconds = 5;
+const reboot_poll_interval_ms = 500;
+
+/// BOOTSEL ドライブが消失する (RP2040 が再起動して unmount される) のを reboot_confirm_seconds 秒待機する。
+/// 消失を確認できれば true、 タイムアウトで残存していれば false を返す。
+fn waitForBootselDisappear(bootsel_path: []const u8) bool {
+    const max_iterations = reboot_confirm_seconds * std.time.ms_per_s / reboot_poll_interval_ms;
+    var i: usize = 0;
+    while (i < max_iterations) : (i += 1) {
+        std.Thread.sleep(reboot_poll_interval_ms * std.time.ns_per_ms);
+        // realpath が失敗 = ディレクトリ消失と判定
+        var realbuf: [std.fs.max_path_bytes]u8 = undefined;
+        _ = std.fs.realpath(bootsel_path, &realbuf) catch {
+            return true;
+        };
+    }
+    return false;
 }
 
 const timeout_seconds = 60;
