@@ -9,12 +9,49 @@ const keyboard_configs = std.StaticStringMap(KeyboardConfig).initComptime(.{
     .{ "madbd5", KeyboardConfig{ .rows = 5, .cols = 16 } },
 });
 
+/// flash バックエンド種別
+const Flasher = enum {
+    /// 既存 tools/flash.zig (BOOTSEL ドライブコピー、 default)
+    bootsel,
+    /// picotool (USB PICOBOOT 経由、 BOOTSEL 自動化 + verify)
+    picotool,
+    /// openocd (SWD 経由、 picoprobe / CMSIS-DAP プローブ必要)
+    openocd,
+    /// probe-rs (Rust 製、 SWD 経由、 RTT log 等)
+    probers,
+};
+
+/// keyboard / keymap の引数を許可リスト [A-Za-z0-9_-]+ で検証する。
+/// build エラー早期化が目的 (b.addSystemCommand は execve 経由のため
+/// shell injection は発生しないが、 ファイルパス組み立てやエラー診断容易性
+/// のために制限する)。
+fn validateIdentifier(b: *std.Build, name: []const u8, value: []const u8) void {
+    if (value.len == 0) {
+        std.debug.panic("Error: --{s} の値が空です", .{name});
+    }
+    for (value) |c| {
+        const ok = (c >= 'A' and c <= 'Z') or
+            (c >= 'a' and c <= 'z') or
+            (c >= '0' and c <= '9') or
+            c == '_' or c == '-';
+        if (!ok) {
+            std.debug.panic("Error: --{s} の値 '{s}' に許可されていない文字が含まれています ([A-Za-z0-9_-]+ のみ許可)", .{ name, value });
+        }
+    }
+    _ = b;
+}
+
 pub fn build(b: *std.Build) void {
     // Build options
     const keyboard = b.option([]const u8, "keyboard", "Target keyboard (e.g. madbd5)") orelse "madbd5";
     const keymap = b.option([]const u8, "keymap", "Target keymap (e.g. default)") orelse "default";
     const bootmagic_row = b.option(u8, "BOOTMAGIC_ROW", "Row index for bootmagic key (default: 0)") orelse 0;
     const bootmagic_col = b.option(u8, "BOOTMAGIC_COLUMN", "Column index for bootmagic key (default: 0)") orelse 0;
+    const flasher = b.option(Flasher, "flasher", "Flash backend (bootsel|picotool|openocd|probers, default: bootsel)") orelse .bootsel;
+
+    // 入力検証 (build エラー早期化、 ファイルパス組み立て前にチェック)
+    validateIdentifier(b, "keyboard", keyboard);
+    validateIdentifier(b, "keymap", keymap);
 
     const kb_config = keyboard_configs.get(keyboard) orelse
         std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
@@ -91,10 +128,26 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(uf2_size_step);
     b.getInstallStep().dependOn(uf2_sha256_step);
 
-    // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
-    const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
-    const flash_run = addFlashStep(b, uf2_install, uf2_size_step, native_target, keyboard, keymap);
-    flash_step.dependOn(&flash_run.step);
+    // Flash step: backend を flasher で切替
+    const flash_step = b.step("flash", "Flash firmware to RP2040 (backend は -Dflasher で選択)");
+    switch (flasher) {
+        .bootsel => {
+            const flash_run = addFlashStep(b, uf2_install, uf2_size_step, native_target, keyboard, keymap);
+            flash_step.dependOn(&flash_run.step);
+        },
+        .picotool => {
+            const run = addPicotoolFlashStep(b, uf2_install, uf2_size_step, keyboard, keymap);
+            flash_step.dependOn(&run.step);
+        },
+        .openocd => {
+            const run = addOpenocdFlashStep(b, &install_firmware.step, elf_size_step, keyboard, keymap);
+            flash_step.dependOn(&run.step);
+        },
+        .probers => {
+            const run = addProbersFlashStep(b, &install_firmware.step, elf_size_step, keyboard, keymap);
+            flash_step.dependOn(&run.step);
+        },
+    }
 
     // Test module
     const test_mod = b.createModule(.{
@@ -167,6 +220,130 @@ fn addFlashStep(
     flash_run.step.dependOn(uf2_size_step);
 
     return flash_run;
+}
+
+/// picotool バックエンド: `picotool load -f -u -v <abs_uf2_path>` を実行。
+/// USB PICOBOOT 経由で BOOTSEL 自動化 + verify + reboot を実施する。
+fn addPicotoolFlashStep(
+    b: *std.Build,
+    uf2_install: *std.Build.Step.InstallFile,
+    uf2_size_step: *std.Build.Step,
+    keyboard: []const u8,
+    keymap: []const u8,
+) *std.Build.Step.Run {
+    const tool_path = resolveExternalTool(b, "picotool", &.{
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+    });
+
+    const run = b.addSystemCommand(&.{
+        tool_path,
+        "load",
+        "-f",
+        "-u",
+        "-v",
+    });
+    run.addArg(b.getInstallPath(.prefix, b.fmt("{s}_{s}.uf2", .{ keyboard, keymap })));
+
+    run.step.dependOn(&uf2_install.step);
+    run.step.dependOn(uf2_size_step);
+    return run;
+}
+
+/// openocd バックエンド: SWD 経由で ELF を直接書込 + verify + reset。
+/// `interface/cmsis-dap.cfg` 等の探索ディレクトリは絶対パス指定 (`-s`) で
+/// 設定ファイルインジェクション対策を行う (CWD 経由の cfg 読込を防ぐ)。
+fn addOpenocdFlashStep(
+    b: *std.Build,
+    install_step: *std.Build.Step,
+    elf_size_step: *std.Build.Step,
+    keyboard: []const u8,
+    keymap: []const u8,
+) *std.Build.Step.Run {
+    const tool_path = resolveExternalTool(b, "openocd", &.{
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+    });
+    // openocd の scripts ディレクトリ候補 (Homebrew / Linux 標準)
+    const scripts_dir = resolveOpenocdScriptsDir(b);
+
+    const elf_path = b.getInstallPath(.bin, b.fmt("{s}_{s}", .{ keyboard, keymap }));
+    const program_cmd = b.fmt("program {s} verify reset exit", .{elf_path});
+
+    const run = b.addSystemCommand(&.{
+        tool_path,
+        "-s", scripts_dir,
+        "-f", "interface/cmsis-dap.cfg",
+        "-f", "target/rp2040.cfg",
+        "-c", program_cmd,
+    });
+
+    run.step.dependOn(install_step);
+    run.step.dependOn(elf_size_step);
+    return run;
+}
+
+/// probe-rs バックエンド: SWD 経由で ELF 書込。 RTT ログ表示も可能。
+fn addProbersFlashStep(
+    b: *std.Build,
+    install_step: *std.Build.Step,
+    elf_size_step: *std.Build.Step,
+    keyboard: []const u8,
+    keymap: []const u8,
+) *std.Build.Step.Run {
+    const tool_path = resolveExternalTool(b, "probe-rs", &.{
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+    });
+
+    const elf_path = b.getInstallPath(.bin, b.fmt("{s}_{s}", .{ keyboard, keymap }));
+
+    const run = b.addSystemCommand(&.{
+        tool_path,
+        "run",
+        "--chip", "RP2040",
+        elf_path,
+    });
+
+    run.step.dependOn(install_step);
+    run.step.dependOn(elf_size_step);
+    return run;
+}
+
+/// 外部ツールバイナリの絶対パスを解決する (PATH 攻撃対策)。
+/// 候補ディレクトリで実体を探し、 見つからなければインストール案内を出して panic。
+fn resolveExternalTool(b: *std.Build, name: []const u8, paths: []const []const u8) []const u8 {
+    for (paths) |dir| {
+        const candidate = b.fmt("{s}/{s}", .{ dir, name });
+        if (std.fs.cwd().access(candidate, .{})) |_| {
+            return candidate;
+        } else |_| {}
+    }
+    std.debug.panic(
+        "Error: 外部ツール '{s}' が見つかりません。 macOS では `brew install {s}`、 Linux ではディストリのパッケージマネージャでインストールしてください。",
+        .{ name, name },
+    );
+}
+
+/// openocd の scripts ディレクトリ (interface/, target/ を含む) の絶対パスを解決する。
+fn resolveOpenocdScriptsDir(b: *std.Build) []const u8 {
+    const candidates = [_][]const u8{
+        "/opt/homebrew/share/openocd/scripts",
+        "/usr/local/share/openocd/scripts",
+        "/usr/share/openocd/scripts",
+    };
+    for (candidates) |dir| {
+        if (std.fs.cwd().access(dir, .{})) |_| {
+            return b.dupe(dir);
+        } else |_| {}
+    }
+    std.debug.panic(
+        "Error: openocd の scripts ディレクトリが見つかりません。 OpenOCD インストール先の share/openocd/scripts を確認してください。",
+        .{},
+    );
 }
 
 fn addUf2Step(
