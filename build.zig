@@ -75,7 +75,6 @@ pub fn build(b: *std.Build) void {
     uf2_step.dependOn(uf2_size_step);
 
     // Flash step: build UF2 and copy to RP2040 BOOTSEL drive
-    // flash_run が uf2_size_step に依存することで、 UF2 サイズ表示 → flash 開始 の順序を保証する。
     const flash_step = b.step("flash", "Flash firmware to RP2040 via BOOTSEL mode");
     const flash_run = addFlashStep(b, uf2_install, uf2_size_step, native_target, keyboard, keymap);
     flash_step.dependOn(&flash_run.step);
