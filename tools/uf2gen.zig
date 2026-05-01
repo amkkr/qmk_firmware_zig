@@ -164,8 +164,16 @@ pub fn main() !void {
     const output_file = try std.fs.cwd().createFile(args.output_path, .{});
     defer output_file.close();
 
+    // RP2040 のデフォルト構成のときのみ EEPROM 領域 (0x101FF000-) を保護。
+    // それ以外 (--flash-base が変更された場合) は EEPROM チェックをスキップ
+    // (RP2350 等、 異なる MCU では EEPROM の位置が異なるため)。
+    const eeprom_protect_start: ?u32 = if (args.flash_base == FLASH_BASE_DEFAULT)
+        EEPROM_REGION_START
+    else
+        null;
+
     var num_blocks: u32 = undefined;
-    const blocks = try generateUf2Blocks(allocator, firmware_data, args.family_id, args.flash_base, &num_blocks);
+    const blocks = try generateUf2Blocks(allocator, firmware_data, args.family_id, args.flash_base, eeprom_protect_start, &num_blocks);
     defer allocator.free(blocks);
     try output_file.writeAll(blocks);
 
@@ -180,13 +188,16 @@ pub fn main() !void {
 
 /// raw firmware bytes から UF2 blocks を生成し allocator で確保したバッファを返す。
 /// 呼出側は free すること。
-/// 各 block の target_addr が EEPROM 領域 (0x101FF000〜) を侵食しないよう確認する。
+/// `eeprom_protect_start` が non-null の場合、 各 block の target_addr がその値以上
+/// にならないよう assert する (RP2040 では `0x101FF000` を渡して EEPROM 領域を保護)。
+/// `eeprom_protect_start` が null の場合は領域チェックをスキップ (他 MCU 対応)。
 /// num_blocks_out に最終ブロック数を書き込む。
 fn generateUf2Blocks(
     allocator: std.mem.Allocator,
     firmware_data: []const u8,
     family_id: u32,
     flash_base: u32,
+    eeprom_protect_start: ?u32,
     num_blocks_out: *u32,
 ) ![]u8 {
     const num_blocks: u32 = @intCast((firmware_data.len + PAYLOAD_SIZE - 1) / PAYLOAD_SIZE);
@@ -201,14 +212,15 @@ fn generateUf2Blocks(
         const end_u32 = @min(start + PAYLOAD_SIZE, @as(u32, @intCast(firmware_data.len)));
         const target_addr = flash_base + start;
 
-        // EEPROM 領域 (RP2040: 0x101FF000〜) への書込を防止
-        // 最終 byte のアドレス < EEPROM_REGION_START であれば boot2 含む全領域を保護
-        if (target_addr + (end_u32 - start) > EEPROM_REGION_START) {
-            std.debug.print(
-                "Error: target_addr 0x{X:0>8} が EEPROM 予約領域 0x{X:0>8} に到達します (block_no={d}, payload={d})\n",
-                .{ target_addr, EEPROM_REGION_START, i, end_u32 - start },
-            );
-            return GenError.TargetAddrOutOfRange;
+        // EEPROM 領域への書込を防止 (eeprom_protect_start が指定されたとき)
+        if (eeprom_protect_start) |eeprom_start| {
+            if (target_addr + (end_u32 - start) > eeprom_start) {
+                std.debug.print(
+                    "Error: target_addr 0x{X:0>8} が EEPROM 予約領域 0x{X:0>8} に到達します (block_no={d}, payload={d})\n",
+                    .{ target_addr, eeprom_start, i, end_u32 - start },
+                );
+                return GenError.TargetAddrOutOfRange;
+            }
         }
 
         var block = UF2Block{
@@ -233,7 +245,7 @@ test "generateUf2Blocks produces correct block count for normal size" {
     // 4KB のテストデータ -> 16 blocks (256 byte payload x 16)
     const data = [_]u8{0xAB} ** 4096;
     var num_blocks: u32 = 0;
-    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, EEPROM_REGION_START, &num_blocks);
     defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 16), num_blocks);
@@ -250,7 +262,7 @@ test "generateUf2Blocks rounds up partial last block" {
     // 257 byte -> 2 blocks (1 完全 + 1 部分)
     const data = [_]u8{0x42} ** 257;
     var num_blocks: u32 = 0;
-    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, EEPROM_REGION_START, &num_blocks);
     defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 2), num_blocks);
@@ -269,9 +281,29 @@ test "generateUf2Blocks rejects firmware reaching EEPROM region" {
         &data,
         RP2040_FAMILY_ID_DEFAULT,
         EEPROM_REGION_START - 0x100, // 0x101FEF00
+        EEPROM_REGION_START,
         &num_blocks,
     );
     try testing.expectError(GenError.TargetAddrOutOfRange, result);
+}
+
+test "generateUf2Blocks skips EEPROM check when eeprom_protect_start is null" {
+    const testing = std.testing;
+
+    // RP2350 等、 異なる MCU で 0x101FF000 を超えるアドレスに書き込む場合の動作確認
+    const data = [_]u8{0x33} ** 257;
+    var num_blocks: u32 = 0;
+    // EEPROM チェックをスキップ (null) して、 0x101FF000 を越えるアドレスでも成功
+    const blocks = try generateUf2Blocks(
+        testing.allocator,
+        &data,
+        RP2040_FAMILY_ID_DEFAULT,
+        EEPROM_REGION_START - 0x100, // 0x101FEF00
+        null,
+        &num_blocks,
+    );
+    defer testing.allocator.free(blocks);
+    try testing.expectEqual(@as(u32, 2), num_blocks);
 }
 
 test "generateUf2Blocks does not corrupt boot2 region" {
@@ -283,7 +315,7 @@ test "generateUf2Blocks does not corrupt boot2 region" {
     //       最終ブロック target_addr = 0x10000300 となり boot2 領域外)
     const data = [_]u8{0x77} ** 1024;
     var num_blocks: u32 = 0;
-    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, EEPROM_REGION_START, &num_blocks);
     defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 4), num_blocks);

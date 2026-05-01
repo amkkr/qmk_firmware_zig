@@ -294,8 +294,6 @@ const ElfMemoryUsageStep = struct {
     const flash_capacity_bytes: u64 = (2048 - 4) * 1024;
     /// メイン SRAM 容量
     const ram_capacity_bytes: u64 = 256 * 1024;
-    /// SCRATCH_RAM (stack 領域) 容量
-    const scratch_capacity_bytes: u64 = 8 * 1024;
 
     /// FLASH 使用率がこの閾値を超えたら warning
     const flash_warn_pct: u64 = 90;
@@ -339,6 +337,8 @@ const ElfMemoryUsageStep = struct {
         printRegion(".text+.rodata", sizes.text, flash_capacity_bytes, flash_warn_pct, "FLASH");
         printRegion(".data        ", sizes.data, ram_capacity_bytes, ram_warn_pct, "RAM");
         printRegion(".bss         ", sizes.bss, ram_capacity_bytes, ram_warn_pct, "RAM");
+        // .data + .bss の合算 RAM チェック (個別では下回っても合算で超過する場合に検出)
+        printRegion("(.data+.bss) ", sizes.data + sizes.bss, ram_capacity_bytes, ram_warn_pct, "RAM");
     }
 
     fn printRegion(label: []const u8, used: u64, capacity: u64, warn_pct: u64, region_name: []const u8) void {
@@ -383,7 +383,6 @@ fn readElfSectionSizes(allocator: std.mem.Allocator, file: std.fs.File) !ElfSect
 
     // ELF header 内の各フィールドオフセット (32bit / 64bit)
     const e_shoff_off: usize = if (is_64) 40 else 32;
-    const e_shoff_size: usize = if (is_64) 8 else 4;
     const e_shentsize_off: usize = if (is_64) 58 else 46;
     const e_shnum_off: usize = if (is_64) 60 else 48;
     const e_shstrndx_off: usize = if (is_64) 62 else 50;
@@ -394,7 +393,6 @@ fn readElfSectionSizes(allocator: std.mem.Allocator, file: std.fs.File) !ElfSect
         std.mem.readInt(u64, elf_bytes[e_shoff_off..][0..8], .little)
     else
         std.mem.readInt(u32, elf_bytes[e_shoff_off..][0..4], .little);
-    _ = e_shoff_size;
     const e_shentsize = std.mem.readInt(u16, elf_bytes[e_shentsize_off..][0..2], .little);
     const e_shnum = std.mem.readInt(u16, elf_bytes[e_shnum_off..][0..2], .little);
     const e_shstrndx = std.mem.readInt(u16, elf_bytes[e_shstrndx_off..][0..2], .little);
