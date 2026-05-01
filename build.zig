@@ -303,6 +303,13 @@ const Sha256Step = struct {
         var digest: [32]u8 = undefined;
         hasher.final(&digest);
 
-        std.debug.print("  {s} SHA256: {x}\n", .{ self.display_name, std.fmt.fmtSliceHexLower(&digest) });
+        // zig 0.15.2 と 0.16.0 の両方で動く手動 hex 変換 (std.fmt.fmtSliceHexLower は 0.15.2 で未定義)
+        const hex_chars = "0123456789abcdef";
+        var hex: [64]u8 = undefined;
+        for (digest, 0..) |byte, i| {
+            hex[i * 2] = hex_chars[byte >> 4];
+            hex[i * 2 + 1] = hex_chars[byte & 0x0f];
+        }
+        std.debug.print("  {s} SHA256: {s}\n", .{ self.display_name, &hex });
     }
 };
