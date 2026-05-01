@@ -335,6 +335,10 @@ fn copyFileWithProgress(src_path: []const u8, dest_path: []const u8, verbose: bo
 
     var buf: [copy_chunk_bytes]u8 = undefined;
     var copied: u64 = 0;
+    // エラー早期リターン時、 進捗行 (\r) がカーソルに残ると main のエラー出力と混ざるため
+    // copied > 0 のときのみ改行を入れて行頭に戻す
+    errdefer if (copied > 0) std.debug.print("\n", .{});
+
     while (true) {
         const n = try src.read(&buf);
         if (n == 0) break;
