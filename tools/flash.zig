@@ -86,12 +86,18 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
             return ArgsError.HelpRequested;
         } else if (std.mem.startsWith(u8, arg, "--timeout=")) {
             const v = arg["--timeout=".len..];
-            timeout_seconds = std.fmt.parseUnsigned(u64, v, 10) catch return ArgsError.InvalidNumber;
+            timeout_seconds = std.fmt.parseUnsigned(u64, v, 10) catch {
+                std.debug.print("Error: --timeout の値が不正です (符号なし整数を指定): {s}\n", .{v});
+                return ArgsError.InvalidNumber;
+            };
         } else if (std.mem.startsWith(u8, arg, "--device-path=")) {
             device_path = arg["--device-path=".len..];
         } else if (std.mem.startsWith(u8, arg, "--device-index=")) {
             const v = arg["--device-index=".len..];
-            device_index = std.fmt.parseUnsigned(usize, v, 10) catch return ArgsError.InvalidNumber;
+            device_index = std.fmt.parseUnsigned(usize, v, 10) catch {
+                std.debug.print("Error: --device-index の値が不正です (符号なし整数を指定): {s}\n", .{v});
+                return ArgsError.InvalidNumber;
+            };
         } else if (std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
         } else if (std.mem.startsWith(u8, arg, "--")) {
@@ -340,8 +346,10 @@ fn copyFileWithProgress(src_path: []const u8, dest_path: []const u8, verbose: bo
             std.debug.print("\r進捗: {d}% ({d}/{d} bytes)", .{ percent, copied, total_bytes });
         }
     }
-    // 進捗行を改行で終わらせる
-    std.debug.print("\n", .{});
+    // 進捗行が出力されていた場合のみ改行で終わらせる (空ファイル時は不要)
+    if (total_bytes > 0) {
+        std.debug.print("\n", .{});
+    }
     if (verbose) {
         std.debug.print("詳細: 書込バイト数 = {d}\n", .{copied});
     }
