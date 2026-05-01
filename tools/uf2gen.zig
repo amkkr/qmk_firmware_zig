@@ -165,7 +165,9 @@ pub fn main() !void {
     defer output_file.close();
 
     var num_blocks: u32 = undefined;
-    try generateUf2Blocks(firmware_data, args.family_id, args.flash_base, output_file.writer(), &num_blocks);
+    const blocks = try generateUf2Blocks(allocator, firmware_data, args.family_id, args.flash_base, &num_blocks);
+    defer allocator.free(blocks);
+    try output_file.writeAll(blocks);
 
     std.debug.print("Created {s}: {d} blocks, {d} bytes (family=0x{X:0>8}, base=0x{X:0>8})\n", .{
         args.output_path,
@@ -176,18 +178,22 @@ pub fn main() !void {
     });
 }
 
-/// raw firmware bytes から UF2 blocks を生成し writer に書き出す。
+/// raw firmware bytes から UF2 blocks を生成し allocator で確保したバッファを返す。
+/// 呼出側は free すること。
 /// 各 block の target_addr が EEPROM 領域 (0x101FF000〜) を侵食しないよう確認する。
 /// num_blocks_out に最終ブロック数を書き込む。
 fn generateUf2Blocks(
+    allocator: std.mem.Allocator,
     firmware_data: []const u8,
     family_id: u32,
     flash_base: u32,
-    writer: anytype,
     num_blocks_out: *u32,
-) !void {
+) ![]u8 {
     const num_blocks: u32 = @intCast((firmware_data.len + PAYLOAD_SIZE - 1) / PAYLOAD_SIZE);
     num_blocks_out.* = num_blocks;
+
+    const output = try allocator.alloc(u8, @as(usize, num_blocks) * BLOCK_SIZE);
+    errdefer allocator.free(output);
 
     var i: u32 = 0;
     while (i < num_blocks) : (i += 1) {
@@ -214,8 +220,11 @@ fn generateUf2Blocks(
 
         @memcpy(block.data[0 .. end_u32 - start], firmware_data[start..end_u32]);
 
-        try writer.writeAll(std.mem.asBytes(&block));
+        const block_offset = @as(usize, i) * BLOCK_SIZE;
+        @memcpy(output[block_offset .. block_offset + BLOCK_SIZE], std.mem.asBytes(&block));
     }
+
+    return output;
 }
 
 test "generateUf2Blocks produces correct block count for normal size" {
@@ -223,17 +232,15 @@ test "generateUf2Blocks produces correct block count for normal size" {
 
     // 4KB のテストデータ -> 16 blocks (256 byte payload x 16)
     const data = [_]u8{0xAB} ** 4096;
-    var out_buf = std.ArrayList(u8){};
-    defer out_buf.deinit(testing.allocator);
-
     var num_blocks: u32 = 0;
-    try generateUf2Blocks(&data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, out_buf.writer(testing.allocator), &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 16), num_blocks);
-    try testing.expectEqual(@as(usize, 16 * BLOCK_SIZE), out_buf.items.len);
+    try testing.expectEqual(@as(usize, 16 * BLOCK_SIZE), blocks.len);
 
     // 最初のブロックの target_addr 確認
-    const first_target_addr = std.mem.bytesAsValue(u32, out_buf.items[12..16]).*;
+    const first_target_addr = std.mem.readInt(u32, blocks[12..16], .little);
     try testing.expectEqual(FLASH_BASE_DEFAULT, first_target_addr);
 }
 
@@ -242,11 +249,9 @@ test "generateUf2Blocks rounds up partial last block" {
 
     // 257 byte -> 2 blocks (1 完全 + 1 部分)
     const data = [_]u8{0x42} ** 257;
-    var out_buf = std.ArrayList(u8){};
-    defer out_buf.deinit(testing.allocator);
-
     var num_blocks: u32 = 0;
-    try generateUf2Blocks(&data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, out_buf.writer(testing.allocator), &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 2), num_blocks);
 }
@@ -258,15 +263,12 @@ test "generateUf2Blocks rejects firmware reaching EEPROM region" {
     // flash_base = 0x101FEF00 (= 0x101FF000 - 0x100) から 257 byte 書くと
     // 2 ブロック目の終端が 0x101FF100 となり 0x101FF000 を越える
     const data = [_]u8{0x55} ** 257;
-    var out_buf = std.ArrayList(u8){};
-    defer out_buf.deinit(testing.allocator);
-
     var num_blocks: u32 = 0;
     const result = generateUf2Blocks(
+        testing.allocator,
         &data,
         RP2040_FAMILY_ID_DEFAULT,
         EEPROM_REGION_START - 0x100, // 0x101FEF00
-        out_buf.writer(testing.allocator),
         &num_blocks,
     );
     try testing.expectError(GenError.TargetAddrOutOfRange, result);
@@ -280,17 +282,15 @@ test "generateUf2Blocks does not corrupt boot2 region" {
     // 検証: 最終ブロックの target_addr > 0x100000FF を確認 (1KB 入力なら 4 ブロック、
     //       最終ブロック target_addr = 0x10000300 となり boot2 領域外)
     const data = [_]u8{0x77} ** 1024;
-    var out_buf = std.ArrayList(u8){};
-    defer out_buf.deinit(testing.allocator);
-
     var num_blocks: u32 = 0;
-    try generateUf2Blocks(&data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, out_buf.writer(testing.allocator), &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, RP2040_FAMILY_ID_DEFAULT, FLASH_BASE_DEFAULT, &num_blocks);
+    defer testing.allocator.free(blocks);
 
     try testing.expectEqual(@as(u32, 4), num_blocks);
 
     // 最終ブロック (block_no=3) の target_addr を確認
     const last_block_offset = (num_blocks - 1) * BLOCK_SIZE;
-    const last_target_addr = std.mem.bytesAsValue(u32, out_buf.items[last_block_offset + 12 .. last_block_offset + 16]).*;
+    const last_target_addr = std.mem.readInt(u32, blocks[last_block_offset + 12 ..][0..4], .little);
     // 最終 target_addr = 0x10000000 + 3 * 256 = 0x10000300
     try testing.expectEqual(@as(u32, FLASH_BASE_DEFAULT + 3 * 256), last_target_addr);
     // boot2 領域 (0x10000000-0x100000FF) を超えていることを確認
@@ -300,15 +300,13 @@ test "generateUf2Blocks does not corrupt boot2 region" {
 test "generateUf2Blocks honors custom family_id" {
     const testing = std.testing;
     const data = [_]u8{0x11} ** 256;
-    var out_buf = std.ArrayList(u8){};
-    defer out_buf.deinit(testing.allocator);
-
     var num_blocks: u32 = 0;
     const custom_family: u32 = 0xe48bff59; // RP2350_ARM_S
-    try generateUf2Blocks(&data, custom_family, FLASH_BASE_DEFAULT, out_buf.writer(testing.allocator), &num_blocks);
+    const blocks = try generateUf2Blocks(testing.allocator, &data, custom_family, FLASH_BASE_DEFAULT, &num_blocks);
+    defer testing.allocator.free(blocks);
 
     // family_id は block 内 offset 28
-    const family_in_block = std.mem.bytesAsValue(u32, out_buf.items[28..32]).*;
+    const family_in_block = std.mem.readInt(u32, blocks[28..32], .little);
     try testing.expectEqual(custom_family, family_in_block);
 }
 
