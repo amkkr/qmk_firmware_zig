@@ -60,9 +60,9 @@ pub fn build(b: *std.Build) void {
     firmware.setLinkerScript(b.path("src/hal/rp2040_linker.ld"));
     const install_firmware = b.addInstallArtifact(firmware, .{});
 
-    // ELF ファイルサイズ表示
+    // ELF メモリ使用状況表示 (.text / .data / .bss と linker region 比較)
     const elf_name = b.fmt("{s}_{s}", .{ keyboard, keymap });
-    const elf_size_step = addFileSizeStep(b, b.getInstallPath(.bin, elf_name), elf_name);
+    const elf_size_step = addElfMemoryUsageStep(b, b.getInstallPath(.bin, elf_name), elf_name);
     elf_size_step.dependOn(&install_firmware.step);
 
     // ELF のみ生成する step (後方互換: 旧 `zig build` の ELF-only 挙動を保つ)
@@ -121,6 +121,16 @@ pub fn build(b: *std.Build) void {
     const run_flash_tests = b.addRunArtifact(flash_tests);
     test_step.dependOn(&run_flash_tests.step);
 
+    // UF2 generator tool tests
+    const uf2gen_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/uf2gen.zig"),
+            .target = native_target,
+        }),
+    });
+    const run_uf2gen_tests = b.addRunArtifact(uf2gen_tests);
+    test_step.dependOn(&run_uf2gen_tests.step);
+
     // C ABI compatibility tests (included in main test module via compat/*.zig)
     const test_compat_step = b.step("test-compat", "Run all tests (includes C ABI compatibility tests)");
     test_compat_step.dependOn(&run_tests.step);
@@ -130,6 +140,7 @@ pub fn build(b: *std.Build) void {
     const verify_step = b.step("verify", "Run tests and verify firmware ELF compilation");
     verify_step.dependOn(&run_tests.step);
     verify_step.dependOn(&run_flash_tests.step);
+    verify_step.dependOn(&run_uf2gen_tests.step);
     verify_step.dependOn(&firmware.step);
 }
 
@@ -211,10 +222,17 @@ fn gitHash(b: *std.Build) []const u8 {
     return dup;
 }
 
-/// ファイルサイズを表示するカスタムビルドステップを追加
+/// ファイルサイズを表示するカスタムビルドステップを追加 (UF2 等の汎用バイナリ向け)
 fn addFileSizeStep(b: *std.Build, file_path: []const u8, display_name: []const u8) *std.Build.Step {
     const print_step = FileSizeStep.create(b, file_path, display_name);
     return &print_step.step;
+}
+
+/// ELF のセクションサイズ (.text/.data/.bss) を linker region 容量と比較表示する
+/// カスタムビルドステップを追加。 解析失敗時は FileSizeStep 同等の表示にフォールバック。
+fn addElfMemoryUsageStep(b: *std.Build, elf_path: []const u8, display_name: []const u8) *std.Build.Step {
+    const step = ElfMemoryUsageStep.create(b, elf_path, display_name);
+    return &step.step;
 }
 
 /// ファイルの SHA256 を計算して stderr に表示するカスタムビルドステップを追加
@@ -261,6 +279,162 @@ const FileSizeStep = struct {
         }
     }
 };
+
+/// ELF メモリ使用状況を解析・表示するカスタム step。
+/// rp2040_linker.ld の MEMORY 定義に追従:
+///   FLASH       2048K - 4K   (EEPROM 予約)
+///   RAM          256K
+///   SCRATCH_RAM    8K
+const ElfMemoryUsageStep = struct {
+    step: std.Build.Step,
+    elf_path: []const u8,
+    display_name: []const u8,
+
+    /// FLASH 容量 (boot2 含む、 EEPROM 4KB 予約後)
+    const flash_capacity_bytes: u64 = (2048 - 4) * 1024;
+    /// メイン SRAM 容量
+    const ram_capacity_bytes: u64 = 256 * 1024;
+    /// SCRATCH_RAM (stack 領域) 容量
+    const scratch_capacity_bytes: u64 = 8 * 1024;
+
+    /// FLASH 使用率がこの閾値を超えたら warning
+    const flash_warn_pct: u64 = 90;
+    /// RAM 使用率がこの閾値を超えたら warning
+    const ram_warn_pct: u64 = 80;
+
+    fn create(b: *std.Build, elf_path: []const u8, display_name: []const u8) *ElfMemoryUsageStep {
+        const self = b.allocator.create(ElfMemoryUsageStep) catch @panic("OOM");
+        self.* = .{
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = b.fmt("elf-memory-usage ({s})", .{display_name}),
+                .owner = b,
+                .makeFn = make,
+            }),
+            .elf_path = elf_path,
+            .display_name = display_name,
+        };
+        return self;
+    }
+
+    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
+        const self: *ElfMemoryUsageStep = @fieldParentPtr("step", step);
+        const allocator = step.owner.allocator;
+
+        const file = std.fs.cwd().openFile(self.elf_path, .{}) catch |err| {
+            std.debug.print("  {s}: ELF を開けません ({s})\n", .{ self.display_name, @errorName(err) });
+            return;
+        };
+        defer file.close();
+
+        const sizes = readElfSectionSizes(allocator, file) catch |err| {
+            // ELF 解析失敗時は単純なサイズ表示にフォールバック
+            std.debug.print("  {s}: ELF section 解析に失敗 ({s})、 ファイルサイズのみ表示\n", .{ self.display_name, @errorName(err) });
+            const stat = file.stat() catch return;
+            std.debug.print("    size: {d} bytes\n", .{stat.size});
+            return;
+        };
+
+        std.debug.print("  {s}:\n", .{self.display_name});
+        printRegion(".text+.rodata", sizes.text, flash_capacity_bytes, flash_warn_pct, "FLASH");
+        printRegion(".data        ", sizes.data, ram_capacity_bytes, ram_warn_pct, "RAM");
+        printRegion(".bss         ", sizes.bss, ram_capacity_bytes, ram_warn_pct, "RAM");
+    }
+
+    fn printRegion(label: []const u8, used: u64, capacity: u64, warn_pct: u64, region_name: []const u8) void {
+        const pct = if (capacity > 0) (used * 100) / capacity else 0;
+        std.debug.print("    {s}: {d:.1} KB / {d:.1} KB ({d}%) [{s}]\n", .{
+            label,
+            @as(f64, @floatFromInt(used)) / 1024.0,
+            @as(f64, @floatFromInt(capacity)) / 1024.0,
+            pct,
+            region_name,
+        });
+        if (pct >= warn_pct) {
+            std.debug.print("    Warning: {s} 使用率が {d}% を超えています ({d}%)\n", .{ region_name, warn_pct, pct });
+        }
+    }
+};
+
+const ElfSectionSizes = struct {
+    text: u64,
+    data: u64,
+    bss: u64,
+};
+
+/// ELF を解析して .text+.rodata / .data / .bss のセクションサイズを集計する。
+/// 解析失敗時は error を返し、 呼出側でフォールバックさせる。
+fn readElfSectionSizes(allocator: std.mem.Allocator, file: std.fs.File) !ElfSectionSizes {
+    const header = try std.elf.Header.read(file);
+
+    // shstrtab (セクション名文字列テーブル) を読み込む
+    if (header.shstrndx == 0 or header.shstrndx >= header.shnum) return error.InvalidElf;
+
+    // shstrtab のセクションヘッダ位置
+    const shstrtab_offset = header.shoff + @as(u64, header.shstrndx) * @as(u64, header.shentsize);
+    try file.seekTo(shstrtab_offset);
+
+    var shstrtab_sh: std.elf.Elf64_Shdr = undefined;
+    if (header.is_64) {
+        try file.reader().readNoEof(std.mem.asBytes(&shstrtab_sh));
+    } else {
+        var sh32: std.elf.Elf32_Shdr = undefined;
+        try file.reader().readNoEof(std.mem.asBytes(&sh32));
+        shstrtab_sh = .{
+            .sh_name = sh32.sh_name,
+            .sh_type = sh32.sh_type,
+            .sh_flags = sh32.sh_flags,
+            .sh_addr = sh32.sh_addr,
+            .sh_offset = sh32.sh_offset,
+            .sh_size = sh32.sh_size,
+            .sh_link = sh32.sh_link,
+            .sh_info = sh32.sh_info,
+            .sh_addralign = sh32.sh_addralign,
+            .sh_entsize = sh32.sh_entsize,
+        };
+    }
+
+    const strtab = try allocator.alloc(u8, shstrtab_sh.sh_size);
+    defer allocator.free(strtab);
+    try file.seekTo(shstrtab_sh.sh_offset);
+    try file.reader().readNoEof(strtab);
+
+    // 各 section header を iterate
+    var sizes = ElfSectionSizes{ .text = 0, .data = 0, .bss = 0 };
+
+    var i: u16 = 0;
+    while (i < header.shnum) : (i += 1) {
+        try file.seekTo(header.shoff + @as(u64, i) * @as(u64, header.shentsize));
+
+        var sh_name: u32 = undefined;
+        var sh_size: u64 = undefined;
+        if (header.is_64) {
+            var sh: std.elf.Elf64_Shdr = undefined;
+            try file.reader().readNoEof(std.mem.asBytes(&sh));
+            sh_name = sh.sh_name;
+            sh_size = sh.sh_size;
+        } else {
+            var sh: std.elf.Elf32_Shdr = undefined;
+            try file.reader().readNoEof(std.mem.asBytes(&sh));
+            sh_name = sh.sh_name;
+            sh_size = sh.sh_size;
+        }
+
+        if (sh_name >= strtab.len) continue;
+        const name_end = std.mem.indexOfScalarPos(u8, strtab, sh_name, 0) orelse strtab.len;
+        const name = strtab[sh_name..name_end];
+
+        if (std.mem.eql(u8, name, ".text") or std.mem.eql(u8, name, ".rodata")) {
+            sizes.text += sh_size;
+        } else if (std.mem.eql(u8, name, ".data")) {
+            sizes.data += sh_size;
+        } else if (std.mem.eql(u8, name, ".bss")) {
+            sizes.bss += sh_size;
+        }
+    }
+
+    return sizes;
+}
 
 const Sha256Step = struct {
     step: std.Build.Step,
