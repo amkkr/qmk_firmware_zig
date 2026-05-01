@@ -363,66 +363,85 @@ const ElfSectionSizes = struct {
 };
 
 /// ELF を解析して .text+.rodata / .data / .bss のセクションサイズを集計する。
+/// std.elf.Header.read は zig 0.15.2 で *std.Io.Reader を要求するため、
+/// 互換性のため ELF spec に従って手動でヘッダを parse する (readInt のみ使用)。
 /// 解析失敗時は error を返し、 呼出側でフォールバックさせる。
 fn readElfSectionSizes(allocator: std.mem.Allocator, file: std.fs.File) !ElfSectionSizes {
-    const header = try std.elf.Header.read(file);
+    const elf_bytes = try file.readToEndAlloc(allocator, 16 * 1024 * 1024);
+    defer allocator.free(elf_bytes);
 
-    // shstrtab (セクション名文字列テーブル) を読み込む
-    if (header.shstrndx == 0 or header.shstrndx >= header.shnum) return error.InvalidElf;
+    // ELF header 最低サイズ (32bit:52, 64bit:64) を確認
+    if (elf_bytes.len < 64) return error.InvalidElf;
 
-    // shstrtab のセクションヘッダ位置
-    const shstrtab_offset = header.shoff + @as(u64, header.shstrndx) * @as(u64, header.shentsize);
-    try file.seekTo(shstrtab_offset);
+    // Magic: \x7fELF
+    if (!std.mem.eql(u8, elf_bytes[0..4], "\x7fELF")) return error.InvalidElf;
 
-    var shstrtab_sh: std.elf.Elf64_Shdr = undefined;
-    if (header.is_64) {
-        try file.reader().readNoEof(std.mem.asBytes(&shstrtab_sh));
-    } else {
-        var sh32: std.elf.Elf32_Shdr = undefined;
-        try file.reader().readNoEof(std.mem.asBytes(&sh32));
-        shstrtab_sh = .{
-            .sh_name = sh32.sh_name,
-            .sh_type = sh32.sh_type,
-            .sh_flags = sh32.sh_flags,
-            .sh_addr = sh32.sh_addr,
-            .sh_offset = sh32.sh_offset,
-            .sh_size = sh32.sh_size,
-            .sh_link = sh32.sh_link,
-            .sh_info = sh32.sh_info,
-            .sh_addralign = sh32.sh_addralign,
-            .sh_entsize = sh32.sh_entsize,
-        };
-    }
+    // e_class: 1=32bit, 2=64bit (offset 4)
+    const e_class = elf_bytes[4];
+    const is_64 = e_class == 2;
+    if (e_class != 1 and e_class != 2) return error.InvalidElf;
 
-    const strtab = try allocator.alloc(u8, shstrtab_sh.sh_size);
-    defer allocator.free(strtab);
-    try file.seekTo(shstrtab_sh.sh_offset);
-    try file.reader().readNoEof(strtab);
+    // ELF header 内の各フィールドオフセット (32bit / 64bit)
+    const e_shoff_off: usize = if (is_64) 40 else 32;
+    const e_shoff_size: usize = if (is_64) 8 else 4;
+    const e_shentsize_off: usize = if (is_64) 58 else 46;
+    const e_shnum_off: usize = if (is_64) 60 else 48;
+    const e_shstrndx_off: usize = if (is_64) 62 else 50;
 
-    // 各 section header を iterate
+    if (elf_bytes.len < e_shstrndx_off + 2) return error.InvalidElf;
+
+    const e_shoff: u64 = if (is_64)
+        std.mem.readInt(u64, elf_bytes[e_shoff_off..][0..8], .little)
+    else
+        std.mem.readInt(u32, elf_bytes[e_shoff_off..][0..4], .little);
+    _ = e_shoff_size;
+    const e_shentsize = std.mem.readInt(u16, elf_bytes[e_shentsize_off..][0..2], .little);
+    const e_shnum = std.mem.readInt(u16, elf_bytes[e_shnum_off..][0..2], .little);
+    const e_shstrndx = std.mem.readInt(u16, elf_bytes[e_shstrndx_off..][0..2], .little);
+
+    if (e_shstrndx >= e_shnum or e_shnum == 0) return error.InvalidElf;
+
+    // section header 内のフィールドオフセット
+    const sh_name_off: usize = 0;
+    const sh_offset_off: usize = if (is_64) 24 else 16;
+    const sh_size_off: usize = if (is_64) 32 else 20;
+
+    // shstrtab section header から shstrtab 自体のオフセット/サイズを取得
+    const shstrtab_sh_pos = e_shoff + @as(u64, e_shstrndx) * @as(u64, e_shentsize);
+    if (shstrtab_sh_pos + e_shentsize > elf_bytes.len) return error.InvalidElf;
+    const shstrtab_sh_pos_us: usize = @intCast(shstrtab_sh_pos);
+
+    const shstrtab_offset: u64 = if (is_64)
+        std.mem.readInt(u64, elf_bytes[shstrtab_sh_pos_us + sh_offset_off ..][0..8], .little)
+    else
+        std.mem.readInt(u32, elf_bytes[shstrtab_sh_pos_us + sh_offset_off ..][0..4], .little);
+    const shstrtab_size: u64 = if (is_64)
+        std.mem.readInt(u64, elf_bytes[shstrtab_sh_pos_us + sh_size_off ..][0..8], .little)
+    else
+        std.mem.readInt(u32, elf_bytes[shstrtab_sh_pos_us + sh_size_off ..][0..4], .little);
+
+    if (shstrtab_offset + shstrtab_size > elf_bytes.len) return error.InvalidElf;
+    const shstrtab_off_us: usize = @intCast(shstrtab_offset);
+    const shstrtab_size_us: usize = @intCast(shstrtab_size);
+    const shstrtab = elf_bytes[shstrtab_off_us .. shstrtab_off_us + shstrtab_size_us];
+
     var sizes = ElfSectionSizes{ .text = 0, .data = 0, .bss = 0 };
 
     var i: u16 = 0;
-    while (i < header.shnum) : (i += 1) {
-        try file.seekTo(header.shoff + @as(u64, i) * @as(u64, header.shentsize));
+    while (i < e_shnum) : (i += 1) {
+        const sh_pos = e_shoff + @as(u64, i) * @as(u64, e_shentsize);
+        if (sh_pos + e_shentsize > elf_bytes.len) return error.InvalidElf;
+        const sh_pos_us: usize = @intCast(sh_pos);
 
-        var sh_name: u32 = undefined;
-        var sh_size: u64 = undefined;
-        if (header.is_64) {
-            var sh: std.elf.Elf64_Shdr = undefined;
-            try file.reader().readNoEof(std.mem.asBytes(&sh));
-            sh_name = sh.sh_name;
-            sh_size = sh.sh_size;
-        } else {
-            var sh: std.elf.Elf32_Shdr = undefined;
-            try file.reader().readNoEof(std.mem.asBytes(&sh));
-            sh_name = sh.sh_name;
-            sh_size = sh.sh_size;
-        }
+        const sh_name = std.mem.readInt(u32, elf_bytes[sh_pos_us + sh_name_off ..][0..4], .little);
+        const sh_size: u64 = if (is_64)
+            std.mem.readInt(u64, elf_bytes[sh_pos_us + sh_size_off ..][0..8], .little)
+        else
+            std.mem.readInt(u32, elf_bytes[sh_pos_us + sh_size_off ..][0..4], .little);
 
-        if (sh_name >= strtab.len) continue;
-        const name_end = std.mem.indexOfScalarPos(u8, strtab, sh_name, 0) orelse strtab.len;
-        const name = strtab[sh_name..name_end];
+        if (sh_name >= shstrtab.len) continue;
+        const name_end = std.mem.indexOfScalarPos(u8, shstrtab, sh_name, 0) orelse shstrtab.len;
+        const name = shstrtab[sh_name..name_end];
 
         if (std.mem.eql(u8, name, ".text") or std.mem.eql(u8, name, ".rodata")) {
             sizes.text += sh_size;
