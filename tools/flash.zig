@@ -89,8 +89,7 @@ const reboot_poll_interval_ms = 500;
 /// 消失を確認できれば true、 タイムアウトで残存していれば false を返す。
 fn waitForBootselDisappear(bootsel_path: []const u8) bool {
     const max_iterations = reboot_confirm_seconds * std.time.ms_per_s / reboot_poll_interval_ms;
-    var i: usize = 0;
-    while (i < max_iterations) : (i += 1) {
+    for (0..max_iterations) |_| {
         std.Thread.sleep(reboot_poll_interval_ms * std.time.ns_per_ms);
         // realpath が失敗 = ディレクトリ消失と判定
         var realbuf: [std.fs.max_path_bytes]u8 = undefined;
