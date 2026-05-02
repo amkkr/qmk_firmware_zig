@@ -84,19 +84,53 @@ pub fn build(b: *std.Build) void {
     // Native host target (for tools and tests)
     const native_target = b.resolveTargetQuery(.{});
 
+    // core / hal / active_keyboard を独立 named module として作成し、
+    // firmware_mod / 各 module 間で共有する。 同じファイルが複数 module に
+    // 属するのを避けるために、 root tree (firmware_mod) からの core / hal /
+    // keyboards ファイルへの直接相対 import は廃止し、 named import 経由で
+    // のみアクセスする。
+    const build_opts_mod = build_opts.createModule();
+
+    const core_mod = b.createModule(.{
+        .root_source_file = b.path("src/core/core.zig"),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    core_mod.addImport("build_options", build_opts_mod);
+
+    const hal_mod = b.createModule(.{
+        .root_source_file = b.path("src/hal/hal.zig"),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    hal_mod.addImport("build_options", build_opts_mod);
+
+    // active_keyboard モジュール: `-Dkeyboard=<name>` で選ばれた keyboard 定義
+    const active_keyboard_mod = b.createModule(.{
+        .root_source_file = b.path(keyboard_path),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    active_keyboard_mod.addImport("core", core_mod);
+    active_keyboard_mod.addImport("hal", hal_mod);
+
+    // core / hal モジュール間および active_keyboard への循環 import を許容
+    // (Zig は lazy evaluation で循環 import 自体は許容する)
+    core_mod.addImport("active_keyboard", active_keyboard_mod);
+    core_mod.addImport("hal", hal_mod);
+    hal_mod.addImport("core", core_mod);
+    hal_mod.addImport("active_keyboard", active_keyboard_mod);
+
     // Firmware module
     const firmware_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = rp2040_target,
         .optimize = optimize,
     });
-    firmware_mod.addImport("build_options", build_opts.createModule());
-    // active_keyboard 固定名 import: `-Dkeyboard=<name>` から該当 zig を解決。
-    // core 側は `@import("active_keyboard")` のみで参照でき、 keyboard ごとの
-    // if 連鎖を排除できる。
-    firmware_mod.addAnonymousImport("active_keyboard", .{
-        .root_source_file = b.path(keyboard_path),
-    });
+    firmware_mod.addImport("build_options", build_opts_mod);
+    firmware_mod.addImport("core", core_mod);
+    firmware_mod.addImport("hal", hal_mod);
+    firmware_mod.addImport("active_keyboard", active_keyboard_mod);
 
     // Firmware executable
     const firmware = b.addExecutable(.{
@@ -159,15 +193,41 @@ pub fn build(b: *std.Build) void {
         },
     }
 
-    // Test module
+    // Test module — native target 用に core / hal / active_keyboard を再構築
+    const test_build_opts_mod = build_opts.createModule();
+
+    const test_core_mod = b.createModule(.{
+        .root_source_file = b.path("src/core/core.zig"),
+        .target = native_target,
+    });
+    test_core_mod.addImport("build_options", test_build_opts_mod);
+
+    const test_hal_mod = b.createModule(.{
+        .root_source_file = b.path("src/hal/hal.zig"),
+        .target = native_target,
+    });
+    test_hal_mod.addImport("build_options", test_build_opts_mod);
+
+    const test_active_kb_mod = b.createModule(.{
+        .root_source_file = b.path(keyboard_path),
+        .target = native_target,
+    });
+    test_active_kb_mod.addImport("core", test_core_mod);
+    test_active_kb_mod.addImport("hal", test_hal_mod);
+
+    test_core_mod.addImport("active_keyboard", test_active_kb_mod);
+    test_core_mod.addImport("hal", test_hal_mod);
+    test_hal_mod.addImport("core", test_core_mod);
+    test_hal_mod.addImport("active_keyboard", test_active_kb_mod);
+
     const test_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = native_target,
     });
-    test_mod.addImport("build_options", build_opts.createModule());
-    test_mod.addAnonymousImport("active_keyboard", .{
-        .root_source_file = b.path(keyboard_path),
-    });
+    test_mod.addImport("build_options", test_build_opts_mod);
+    test_mod.addImport("core", test_core_mod);
+    test_mod.addImport("hal", test_hal_mod);
+    test_mod.addImport("active_keyboard", test_active_kb_mod);
 
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");
