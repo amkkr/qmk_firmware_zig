@@ -7,15 +7,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Module declarations
-pub const core = @import("core/core.zig");
-pub const hal = @import("hal/hal.zig");
+// Module declarations — named module 経由で取得 (build.zig 側で構築)
+pub const core = @import("core");
+pub const hal = @import("hal");
 pub const drivers = struct {};
-const build_options = @import("build_options");
-pub const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
-    @import("keyboards/madbd34.zig")
-else
-    @import("keyboards/madbd5.zig");
+/// 有効な keyboard 定義モジュール (`-Dkeyboard=<name>` から build.zig が解決)
+pub const kb = @import("active_keyboard");
 
 const is_freestanding = builtin.os.tag == .freestanding;
 
@@ -24,9 +21,9 @@ const is_freestanding = builtin.os.tag == .freestanding;
 // ============================================================
 
 pub const startup = if (is_freestanding) struct {
-    const vector_table_mod = @import("hal/vector_table.zig");
-    const boot2_mod = @import("hal/boot2.zig");
-    const clock = @import("hal/clock.zig");
+    const vector_table_mod = @import("hal").vector_table;
+    const boot2_mod = @import("hal").boot2;
+    const clock = @import("hal").clock;
 
     extern var _stack_top: anyopaque;
 
@@ -82,15 +79,15 @@ pub const startup = if (is_freestanding) struct {
         }
     }
 
-    const gpio = @import("hal/gpio.zig");
-    const usb = @import("hal/usb.zig");
-    const timer = @import("hal/timer.zig");
-    const cdc_console = @import("hal/cdc_console.zig");
-    const eeprom_mod = @import("hal/eeprom.zig");
-    const matrix_mod = @import("core/matrix.zig");
-    const keyboard = @import("core/keyboard.zig");
-    const action_mod = @import("core/action.zig");
-    const host_mod = @import("core/host.zig");
+    const gpio = @import("hal").gpio;
+    const usb = @import("hal").usb;
+    const timer = @import("hal").timer;
+    const cdc_console = @import("hal").cdc_console;
+    const eeprom_mod = @import("hal").eeprom;
+    const matrix_mod = @import("core").matrix;
+    const keyboard = @import("core").keyboard;
+    const action_mod = @import("core").action_mod;
+    const host_mod = @import("core").host_mod;
     const kb_mod = @import("root").kb;
 
     const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
@@ -272,8 +269,6 @@ test {
     @import("std").testing.refAllDecls(core);
     @import("std").testing.refAllDecls(hal);
     @import("std").testing.refAllDecls(kb);
-    // Boot2モジュールのテストを実行
-    _ = @import("hal/boot2.zig");
     // 統合テストを実行
     _ = @import("tests/integration_test.zig");
     // C版テスト移植

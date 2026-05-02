@@ -1318,7 +1318,7 @@ test "OSM right modifier tap sets correct HID bits" {
 
 test "ACT_MOUSEKEY dispatch" {
     reset();
-    const timer = @import("../hal/timer.zig");
+    const timer = @import("hal").timer;
     timer.mockReset();
     var mock = MockDriver{};
     host.setDriver(host.HostDriver.from(&mock));

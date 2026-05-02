@@ -19,21 +19,21 @@
 const std = @import("std");
 const testing = std.testing;
 
-const action = @import("../core/action.zig");
-const action_code = @import("../core/action_code.zig");
-const combo = @import("../core/combo.zig");
-const event_mod = @import("../core/event.zig");
-const host = @import("../core/host.zig");
-const keycode_mod = @import("../core/keycode.zig");
-const keymap_mod = @import("../core/keymap.zig");
-const report_mod = @import("../core/report.zig");
-const timer = @import("../hal/timer.zig");
+const action = @import("core").action_mod;
+const action_code = @import("core").action_code;
+const combo = @import("core").combo;
+const event_mod = @import("core").event;
+const host = @import("core").host_mod;
+const keycode_mod = @import("core").keycode;
+const keymap_mod = @import("core").keymap;
+const report_mod = @import("core").report;
+const timer = @import("hal").timer;
 
 const KC = keycode_mod.KC;
 const Mod = keycode_mod.Mod;
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;
-const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
 const TestDriver = FixedTestDriver(64, 16);
 
 // ============================================================

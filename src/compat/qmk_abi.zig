@@ -9,14 +9,14 @@
 //! Function names follow QMK C naming conventions (snake_case).
 
 const std = @import("std");
-const layer_mod = @import("../core/layer.zig");
-const host_mod = @import("../core/host.zig");
-const action_mod = @import("../core/action.zig");
-const keyboard_mod = @import("../core/keyboard.zig");
-const event_mod = @import("../core/event.zig");
-const keymap_mod = @import("../core/keymap.zig");
-const report_mod = @import("../core/report.zig");
-const timer = @import("../hal/timer.zig");
+const layer_mod = @import("core").layer;
+const host_mod = @import("core").host_mod;
+const action_mod = @import("core").action_mod;
+const keyboard_mod = @import("core").keyboard;
+const event_mod = @import("core").event;
+const keymap_mod = @import("core").keymap;
+const report_mod = @import("core").report;
+const timer = @import("hal").timer;
 
 // ============================================================
 // Keyboard lifecycle
@@ -335,7 +335,7 @@ test "qmk_abi: keyboard_init/task lifecycle" {
 }
 
 test "qmk_abi: register_code/unregister_code with mock driver" {
-    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
     keyboard_init();
@@ -353,7 +353,7 @@ test "qmk_abi: register_code/unregister_code with mock driver" {
 }
 
 test "qmk_abi: register_code modifier key" {
-    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
     keyboard_init();
@@ -372,7 +372,7 @@ test "qmk_abi: register_code modifier key" {
 }
 
 test "qmk_abi: clear_keyboard clears all state" {
-    const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+    const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
     keyboard_init();
@@ -405,7 +405,7 @@ test "qmk_abi: process_record does not crash" {
 }
 
 test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
-    const keycode_mod = @import("../core/keycode.zig");
+    const keycode_mod = @import("core").keycode;
     keyboard_init();
     // 初期状態ではすべて KC_NO (0)
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));

@@ -162,7 +162,7 @@ pub fn reset() void {
 
 const std = @import("std");
 const testing = std.testing;
-const eeprom = @import("../hal/eeprom.zig");
+const eeprom = @import("hal").eeprom;
 
 fn setupTest() void {
     eeprom.mockReset();

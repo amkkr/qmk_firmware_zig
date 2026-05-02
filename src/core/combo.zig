@@ -24,7 +24,7 @@ const action = @import("action.zig");
 const action_code = @import("action_code.zig");
 const event_mod = @import("event.zig");
 const host = @import("host.zig");
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;

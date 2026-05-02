@@ -15,11 +15,11 @@
 
 const std = @import("std");
 const testing = std.testing;
-const mousekey = @import("../core/mousekey.zig");
-const report_mod = @import("../core/report.zig");
-const host_mod = @import("../core/host.zig");
-const keycode = @import("../core/keycode.zig");
-const timer = @import("../hal/timer.zig");
+const mousekey = @import("core").mousekey;
+const report_mod = @import("core").report;
+const host_mod = @import("core").host_mod;
+const keycode = @import("core").keycode;
+const timer = @import("hal").timer;
 
 const KC = keycode.KC;
 const MouseReport = report_mod.MouseReport;

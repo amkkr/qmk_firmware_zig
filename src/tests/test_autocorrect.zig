@@ -22,16 +22,16 @@
 const std = @import("std");
 const testing = std.testing;
 
-const autocorrect = @import("../core/autocorrect.zig");
-const host = @import("../core/host.zig");
-const keycode_mod = @import("../core/keycode.zig");
-const keymap_mod = @import("../core/keymap.zig");
-const report_mod = @import("../core/report.zig");
+const autocorrect = @import("core").autocorrect;
+const host = @import("core").host_mod;
+const keycode_mod = @import("core").keycode;
+const keymap_mod = @import("core").keymap;
+const report_mod = @import("core").report;
 
 const KC = keycode_mod.KC;
 const Keycode = keycode_mod.Keycode;
 const KeyboardReport = report_mod.KeyboardReport;
-const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
 const TestDriver = FixedTestDriver(128, 16);
 
 fn setupTest() *TestDriver {

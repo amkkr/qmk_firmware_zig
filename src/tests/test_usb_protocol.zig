@@ -19,9 +19,9 @@
 const std = @import("std");
 const testing = std.testing;
 
-const usb = @import("../hal/usb.zig");
-const usb_descriptors = @import("../hal/usb_descriptors.zig");
-const clock = @import("../hal/clock.zig");
+const usb = @import("hal").usb;
+const usb_descriptors = @import("hal").usb_descriptors;
+const clock = @import("hal").clock;
 
 const UsbDriver = usb.UsbDriver;
 const SetupPacket = usb.SetupPacket;

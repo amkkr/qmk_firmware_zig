@@ -20,7 +20,7 @@
 //! - secure_hook_user() / secure_hook_kb() (weak 関数): 省略
 //! - SECURE_UNLOCK_SEQUENCE はランタイムで setUnlockSequence() により設定
 
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 const keycode_mod = @import("keycode.zig");
 const Keycode = keycode_mod.Keycode;
 const host = @import("host.zig");

@@ -6,7 +6,7 @@
 
 const keycode = @import("keycode.zig");
 const tapping = @import("action_tapping.zig");
-const cdc_console = @import("../hal/cdc_console.zig");
+const cdc_console = @import("hal").cdc_console;
 
 const Keycode = keycode.Keycode;
 

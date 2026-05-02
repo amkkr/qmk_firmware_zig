@@ -18,14 +18,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const auto_shift = @import("../core/auto_shift.zig");
-const host = @import("../core/host.zig");
-const report_mod = @import("../core/report.zig");
-const keycode_mod = @import("../core/keycode.zig");
-const timer = @import("../hal/timer.zig");
+const auto_shift = @import("core").auto_shift;
+const host = @import("core").host_mod;
+const report_mod = @import("core").report;
+const keycode_mod = @import("core").keycode;
+const timer = @import("hal").timer;
 
 const KC = keycode_mod.KC;
-const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
 const TestDriver = FixedTestDriver(64, 16);
 
 fn setupTest() *TestDriver {

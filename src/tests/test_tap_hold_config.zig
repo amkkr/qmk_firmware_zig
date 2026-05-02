@@ -19,14 +19,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const action = @import("../core/action.zig");
-const action_code = @import("../core/action_code.zig");
-const event_mod = @import("../core/event.zig");
-const host_mod = @import("../core/host.zig");
-const report_mod = @import("../core/report.zig");
-const keycode = @import("../core/keycode.zig");
-const layer_mod = @import("../core/layer.zig");
-const tapping_mod = @import("../core/action_tapping.zig");
+const action = @import("core").action_mod;
+const action_code = @import("core").action_code;
+const event_mod = @import("core").event;
+const host_mod = @import("core").host_mod;
+const report_mod = @import("core").report;
+const keycode = @import("core").keycode;
+const layer_mod = @import("core").layer;
+const tapping_mod = @import("core").action_tapping;
 
 const Action = action_code.Action;
 const KeyRecord = event_mod.KeyRecord;
@@ -37,7 +37,7 @@ const Mod = keycode.Mod;
 const TAPPING_TERM = tapping_mod.TAPPING_TERM;
 const QUICK_TAP_TERM = tapping_mod.QUICK_TAP_TERM;
 
-const MockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
+const MockDriver = @import("core").test_driver.FixedTestDriver(64, 16);
 
 // ============================================================
 // テスト用キーマップリゾルバ

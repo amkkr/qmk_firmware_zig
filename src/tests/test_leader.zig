@@ -29,12 +29,12 @@
 const std = @import("std");
 const testing = std.testing;
 
-const keycode = @import("../core/keycode.zig");
-const report_mod = @import("../core/report.zig");
-const test_fixture = @import("../core/test_fixture.zig");
-const leader = @import("../core/leader.zig");
-const host = @import("../core/host.zig");
-const timer = @import("../hal/timer.zig");
+const keycode = @import("core").keycode;
+const report_mod = @import("core").report;
+const test_fixture = @import("core").test_fixture;
+const leader = @import("core").leader;
+const host = @import("core").host_mod;
+const timer = @import("hal").timer;
 
 const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;

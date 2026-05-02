@@ -15,9 +15,9 @@
 
 const std = @import("std");
 const testing = std.testing;
-const keycode = @import("../core/keycode.zig");
-const layer_mod = @import("../core/layer.zig");
-const test_fixture = @import("../core/test_fixture.zig");
+const keycode = @import("core").keycode;
+const layer_mod = @import("core").layer;
+const test_fixture = @import("core").test_fixture;
 
 const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;

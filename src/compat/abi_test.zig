@@ -14,9 +14,9 @@
 const std = @import("std");
 const testing = std.testing;
 
-const report = @import("../core/report.zig");
-const event = @import("../core/event.zig");
-const action_code = @import("../core/action_code.zig");
+const report = @import("core").report;
+const event = @import("core").event;
+const action_code = @import("core").action_code;
 
 // ============================================================
 // Struct size tests (C sizeof equivalents)

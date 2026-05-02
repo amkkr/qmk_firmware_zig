@@ -17,17 +17,13 @@ const builtin = @import("builtin");
 const action = @import("action.zig");
 const event_mod = @import("event.zig");
 const host = @import("host.zig");
-const build_options = @import("build_options");
 
 const KeyRecord = event_mod.KeyRecord;
 const KeyEvent = event_mod.KeyEvent;
 
-/// キーボード定義モジュール（comptime 選択）
+/// キーボード定義モジュール（build.zig が `-Dkeyboard=<name>` から解決）
 /// per-key タッピング設定コールバックの解決に使用
-const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
-    @import("../keyboards/madbd34.zig")
-else
-    @import("../keyboards/madbd5.zig");
+const kb = @import("active_keyboard");
 
 pub const DEFAULT_TAPPING_TERM: u16 = 200;
 /// 後方互換エイリアス（既存テスト・フィクスチャで参照されるため）

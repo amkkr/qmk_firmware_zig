@@ -26,7 +26,7 @@
 //!       }
 //!   }
 
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 const keycode_mod = @import("keycode.zig");
 
 const Keycode = keycode_mod.Keycode;

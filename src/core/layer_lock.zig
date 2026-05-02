@@ -13,7 +13,7 @@
 
 const layer = @import("layer.zig");
 const host = @import("host.zig");
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 
 /// ロック中のレイヤーをビットマスクで管理
 var locked_layers: layer.LayerState = 0;

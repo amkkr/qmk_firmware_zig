@@ -8,7 +8,6 @@
 //! and comptime LAYOUT functions for physical key-to-matrix mapping.
 
 const std = @import("std");
-const build_options = @import("build_options");
 const keycode = @import("keycode.zig");
 const layer_mod = @import("layer.zig");
 const action_code = @import("action_code.zig");
@@ -18,8 +17,11 @@ const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 const LayerState = layer_mod.LayerState;
 
-pub const MATRIX_ROWS: u8 = build_options.MATRIX_ROWS;
-pub const MATRIX_COLS: u8 = build_options.MATRIX_COLS;
+/// キーボード定義モジュール（build.zig が `-Dkeyboard=<name>` から解決）
+const kb = @import("active_keyboard");
+
+pub const MATRIX_ROWS: u8 = kb.rows;
+pub const MATRIX_COLS: u8 = kb.cols;
 pub const MAX_LAYERS = layer_mod.MAX_LAYERS;
 
 // ============================================================

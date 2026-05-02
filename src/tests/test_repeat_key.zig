@@ -33,15 +33,15 @@
 const std = @import("std");
 const testing = std.testing;
 
-const keycode = @import("../core/keycode.zig");
-const report_mod = @import("../core/report.zig");
-const test_fixture = @import("../core/test_fixture.zig");
-const repeat_key = @import("../core/repeat_key.zig");
-const auto_shift = @import("../core/auto_shift.zig");
-const host = @import("../core/host.zig");
-const keymap_mod = @import("../core/keymap.zig");
-const layer = @import("../core/layer.zig");
-const timer = @import("../hal/timer.zig");
+const keycode = @import("core").keycode;
+const report_mod = @import("core").report;
+const test_fixture = @import("core").test_fixture;
+const repeat_key = @import("core").repeat_key;
+const auto_shift = @import("core").auto_shift;
+const host = @import("core").host_mod;
+const keymap_mod = @import("core").keymap;
+const layer = @import("core").layer;
+const timer = @import("hal").timer;
 
 const KC = keycode.KC;
 const Mod = keycode.Mod;
