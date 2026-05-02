@@ -93,7 +93,8 @@ pub fn build(b: *std.Build) void {
         .target = rp2040_target,
         .optimize = optimize,
     });
-    hal_mod.addImport("build_options", build_opts_mod);
+    // src/hal/ 配下のファイルは build_options を参照しないため addImport は不要。
+    // 将来 hal が build_options に依存する時点で追加する。
 
     // active_keyboard モジュール: `-Dkeyboard=<name>` で選ばれた keyboard 定義
     const active_keyboard_mod = b.createModule(.{
@@ -204,7 +205,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/hal/hal.zig"),
         .target = native_target,
     });
-    test_hal_mod.addImport("build_options", test_build_opts_mod);
 
     const test_active_kb_mod = b.createModule(.{
         .root_source_file = b.path(keyboard_path),
