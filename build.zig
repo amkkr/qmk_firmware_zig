@@ -52,6 +52,11 @@ pub fn build(b: *std.Build) void {
     validateIdentifier("keyboard", keyboard);
     validateIdentifier("keymap", keymap);
 
+    // -Dkeyboard=<name> から `src/keyboards/<name>.zig` を解決。
+    // 不在なら src/keyboards/ ディレクトリをスキャンして有効リストを動的生成し、
+    // 日本語エラーで build を停止する (panic ではなく process.exit(1) で UX を改善)。
+    const keyboard_path = resolveKeyboardPath(b, keyboard);
+
     const kb_config = keyboard_configs.get(keyboard) orelse
         std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
 
@@ -86,6 +91,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     firmware_mod.addImport("build_options", build_opts.createModule());
+    // active_keyboard 固定名 import: `-Dkeyboard=<name>` から該当 zig を解決。
+    // core 側は `@import("active_keyboard")` のみで参照でき、 keyboard ごとの
+    // if 連鎖を排除できる。
+    firmware_mod.addAnonymousImport("active_keyboard", .{
+        .root_source_file = b.path(keyboard_path),
+    });
 
     // Firmware executable
     const firmware = b.addExecutable(.{
@@ -154,6 +165,9 @@ pub fn build(b: *std.Build) void {
         .target = native_target,
     });
     test_mod.addImport("build_options", build_opts.createModule());
+    test_mod.addAnonymousImport("active_keyboard", .{
+        .root_source_file = b.path(keyboard_path),
+    });
 
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");
@@ -194,6 +208,63 @@ pub fn build(b: *std.Build) void {
     verify_step.dependOn(&run_flash_tests.step);
     verify_step.dependOn(&run_uf2gen_tests.step);
     verify_step.dependOn(&firmware.step);
+}
+
+/// `-Dkeyboard=<name>` から `src/keyboards/<name>.zig` のパスを解決する。
+/// 該当ファイルが存在しない場合は `src/keyboards/` 配下の `.zig` を動的にスキャンして
+/// 有効な keyboard 一覧を日本語で表示し、 `process.exit(1)` で build を停止する。
+/// panic を避けることで CI ログのスタックトレース冗長化を防ぐ。
+fn resolveKeyboardPath(b: *std.Build, keyboard: []const u8) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
+    const path = b.fmt("src/keyboards/{s}.zig", .{keyboard});
+    if (cwd.access(io, path, .{})) |_| {
+        return path;
+    } else |_| {}
+
+    // 有効な keyboard 一覧を src/keyboards/*.zig から動的に収集
+    const valid = collectValidKeyboards(b);
+    std.debug.print(
+        "error: 不明な keyboard 名 \"{s}\"。 有効な keyboard: {s}\n",
+        .{ keyboard, valid },
+    );
+    std.process.exit(1);
+}
+
+/// `src/keyboards/` 配下の `.zig` ファイル名を昇順カンマ区切りで列挙する。
+/// 失敗時は空文字を返し、 上位呼出側でエラーを表示するのに任せる。
+fn collectValidKeyboards(b: *std.Build) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
+    var dir = cwd.openDir(io, "src/keyboards", .{ .iterate = true }) catch return "";
+    defer dir.close(io);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    defer names.deinit(b.allocator);
+
+    var iter = dir.iterate();
+    while (iter.next(io) catch null) |entry_opt| {
+        const entry = entry_opt;
+        if (entry.kind != .file) continue;
+        const name = entry.name;
+        if (!std.mem.endsWith(u8, name, ".zig")) continue;
+        const stem = name[0 .. name.len - ".zig".len];
+        names.append(b.allocator, b.dupe(stem)) catch return "";
+    }
+
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b_: []const u8) bool {
+            return std.mem.lessThan(u8, a, b_);
+        }
+    }.lessThan);
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(b.allocator);
+    for (names.items, 0..) |n, i| {
+        if (i > 0) buf.appendSlice(b.allocator, ", ") catch return "";
+        buf.appendSlice(b.allocator, n) catch return "";
+    }
+    return buf.toOwnedSlice(b.allocator) catch "";
 }
 
 fn addFlashStep(
