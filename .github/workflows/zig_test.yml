@@ -21,9 +21,32 @@ on:
     - 'tools/**'
     - '.github/workflows/zig_test.yml'
 
+# 注: 実機 flash テスト (zig build flash) はランナーに RP2040 が無いため CI 対象外。
+# 本ワークフローはホストネイティブのユニットテストと RP2040 向けクロスコンパイル検証のみ実施。
+
 jobs:
-  test:
+  fmt:
+    name: zig fmt --check
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: 0.16.0
+
+    - name: Check formatting
+      run: zig fmt --check src tools build.zig
+
+  verify:
+    name: verify (${{ matrix.os }})
+    needs: fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v6
@@ -33,8 +56,31 @@ jobs:
       with:
         version: 0.16.0
 
-    - name: Run tests
-      run: zig build test
+    - name: Cache Zig global cache (Linux/macOS)
+      if: runner.os != 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/zig
+        key: ${{ runner.os }}-zig-global-${{ hashFiles('build.zig.zon', 'build.zig') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-global-
 
-    - name: Build firmware (RP2040 cross-compile)
-      run: zig build
+    - name: Cache Zig global cache (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\zig
+        key: ${{ runner.os }}-zig-global-${{ hashFiles('build.zig.zon', 'build.zig') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-global-
+
+    - name: Cache Zig local cache
+      uses: actions/cache@v4
+      with:
+        path: .zig-cache
+        key: ${{ runner.os }}-zig-local-${{ hashFiles('build.zig.zon', 'build.zig', 'src/**', 'tools/**') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-local-
+
+    - name: Run verify (tests + RP2040 cross-compile)
+      run: zig build verify
