@@ -321,9 +321,11 @@ fn addProbersFlashStep(
 /// 候補に見つからなかった場合のフォールバックとして PATH 経由の解決に委ねる
 /// (PATH 攻撃対策は限定的になるが、 実用性を優先)。
 fn resolveExternalTool(b: *std.Build, name: []const u8, paths: []const []const u8) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
     for (paths) |dir| {
         const candidate = b.fmt("{s}/{s}", .{ dir, name });
-        if (std.fs.cwd().access(candidate, .{})) |_| {
+        if (cwd.access(io, candidate, .{})) |_| {
             return candidate;
         } else |_| {}
     }
@@ -337,13 +339,15 @@ fn resolveExternalTool(b: *std.Build, name: []const u8, paths: []const []const u
 /// openocd の scripts ディレクトリ (interface/, target/ を含む) の絶対パスを解決する。
 /// 見つからない場合も build graph では panic せず、 デフォルト候補を返してエラーを実行時に遅延させる。
 fn resolveOpenocdScriptsDir(b: *std.Build) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
     const candidates = [_][]const u8{
         "/opt/homebrew/share/openocd/scripts",
         "/usr/local/share/openocd/scripts",
         "/usr/share/openocd/scripts",
     };
     for (candidates) |dir| {
-        if (std.fs.cwd().access(dir, .{})) |_| {
+        if (cwd.access(io, dir, .{})) |_| {
             return b.dupe(dir);
         } else |_| {}
     }
@@ -384,26 +388,40 @@ fn addUf2Step(
 /// git 不在、 shallow clone で取れない、 終了コード非ゼロ等の失敗時は警告を出して空文字を返す。
 /// `--short=12` 固定で reproducible を担保 (commit + zig version + OS が同一なら同じ hash)。
 fn gitHash(b: *std.Build) []const u8 {
-    const result = std.process.Child.run(.{
-        .allocator = b.allocator,
+    const io = b.graph.io;
+    var child = std.process.spawn(io, .{
         .argv = &.{ "git", "rev-parse", "--short=12", "HEAD" },
-        .max_output_bytes = 64,
+        .stdin = .ignore,
+        .stdout = .pipe,
+        .stderr = .ignore,
     }) catch |err| {
         std.debug.print("warning: git rev-parse 実行に失敗 ({s})、 GIT_HASH を空文字に設定\n", .{@errorName(err)});
         return "";
     };
-    defer b.allocator.free(result.stderr);
 
-    if (result.term != .Exited or result.term.Exited != 0) {
-        b.allocator.free(result.stdout);
+    var stdout_reader = child.stdout.?.readerStreaming(io, &.{});
+    const stdout = stdout_reader.interface.allocRemaining(b.allocator, .limited(64)) catch {
+        _ = child.wait(io) catch {};
+        std.debug.print("warning: git rev-parse の出力読み取りに失敗、 GIT_HASH を空文字に設定\n", .{});
+        return "";
+    };
+
+    const term = child.wait(io) catch |err| {
+        std.debug.print("warning: git rev-parse の wait に失敗 ({s})、 GIT_HASH を空文字に設定\n", .{@errorName(err)});
+        b.allocator.free(stdout);
+        return "";
+    };
+
+    if (term != .exited or term.exited != 0) {
+        b.allocator.free(stdout);
         std.debug.print("warning: git rev-parse の終了コードが非ゼロ、 GIT_HASH を空文字に設定\n", .{});
         return "";
     }
 
-    const trimmed = std.mem.trim(u8, result.stdout, &std.ascii.whitespace);
+    const trimmed = std.mem.trim(u8, stdout, &std.ascii.whitespace);
     // trim 後の slice は元の stdout を指すため、 build allocator で複製してから stdout を解放
     const dup = b.allocator.dupe(u8, trimmed) catch @panic("OOM");
-    b.allocator.free(result.stdout);
+    b.allocator.free(stdout);
     return dup;
 }
 
@@ -448,7 +466,8 @@ const FileSizeStep = struct {
 
     fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
         const self: *FileSizeStep = @fieldParentPtr("step", step);
-        const stat = std.fs.cwd().statFile(self.file_path) catch |err| {
+        const io = step.owner.graph.io;
+        const stat = std.Io.Dir.cwd().statFile(io, self.file_path, .{}) catch |err| {
             std.debug.print("  {s}: could not stat file ({s})\n", .{ self.display_name, @errorName(err) });
             return;
         };
@@ -503,17 +522,18 @@ const ElfMemoryUsageStep = struct {
     fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
         const self: *ElfMemoryUsageStep = @fieldParentPtr("step", step);
         const allocator = step.owner.allocator;
+        const io = step.owner.graph.io;
 
-        const file = std.fs.cwd().openFile(self.elf_path, .{}) catch |err| {
+        const file = std.Io.Dir.cwd().openFile(io, self.elf_path, .{}) catch |err| {
             std.debug.print("  {s}: ELF を開けません ({s})\n", .{ self.display_name, @errorName(err) });
             return;
         };
-        defer file.close();
+        defer file.close(io);
 
-        const sizes = readElfSectionSizes(allocator, file) catch |err| {
+        const sizes = readElfSectionSizes(io, allocator, file) catch |err| {
             // ELF 解析失敗時は単純なサイズ表示にフォールバック
             std.debug.print("  {s}: ELF section 解析に失敗 ({s})、 ファイルサイズのみ表示\n", .{ self.display_name, @errorName(err) });
-            const stat = file.stat() catch return;
+            const stat = file.stat(io) catch return;
             std.debug.print("    size: {d} bytes\n", .{stat.size});
             return;
         };
@@ -548,11 +568,13 @@ const ElfSectionSizes = struct {
 };
 
 /// ELF を解析して .text+.rodata / .data / .bss のセクションサイズを集計する。
-/// std.elf.Header.read は zig 0.15.2 で *std.Io.Reader を要求するため、
+/// std.elf.Header.read は *std.Io.Reader を要求するため、
 /// 互換性のため ELF spec に従って手動でヘッダを parse する (readInt のみ使用)。
 /// 解析失敗時は error を返し、 呼出側でフォールバックさせる。
-fn readElfSectionSizes(allocator: std.mem.Allocator, file: std.fs.File) !ElfSectionSizes {
-    const elf_bytes = try file.readToEndAlloc(allocator, 16 * 1024 * 1024);
+fn readElfSectionSizes(io: std.Io, allocator: std.mem.Allocator, file: std.Io.File) !ElfSectionSizes {
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    const elf_bytes = try file_reader.interface.allocRemaining(allocator, .limited(16 * 1024 * 1024));
     defer allocator.free(elf_bytes);
 
     // ELF header 最低サイズ (32bit:52, 64bit:64) を確認
@@ -660,16 +682,18 @@ const Sha256Step = struct {
 
     fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
         const self: *Sha256Step = @fieldParentPtr("step", step);
-        const file = std.fs.cwd().openFile(self.file_path, .{}) catch |err| {
+        const io = step.owner.graph.io;
+        const file = std.Io.Dir.cwd().openFile(io, self.file_path, .{}) catch |err| {
             std.debug.print("  {s} SHA256: ファイルを開けません ({s})\n", .{ self.display_name, @errorName(err) });
             return;
         };
-        defer file.close();
+        defer file.close(io);
 
         var hasher = std.crypto.hash.sha2.Sha256.init(.{});
         var buf: [4096]u8 = undefined;
+        var reader = file.reader(io, &.{});
         while (true) {
-            const n = file.read(&buf) catch |err| {
+            const n = reader.interface.readSliceShort(&buf) catch |err| {
                 std.debug.print("  {s} SHA256: 読み取りエラー ({s})\n", .{ self.display_name, @errorName(err) });
                 return;
             };
@@ -679,7 +703,6 @@ const Sha256Step = struct {
         var digest: [32]u8 = undefined;
         hasher.final(&digest);
 
-        // zig 0.15.2 と 0.16.0 の両方で動く手動 hex 変換 (std.fmt.fmtSliceHexLower は 0.15.2 で未定義)
         const hex_chars = "0123456789abcdef";
         var hex: [64]u8 = undefined;
         for (digest, 0..) |byte, i| {

@@ -65,7 +65,7 @@ fn printUsage() void {
     , .{default_timeout_seconds});
 }
 
-fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
+fn parseArgs(environ: std.process.Environ, raw_args: []const [:0]const u8) ArgsError!Args {
     var positional: ?[]const u8 = null;
     var timeout_seconds: u64 = default_timeout_seconds;
     var device_path: ?[]const u8 = null;
@@ -74,7 +74,7 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
     var auto_reset = true;
 
     // 環境変数 QMK_FLASH_TIMEOUT_SEC で default 上書き
-    if (std.posix.getenv("QMK_FLASH_TIMEOUT_SEC")) |env_val| {
+    if (environ.getPosix("QMK_FLASH_TIMEOUT_SEC")) |env_val| {
         if (std.fmt.parseUnsigned(u64, env_val, 10)) |n| {
             timeout_seconds = n;
         } else |_| {
@@ -132,13 +132,14 @@ fn parseArgs(raw_args: [][:0]u8) ArgsError!Args {
     };
 }
 
-pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
+    const arena = init.arena.allocator();
 
-    const raw_args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, raw_args);
+    const raw_args = try init.minimal.args.toSlice(arena);
 
-    const args = parseArgs(raw_args) catch |err| switch (err) {
+    const args = parseArgs(init.minimal.environ, raw_args) catch |err| switch (err) {
         ArgsError.HelpRequested => {
             printUsage();
             return;
@@ -150,20 +151,21 @@ pub fn main() !void {
     };
 
     // UF2 ファイルの存在確認
-    std.fs.cwd().access(args.uf2_path, .{}) catch {
+    const cwd = std.Io.Dir.cwd();
+    cwd.access(io, args.uf2_path, .{}) catch {
         std.debug.print("Error: UF2 ファイルが見つかりません: {s}\n", .{args.uf2_path});
         return error.Uf2NotFound;
     };
 
     // BOOTSEL ドライブを取得 (--device-path 指定 / 検出 / 待機)
-    const bootsel_path = try resolveBootselPath(allocator, args);
-    defer allocator.free(bootsel_path);
+    const bootsel_path = try resolveBootselPath(io, init.minimal.environ, gpa, args);
+    defer gpa.free(bootsel_path);
 
     std.debug.print("RP2040 BOOTSEL ドライブを検出: {s}\n", .{bootsel_path});
 
     // 書込先パス (basename のみ使うため path traversal は無し)
-    const dest_path = try std.fs.path.join(allocator, &.{ bootsel_path, std.fs.path.basename(args.uf2_path) });
-    defer allocator.free(dest_path);
+    const dest_path = try std.fs.path.join(gpa, &.{ bootsel_path, std.fs.path.basename(args.uf2_path) });
+    defer gpa.free(dest_path);
 
     if (args.verbose) {
         std.debug.print("詳細: 書込先 = {s}\n", .{dest_path});
@@ -172,12 +174,12 @@ pub fn main() !void {
     std.debug.print("フラッシュ中: {s} -> {s}\n", .{ args.uf2_path, dest_path });
 
     // TOCTOU 緩和: 書込直前にもう一度ドライブ妥当性を検証
-    if (!verifyBootselDrive(allocator, bootsel_path)) {
+    if (!verifyBootselDrive(io, gpa, bootsel_path)) {
         std.debug.print("Error: 書込直前の検証で BOOTSEL ドライブが妥当でないと判定されました: {s}\n", .{bootsel_path});
         return error.BootselNotFound;
     }
 
-    copyFileWithProgress(args.uf2_path, dest_path, args.verbose) catch |err| {
+    copyFileWithProgress(io, args.uf2_path, dest_path, args.verbose) catch |err| {
         std.debug.print("Error: UF2 ファイルのコピーに失敗しました: {}\n", .{err});
         return error.CopyFailed;
     };
@@ -186,7 +188,7 @@ pub fn main() !void {
 
     // 書込後、 BOOTSEL ドライブが消失するのを 5 秒間ポーリング (RP2040 の再起動確認)。
     // RP2040 のリブート + OS の unmount 反映には実測 2-3 秒かかるため、 5 秒の余裕を取る。
-    if (waitForBootselDisappear(bootsel_path)) {
+    if (try waitForBootselDisappear(io, bootsel_path)) {
         std.debug.print("RP2040 の再起動を確認しました。\n", .{});
     } else {
         std.debug.print("Warning: 書込は完了しましたが RP2040 の再起動が {d} 秒以内に確認できませんでした。\n", .{reboot_confirm_seconds});
@@ -199,9 +201,9 @@ pub fn main() !void {
 /// - それ以外は detect → 1 件なら採用、 複数なら --device-index で選択
 /// - 見つからなければ auto-reset を試行 (CDC 1200bps タッチで BOOTSEL モードへ遷移)
 /// - それでも見つからなければ args.timeout_seconds 待機して再検出
-fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
+fn resolveBootselPath(io: std.Io, environ: std.process.Environ, allocator: std.mem.Allocator, args: Args) ![]const u8 {
     if (args.device_path) |path| {
-        if (!verifyBootselDrive(allocator, path)) {
+        if (!verifyBootselDrive(io, allocator, path)) {
             std.debug.print("Error: 指定された --device-path が BOOTSEL ドライブではありません: {s}\n", .{path});
             return error.BootselNotFound;
         }
@@ -209,16 +211,16 @@ fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
     }
 
     // 検出 (1 回目)
-    if (try selectBootselFromDetected(allocator, args)) |path| return path;
+    if (try selectBootselFromDetected(io, environ, allocator, args)) |path| return path;
 
     // BOOTSEL 自動リセットを試行 (CDC 1200bps タッチ、 ファーム側 D1 と協調)
     if (args.auto_reset) {
-        attempt1200bpsTouch(allocator, args.verbose);
+        attempt1200bpsTouch(io, allocator, args.verbose);
         // タッチ後の BOOTSEL ドライブ出現を待つ (短時間)
         const auto_reset_max_iter = 10 * std.time.ms_per_s / poll_interval_ms;
         for (0..auto_reset_max_iter) |_| {
-            std.Thread.sleep(poll_interval_ms * std.time.ns_per_ms);
-            if (try selectBootselFromDetected(allocator, args)) |path| return path;
+            try io.sleep(.fromMilliseconds(@intCast(poll_interval_ms)), .awake);
+            if (try selectBootselFromDetected(io, environ, allocator, args)) |path| return path;
         }
     }
 
@@ -232,8 +234,8 @@ fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
 
     const max_iterations = args.timeout_seconds * std.time.ms_per_s / poll_interval_ms;
     for (0..max_iterations) |_| {
-        std.Thread.sleep(poll_interval_ms * std.time.ns_per_ms);
-        if (try selectBootselFromDetected(allocator, args)) |path| return path;
+        try io.sleep(.fromMilliseconds(@intCast(poll_interval_ms)), .awake);
+        if (try selectBootselFromDetected(io, environ, allocator, args)) |path| return path;
     }
 
     std.debug.print("Error: タイムアウト。RP2040 が検出されませんでした。\n", .{});
@@ -241,14 +243,14 @@ fn resolveBootselPath(allocator: std.mem.Allocator, args: Args) ![]const u8 {
 }
 
 /// 全候補を列挙し、 args.device_index で選択する。 検出なし → null、 index 範囲外なら error。
-fn selectBootselFromDetected(allocator: std.mem.Allocator, args: Args) !?[]const u8 {
-    var candidates = std.ArrayList([]const u8){};
+fn selectBootselFromDetected(io: std.Io, environ: std.process.Environ, allocator: std.mem.Allocator, args: Args) !?[]const u8 {
+    var candidates: std.ArrayList([]const u8) = .empty;
     defer {
         for (candidates.items) |c| allocator.free(c);
         candidates.deinit(allocator);
     }
 
-    try detectAllBootsel(allocator, &candidates);
+    try detectAllBootsel(io, environ, allocator, &candidates);
 
     if (candidates.items.len == 0) return null;
 
@@ -272,8 +274,8 @@ fn selectBootselFromDetected(allocator: std.mem.Allocator, args: Args) !?[]const
 /// (Arduino / picotool 互換)。 ファーム側の set_line_coding ハンドラが dwDTERate == 1200
 /// を検出して bootloader.jump() を呼ぶことで RP2040 が BOOTSEL モードへ再起動する。
 /// 失敗しても warning を出すだけでフォールバック (BOOTSEL ドライブ検出待ち) を継続する。
-fn attempt1200bpsTouch(allocator: std.mem.Allocator, verbose: bool) void {
-    const ports = findCdcPorts(allocator) catch |err| {
+fn attempt1200bpsTouch(io: std.Io, allocator: std.mem.Allocator, verbose: bool) void {
+    const ports = findCdcPorts(io, allocator) catch |err| {
         if (verbose) std.debug.print("詳細: CDC ポート検索失敗 ({s})、 1200bps タッチをスキップ\n", .{@errorName(err)});
         return;
     };
@@ -289,7 +291,7 @@ fn attempt1200bpsTouch(allocator: std.mem.Allocator, verbose: bool) void {
 
     for (ports) |port| {
         std.debug.print("RP2040 を BOOTSEL に遷移中 ({s} を 1200bps でタッチ)...\n", .{port});
-        runStty1200bps(allocator, port, verbose) catch |err| {
+        runStty1200bps(io, port, verbose) catch |err| {
             std.debug.print("Warning: {s} の 1200bps タッチ失敗 ({s})、 次のポートを試行\n", .{ port, @errorName(err) });
             continue;
         };
@@ -300,8 +302,8 @@ fn attempt1200bpsTouch(allocator: std.mem.Allocator, verbose: bool) void {
 /// - macOS: /dev/cu.usbmodem* を glob
 /// - Linux: /dev/ttyACM* を glob
 /// - その他: 空配列を返す (未対応)
-fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
-    var ports = std.ArrayList([]const u8){};
+fn findCdcPorts(io: std.Io, allocator: std.mem.Allocator) ![][]const u8 {
+    var ports: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (ports.items) |p| allocator.free(p);
         ports.deinit(allocator);
@@ -315,11 +317,11 @@ fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
         else => return ports.toOwnedSlice(allocator),
     };
 
-    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return ports.toOwnedSlice(allocator);
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return ports.toOwnedSlice(allocator);
+    defer dir.close(io);
 
     var iter = dir.iterate();
-    while (try iter.next()) |entry| {
+    while (try iter.next(io)) |entry| {
         if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
         const port = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
         // append 失敗時のリーク防止 (errdefer は ports.items に入った要素しか解放しないため、
@@ -333,47 +335,50 @@ fn findCdcPorts(allocator: std.mem.Allocator) ![][]const u8 {
 /// stty コマンドで指定 tty を 1200bps に設定して短時間 open する (1200bps タッチ)。
 /// macOS は `-f`、 Linux は `-F` でデバイスを指定する。
 /// 非対応 OS では findCdcPorts が空配列を返すため本関数は呼ばれない (else は unreachable)。
-fn runStty1200bps(allocator: std.mem.Allocator, port: []const u8, verbose: bool) !void {
+fn runStty1200bps(io: std.Io, port: []const u8, verbose: bool) !void {
     const flag = switch (builtin.os.tag) {
         .macos => "-f",
         .linux => "-F",
         else => unreachable,
     };
 
-    var child = std.process.Child.init(&.{ "stty", flag, port, "1200" }, allocator);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = if (verbose) .Inherit else .Ignore;
+    var child = try std.process.spawn(io, .{
+        .argv = &.{ "stty", flag, port, "1200" },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = if (verbose) .inherit else .ignore,
+    });
 
-    const term = try child.spawnAndWait();
-    if (term != .Exited or term.Exited != 0) {
+    const term = try child.wait(io);
+    if (term != .exited or term.exited != 0) {
         return error.SttyFailed;
     }
 }
 
 /// プラットフォーム依存の全候補列挙。 候補は BOOTSEL_VOLUME_NAME 名のディレクトリで、
 /// verifyBootselDrive を満たすもののみ返す。
-fn detectAllBootsel(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+fn detectAllBootsel(io: std.Io, environ: std.process.Environ, allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
     switch (builtin.os.tag) {
-        .macos => try detectAllBootselMacos(allocator, out),
-        .linux => try detectAllBootselLinux(allocator, out),
-        .windows => try detectAllBootselWindows(allocator, out),
+        .macos => try detectAllBootselMacos(io, allocator, out),
+        .linux => try detectAllBootselLinux(io, environ, allocator, out),
+        .windows => try detectAllBootselWindows(io, allocator, out),
         else => {
             std.debug.print("Warning: 未対応の OS です。--device-path で手動指定してください。\n", .{});
         },
     }
 }
 
-fn detectAllBootselMacos(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+fn detectAllBootselMacos(io: std.Io, allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
     // /Volumes/RPI-RP2 に加え、 macOS は同名追加マウント時に "RPI-RP2 1", "RPI-RP2 2", ... を作る
-    var dir = std.fs.cwd().openDir("/Volumes", .{ .iterate = true }) catch return;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(io, "/Volumes", .{ .iterate = true }) catch return;
+    defer dir.close(io);
 
     var iter = dir.iterate();
-    while (try iter.next()) |entry| {
+    while (try iter.next(io)) |entry| {
         if (entry.kind != .directory) continue;
         if (!std.mem.startsWith(u8, entry.name, BOOTSEL_VOLUME_NAME)) continue;
         const candidate = try std.fmt.allocPrint(allocator, "/Volumes/{s}", .{entry.name});
-        if (verifyBootselDrive(allocator, candidate)) {
+        if (verifyBootselDrive(io, allocator, candidate)) {
             try out.append(allocator, candidate);
         } else {
             allocator.free(candidate);
@@ -381,13 +386,13 @@ fn detectAllBootselMacos(allocator: std.mem.Allocator, out: *std.ArrayList([]con
     }
 }
 
-fn detectAllBootselLinux(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+fn detectAllBootselLinux(io: std.Io, environ: std.process.Environ, allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
     // USER 環境変数を許可リストで検証 (違反時は USER 経由パスをスキップ)
-    if (std.posix.getenv("USER")) |user| {
+    if (environ.getPosix("USER")) |user| {
         if (isValidUser(user)) {
             // /run/media/$USER/RPI-RP2 (近年のディストリの既定)
             const run_media_path = try std.fmt.allocPrint(allocator, "/run/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
-            if (verifyBootselDrive(allocator, run_media_path)) {
+            if (verifyBootselDrive(io, allocator, run_media_path)) {
                 try out.append(allocator, run_media_path);
             } else {
                 allocator.free(run_media_path);
@@ -395,7 +400,7 @@ fn detectAllBootselLinux(allocator: std.mem.Allocator, out: *std.ArrayList([]con
 
             // /media/$USER/RPI-RP2 (旧 udisks)
             const media_path = try std.fmt.allocPrint(allocator, "/media/{s}/" ++ BOOTSEL_VOLUME_NAME, .{user});
-            if (verifyBootselDrive(allocator, media_path)) {
+            if (verifyBootselDrive(io, allocator, media_path)) {
                 try out.append(allocator, media_path);
             } else {
                 allocator.free(media_path);
@@ -405,17 +410,17 @@ fn detectAllBootselLinux(allocator: std.mem.Allocator, out: *std.ArrayList([]con
 
     // /mnt/RPI-RP2 (手動 mount のフォールバック)
     const mnt_path = "/mnt/" ++ BOOTSEL_VOLUME_NAME;
-    if (verifyBootselDrive(allocator, mnt_path)) {
+    if (verifyBootselDrive(io, allocator, mnt_path)) {
         try out.append(allocator, try allocator.dupe(u8, mnt_path));
     }
 }
 
-fn detectAllBootselWindows(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+fn detectAllBootselWindows(io: std.Io, allocator: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
     // ドライブレター D: 〜 Z: をスキャン
     const drive_letters = "DEFGHIJKLMNOPQRSTUVWXYZ";
     for (drive_letters) |letter| {
         const drive_path = try std.fmt.allocPrint(allocator, "{c}:\\", .{letter});
-        if (verifyBootselDrive(allocator, drive_path)) {
+        if (verifyBootselDrive(io, allocator, drive_path)) {
             try out.append(allocator, drive_path);
         } else {
             allocator.free(drive_path);
@@ -424,25 +429,35 @@ fn detectAllBootselWindows(allocator: std.mem.Allocator, out: *std.ArrayList([]c
 }
 
 /// 4KB チャンクずつコピーし、 進捗を `\r{percent}% ({bytes}/{total})` で stderr 表示する。
-fn copyFileWithProgress(src_path: []const u8, dest_path: []const u8, verbose: bool) !void {
-    var src = try std.fs.cwd().openFile(src_path, .{});
-    defer src.close();
+fn copyFileWithProgress(io: std.Io, src_path: []const u8, dest_path: []const u8, verbose: bool) !void {
+    const cwd = std.Io.Dir.cwd();
+    var src = try cwd.openFile(io, src_path, .{});
+    defer src.close(io);
 
-    const total_bytes = (try src.stat()).size;
+    const total_bytes = (try src.stat(io)).size;
 
-    var dest = try std.fs.cwd().createFile(dest_path, .{ .truncate = true });
-    defer dest.close();
+    var dest = try cwd.createFile(io, dest_path, .{ .truncate = true });
+    defer dest.close(io);
 
-    var buf: [copy_chunk_bytes]u8 = undefined;
+    var src_buf: [copy_chunk_bytes]u8 = undefined;
+    var src_reader = src.reader(io, &src_buf);
     var copied: u64 = 0;
     // エラー早期リターン時、 進捗行 (\r) がカーソルに残ると main のエラー出力と混ざるため
     // copied > 0 のときのみ改行を入れて行頭に戻す
     errdefer if (copied > 0) std.debug.print("\n", .{});
 
     while (true) {
-        const n = try src.read(&buf);
-        if (n == 0) break;
-        try dest.writeAll(buf[0..n]);
+        const buffered = src_reader.interface.buffered();
+        if (buffered.len == 0) {
+            src_reader.interface.fillMore() catch |err| switch (err) {
+                error.EndOfStream => break,
+                error.ReadFailed => return src_reader.err.?,
+            };
+            continue;
+        }
+        try dest.writeStreamingAll(io, buffered);
+        const n = buffered.len;
+        src_reader.interface.toss(n);
         copied += n;
 
         if (total_bytes > 0) {
@@ -461,13 +476,13 @@ fn copyFileWithProgress(src_path: []const u8, dest_path: []const u8, verbose: bo
 
 /// BOOTSEL ドライブが消失する (RP2040 が再起動して unmount される) のを reboot_confirm_seconds 秒待機する。
 /// 消失を確認できれば true、 タイムアウトで残存していれば false を返す。
-fn waitForBootselDisappear(bootsel_path: []const u8) bool {
+fn waitForBootselDisappear(io: std.Io, bootsel_path: []const u8) !bool {
     const max_iterations = reboot_confirm_seconds * std.time.ms_per_s / reboot_poll_interval_ms;
     for (0..max_iterations) |_| {
-        std.Thread.sleep(reboot_poll_interval_ms * std.time.ns_per_ms);
+        try io.sleep(.fromMilliseconds(@intCast(reboot_poll_interval_ms)), .awake);
         // realpath が失敗 = ディレクトリ消失と判定
-        var realbuf: [std.fs.max_path_bytes]u8 = undefined;
-        _ = std.fs.realpath(bootsel_path, &realbuf) catch {
+        var realbuf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+        _ = std.Io.Dir.cwd().realPathFile(io, bootsel_path, &realbuf) catch {
             return true;
         };
     }
@@ -507,21 +522,24 @@ fn isAllowedRealPath(real_path: []const u8) bool {
 ///
 /// 注: 本検証は **誤書込防止** が目的であり、 敵対的な攻撃 (偽 INFO_UF2.TXT 配置) は防げない。
 /// 強い真贋検証が必要な場合は picotool バックエンドの USB VID/PID 検証を使うこと。
-fn verifyBootselDrive(allocator: std.mem.Allocator, path: []const u8) bool {
+fn verifyBootselDrive(io: std.Io, allocator: std.mem.Allocator, path: []const u8) bool {
+    const cwd = std.Io.Dir.cwd();
     // 1. realpath で正規化
-    var realbuf: [std.fs.max_path_bytes]u8 = undefined;
-    const real_path = std.fs.realpath(path, &realbuf) catch return false;
+    var realbuf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n_real = cwd.realPathFile(io, path, &realbuf) catch return false;
+    const real_path = realbuf[0..n_real];
     if (!isAllowedRealPath(real_path)) return false;
 
     // 2. INFO_UF2.TXT 読み込み + 内容検証
     const info_path = std.fs.path.join(allocator, &.{ path, "INFO_UF2.TXT" }) catch return false;
     defer allocator.free(info_path);
 
-    var file = std.fs.cwd().openFile(info_path, .{}) catch return false;
-    defer file.close();
+    var file = cwd.openFile(io, info_path, .{}) catch return false;
+    defer file.close(io);
 
     var buf: [1024]u8 = undefined;
-    const n = file.readAll(&buf) catch return false;
+    var reader = file.reader(io, &.{});
+    const n = reader.interface.readSliceShort(&buf) catch return false;
     const content = buf[0..n];
 
     // "UF2 Bootloader" (BOOTSEL の標準ヘッダ) か "RPI-RP2" (Board-ID) のどちらかを含む
@@ -579,16 +597,18 @@ test "isAllowedRealPath enforces OS prefix" {
 test "verifyBootselDrive rejects directory with disallowed prefix" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
     const testing = std.testing;
+    const io = testing.io;
     var tmp_dir = testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp_dir.dir.realPath(io, &buf);
+    const tmp_path = buf[0..n];
 
-    // testing.tmpDir() は通常 /tmp/... 配下に作られるため、 isAllowedRealPath が false を返す。
+    // testing.tmpDir() は通常 .zig-cache/tmp/... 配下に作られるため、 isAllowedRealPath が false を返す。
     // verifyBootselDrive は INFO_UF2.TXT 内容検証に到達する前に拒否する。
     // INFO_UF2.TXT 不存在の検証経路は許可 prefix 内ディレクトリが必要なため CI 環境では別途扱う。
-    try testing.expect(!verifyBootselDrive(testing.allocator, tmp_path));
+    try testing.expect(!verifyBootselDrive(io, testing.allocator, tmp_path));
 }
 
 test "verifyBootselDrive rejects non-existent path matching allowed-prefix pattern" {
@@ -598,27 +618,30 @@ test "verifyBootselDrive rejects non-existent path matching allowed-prefix patte
     // 「INFO_UF2.TXT 不存在で false を返す」経路は openFile catch return false の挙動に依拠しており、
     // 別途 integration test もしくは実機検証で確認する。
     const testing = std.testing;
+    const io = testing.io;
     const fake_path = switch (builtin.os.tag) {
         .macos => "/Volumes/__nonexistent_qmk_test__",
         .linux => "/run/media/__nonexistent__/__nonexistent_qmk_test__",
         else => return error.SkipZigTest,
     };
-    try testing.expect(!verifyBootselDrive(testing.allocator, fake_path));
+    try testing.expect(!verifyBootselDrive(io, testing.allocator, fake_path));
 }
 
 test "verifyBootselDrive rejects symlink to outside directory" {
     if (builtin.os.tag == .windows) return error.SkipZigTest; // symlink テストは POSIX のみ
     const testing = std.testing;
+    const io = testing.io;
 
     var tmp_dir = testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp_dir.dir.realPath(io, &buf);
+    const tmp_path = buf[0..n];
 
     // tmp_dir 内に target_dir を作り、 INFO_UF2.TXT を BOOTSEL らしく配置 (偽装)
-    try tmp_dir.dir.makeDir("target_dir");
-    try tmp_dir.dir.writeFile(.{
+    try tmp_dir.dir.createDir(io, "target_dir", .default_dir);
+    try tmp_dir.dir.writeFile(io, .{
         .sub_path = "target_dir/INFO_UF2.TXT",
         .data = "UF2 Bootloader v3.0\nBoard-ID: RPI-RP2\n",
     });
@@ -629,7 +652,7 @@ test "verifyBootselDrive rejects symlink to outside directory" {
     const link_abs = try std.fs.path.join(testing.allocator, &.{ tmp_path, "RPI-RP2" });
     defer testing.allocator.free(link_abs);
 
-    std.posix.symlink(target_abs, link_abs) catch |err| switch (err) {
+    std.Io.Dir.symLinkAbsolute(io, target_abs, link_abs, .{}) catch |err| switch (err) {
         // CI 環境等で symlink が許可されない場合はスキップ
         error.AccessDenied => return error.SkipZigTest,
         else => return err,
@@ -637,11 +660,12 @@ test "verifyBootselDrive rejects symlink to outside directory" {
 
     // tmp_path は /Volumes/ や /run/media/ 等の許可 prefix にないため、
     // realpath が許可 prefix を満たさず、 verifyBootselDrive は false を返すはず
-    try testing.expect(!verifyBootselDrive(testing.allocator, link_abs));
+    try testing.expect(!verifyBootselDrive(io, testing.allocator, link_abs));
 }
 
 test "copyFileWithProgress copies file contents correctly" {
     const testing = std.testing;
+    const io = testing.io;
     const allocator = testing.allocator;
 
     var tmp_dir = testing.tmpDir(.{});
@@ -650,32 +674,33 @@ test "copyFileWithProgress copies file contents correctly" {
     // チャンク境界を跨ぐサイズで src を書く (4KB+1 で 2 チャンク)
     var src_content: [copy_chunk_bytes + 1]u8 = undefined;
     for (&src_content, 0..) |*b, i| b.* = @intCast(i & 0xff);
-    try tmp_dir.dir.writeFile(.{ .sub_path = "src.uf2", .data = &src_content });
+    try tmp_dir.dir.writeFile(io, .{ .sub_path = "src.uf2", .data = &src_content });
 
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp_dir.dir.realPath(io, &buf);
+    const tmp_path = buf[0..n];
     const src_path = try std.fs.path.join(allocator, &.{ tmp_path, "src.uf2" });
     defer allocator.free(src_path);
     const dest_path = try std.fs.path.join(allocator, &.{ tmp_path, "dest.uf2" });
     defer allocator.free(dest_path);
 
-    try copyFileWithProgress(src_path, dest_path, false);
+    try copyFileWithProgress(io, src_path, dest_path, false);
 
-    const dest_content = try tmp_dir.dir.readFileAlloc(allocator, "dest.uf2", copy_chunk_bytes * 2);
+    const dest_content = try tmp_dir.dir.readFileAlloc(io, "dest.uf2", allocator, .limited(copy_chunk_bytes * 2));
     defer allocator.free(dest_content);
     try testing.expectEqualSlices(u8, &src_content, dest_content);
 }
 
 test "parseArgs accepts positional and options" {
     const testing = std.testing;
-    var args_buf = [_][:0]u8{
-        @constCast("flash"),
-        @constCast("--timeout=120"),
-        @constCast("--device-index=2"),
-        @constCast("--verbose"),
-        @constCast("firmware.uf2"),
+    const args_buf = [_][:0]const u8{
+        "flash",
+        "--timeout=120",
+        "--device-index=2",
+        "--verbose",
+        "firmware.uf2",
     };
-    const a = try parseArgs(&args_buf);
+    const a = try parseArgs(testing.environ, &args_buf);
     try testing.expectEqualStrings("firmware.uf2", a.uf2_path);
     try testing.expectEqual(@as(u64, 120), a.timeout_seconds);
     try testing.expectEqual(@as(usize, 2), a.device_index);
@@ -686,43 +711,43 @@ test "parseArgs accepts positional and options" {
 
 test "parseArgs --no-auto-reset disables auto reset" {
     const testing = std.testing;
-    var args_buf = [_][:0]u8{
-        @constCast("flash"),
-        @constCast("--no-auto-reset"),
-        @constCast("firmware.uf2"),
+    const args_buf = [_][:0]const u8{
+        "flash",
+        "--no-auto-reset",
+        "firmware.uf2",
     };
-    const a = try parseArgs(&args_buf);
+    const a = try parseArgs(testing.environ, &args_buf);
     try testing.expect(!a.auto_reset);
 }
 
 test "parseArgs accepts device-path" {
     const testing = std.testing;
-    var args_buf = [_][:0]u8{
-        @constCast("flash"),
-        @constCast("--device-path=/Volumes/RPI-RP2"),
-        @constCast("firmware.uf2"),
+    const args_buf = [_][:0]const u8{
+        "flash",
+        "--device-path=/Volumes/RPI-RP2",
+        "firmware.uf2",
     };
-    const a = try parseArgs(&args_buf);
+    const a = try parseArgs(testing.environ, &args_buf);
     try testing.expect(a.device_path != null);
     try testing.expectEqualStrings("/Volumes/RPI-RP2", a.device_path.?);
 }
 
 test "parseArgs rejects unknown options" {
     const testing = std.testing;
-    var args_buf = [_][:0]u8{
-        @constCast("flash"),
-        @constCast("--unknown"),
-        @constCast("firmware.uf2"),
+    const args_buf = [_][:0]const u8{
+        "flash",
+        "--unknown",
+        "firmware.uf2",
     };
-    const r = parseArgs(&args_buf);
+    const r = parseArgs(testing.environ, &args_buf);
     try testing.expectError(ArgsError.InvalidArgs, r);
 }
 
 test "parseArgs requires positional uf2 path" {
     const testing = std.testing;
-    var args_buf = [_][:0]u8{
-        @constCast("flash"),
+    const args_buf = [_][:0]const u8{
+        "flash",
     };
-    const r = parseArgs(&args_buf);
+    const r = parseArgs(testing.environ, &args_buf);
     try testing.expectError(ArgsError.InvalidArgs, r);
 }
