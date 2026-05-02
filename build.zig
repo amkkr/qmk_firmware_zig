@@ -105,14 +105,15 @@ pub fn build(b: *std.Build) void {
     active_keyboard_mod.addImport("hal", hal_mod);
 
     // core / hal モジュール間および active_keyboard への循環 import を許容。
-    // Zig は lazy evaluation で循環 import 自体は許容する (互いを参照しない限り
-    // 解決は遅延される)。
+    // Zig は lazy resolution によりモジュール間の循環 import 自体を許容する。
+    // 制約は comptime 型・値評価が循環することのみで、 import 関係の循環は
+    // 問題にならない。
     //
     // 現時点で `src/hal/*.zig` から `core/*.zig` を参照しているのは
     // `usb.zig`/`usb_descriptors.zig` のみで、 hal が core に依存する範囲は限定的。
     // 将来 hal の他モジュールが core を参照する場合や、 active_keyboard が
     // hal/core の特定モジュールに依存するような大規模変更を行う場合は、
-    // 循環解決順序が問題にならないかビルドで実証する必要がある。
+    // comptime 評価の循環が発生しないかビルドで実証する必要がある。
     core_mod.addImport("active_keyboard", active_keyboard_mod);
     core_mod.addImport("hal", hal_mod);
     hal_mod.addImport("core", core_mod);
