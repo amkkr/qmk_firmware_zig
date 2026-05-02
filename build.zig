@@ -3,12 +3,6 @@
 
 const std = @import("std");
 
-const KeyboardConfig = struct { rows: u8, cols: u8 };
-const keyboard_configs = std.StaticStringMap(KeyboardConfig).initComptime(.{
-    .{ "madbd34", KeyboardConfig{ .rows = 4, .cols = 12 } },
-    .{ "madbd5", KeyboardConfig{ .rows = 5, .cols = 16 } },
-});
-
 /// flash バックエンド種別
 const Flasher = enum {
     /// 既存 tools/flash.zig (BOOTSEL ドライブコピー、 default)
@@ -52,15 +46,16 @@ pub fn build(b: *std.Build) void {
     validateIdentifier("keyboard", keyboard);
     validateIdentifier("keymap", keymap);
 
-    const kb_config = keyboard_configs.get(keyboard) orelse
-        std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
+    // -Dkeyboard=<name> から `src/keyboards/<name>.zig` を解決。
+    // 不在なら src/keyboards/ ディレクトリをスキャンして有効リストを動的生成し、
+    // 日本語エラーで build を停止する (panic ではなく process.exit(1) で UX を改善)。
+    const keyboard_path = resolveKeyboardPath(b, keyboard);
 
     // Build options module (passed to firmware and tests as "build_options")
+    // MATRIX_ROWS / MATRIX_COLS は active_keyboard.rows / .cols で参照するため不要。
     const build_opts = b.addOptions();
     build_opts.addOption(u8, "BOOTMAGIC_ROW", bootmagic_row);
     build_opts.addOption(u8, "BOOTMAGIC_COLUMN", bootmagic_col);
-    build_opts.addOption(u8, "MATRIX_ROWS", kb_config.rows);
-    build_opts.addOption(u8, "MATRIX_COLS", kb_config.cols);
     build_opts.addOption([]const u8, "KEYBOARD", keyboard);
     // Git commit hash を埋込 (個体識別 + reproducible のため --short=12 固定)
     // git 不在 / shallow clone 失敗時は空文字、 ビルド継続
@@ -79,13 +74,62 @@ pub fn build(b: *std.Build) void {
     // Native host target (for tools and tests)
     const native_target = b.resolveTargetQuery(.{});
 
+    // core / hal / active_keyboard を独立 named module として作成し、
+    // firmware_mod / 各 module 間で共有する。 同じファイルが複数 module に
+    // 属するのを避けるために、 root tree (firmware_mod) からの core / hal /
+    // keyboards ファイルへの直接相対 import は廃止し、 named import 経由で
+    // のみアクセスする。
+    const build_opts_mod = build_opts.createModule();
+
+    const core_mod = b.createModule(.{
+        .root_source_file = b.path("src/core/core.zig"),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    core_mod.addImport("build_options", build_opts_mod);
+
+    const hal_mod = b.createModule(.{
+        .root_source_file = b.path("src/hal/hal.zig"),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    // src/hal/ 配下のファイルは build_options を参照しないため addImport は不要。
+    // 将来 hal が build_options に依存する時点で追加する。
+
+    // active_keyboard モジュール: `-Dkeyboard=<name>` で選ばれた keyboard 定義
+    const active_keyboard_mod = b.createModule(.{
+        .root_source_file = b.path(keyboard_path),
+        .target = rp2040_target,
+        .optimize = optimize,
+    });
+    active_keyboard_mod.addImport("core", core_mod);
+    active_keyboard_mod.addImport("hal", hal_mod);
+
+    // core / hal モジュール間および active_keyboard への循環 import を許容。
+    // Zig は lazy resolution によりモジュール間の循環 import 自体を許容する。
+    // 制約は comptime 型・値評価が循環することのみで、 import 関係の循環は
+    // 問題にならない。
+    //
+    // 現時点で `src/hal/*.zig` から `core/*.zig` を参照しているのは
+    // `usb.zig`/`usb_descriptors.zig` のみで、 hal が core に依存する範囲は限定的。
+    // 将来 hal の他モジュールが core を参照する場合や、 active_keyboard が
+    // hal/core の特定モジュールに依存するような大規模変更を行う場合は、
+    // comptime 評価の循環が発生しないかビルドで実証する必要がある。
+    core_mod.addImport("active_keyboard", active_keyboard_mod);
+    core_mod.addImport("hal", hal_mod);
+    hal_mod.addImport("core", core_mod);
+    hal_mod.addImport("active_keyboard", active_keyboard_mod);
+
     // Firmware module
     const firmware_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = rp2040_target,
         .optimize = optimize,
     });
-    firmware_mod.addImport("build_options", build_opts.createModule());
+    firmware_mod.addImport("build_options", build_opts_mod);
+    firmware_mod.addImport("core", core_mod);
+    firmware_mod.addImport("hal", hal_mod);
+    firmware_mod.addImport("active_keyboard", active_keyboard_mod);
 
     // Firmware executable
     const firmware = b.addExecutable(.{
@@ -148,12 +192,40 @@ pub fn build(b: *std.Build) void {
         },
     }
 
-    // Test module
+    // Test module — native target 用に core / hal / active_keyboard を再構築
+    const test_build_opts_mod = build_opts.createModule();
+
+    const test_core_mod = b.createModule(.{
+        .root_source_file = b.path("src/core/core.zig"),
+        .target = native_target,
+    });
+    test_core_mod.addImport("build_options", test_build_opts_mod);
+
+    const test_hal_mod = b.createModule(.{
+        .root_source_file = b.path("src/hal/hal.zig"),
+        .target = native_target,
+    });
+
+    const test_active_kb_mod = b.createModule(.{
+        .root_source_file = b.path(keyboard_path),
+        .target = native_target,
+    });
+    test_active_kb_mod.addImport("core", test_core_mod);
+    test_active_kb_mod.addImport("hal", test_hal_mod);
+
+    test_core_mod.addImport("active_keyboard", test_active_kb_mod);
+    test_core_mod.addImport("hal", test_hal_mod);
+    test_hal_mod.addImport("core", test_core_mod);
+    test_hal_mod.addImport("active_keyboard", test_active_kb_mod);
+
     const test_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = native_target,
     });
-    test_mod.addImport("build_options", build_opts.createModule());
+    test_mod.addImport("build_options", test_build_opts_mod);
+    test_mod.addImport("core", test_core_mod);
+    test_mod.addImport("hal", test_hal_mod);
+    test_mod.addImport("active_keyboard", test_active_kb_mod);
 
     // Test target (native host)
     const test_step = b.step("test", "Run unit tests");
@@ -162,6 +234,33 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+
+    // core / hal モジュール内 test ブロック実行用の独立 test target。
+    // root tree (test_mod = src/main.zig) からは refAllDecls(core) で宣言を
+    // 参照しているが、 named module 化により別 module ツリーとなった core /
+    // hal 内の `test "..." { ... }` ブロックは root tree の test runner では
+    // 拾われない。 各モジュールを root_source_file に持つ test target を追加
+    // することでモジュール内テストを実行する。
+    const core_tests = b.addTest(.{
+        .root_module = test_core_mod,
+    });
+    const run_core_tests = b.addRunArtifact(core_tests);
+    test_step.dependOn(&run_core_tests.step);
+
+    const hal_tests = b.addTest(.{
+        .root_module = test_hal_mod,
+    });
+    const run_hal_tests = b.addRunArtifact(hal_tests);
+    test_step.dependOn(&run_hal_tests.step);
+
+    // active_keyboard モジュール内の test ブロック (madbd5 / madbd34 のキーマップ
+    // 検証等) も別 module ツリーにあり root tree から拾えないため、 専用 test
+    // target を追加する。
+    const active_kb_tests = b.addTest(.{
+        .root_module = test_active_kb_mod,
+    });
+    const run_active_kb_tests = b.addRunArtifact(active_kb_tests);
+    test_step.dependOn(&run_active_kb_tests.step);
 
     // Flash tool tests
     const flash_tests = b.addTest(.{
@@ -186,14 +285,83 @@ pub fn build(b: *std.Build) void {
     // C ABI compatibility tests (included in main test module via compat/*.zig)
     const test_compat_step = b.step("test-compat", "Run all tests (includes C ABI compatibility tests)");
     test_compat_step.dependOn(&run_tests.step);
+    test_compat_step.dependOn(&run_core_tests.step);
+    test_compat_step.dependOn(&run_hal_tests.step);
+    test_compat_step.dependOn(&run_active_kb_tests.step);
 
     // Verify step: run tests + check firmware ELF compilation succeeds
     // CI向け: `zig build verify` でテストとファームウェアコンパイルの両方を検証
     const verify_step = b.step("verify", "Run tests and verify firmware ELF compilation");
     verify_step.dependOn(&run_tests.step);
+    verify_step.dependOn(&run_core_tests.step);
+    verify_step.dependOn(&run_hal_tests.step);
+    verify_step.dependOn(&run_active_kb_tests.step);
     verify_step.dependOn(&run_flash_tests.step);
     verify_step.dependOn(&run_uf2gen_tests.step);
     verify_step.dependOn(&firmware.step);
+}
+
+/// `-Dkeyboard=<name>` から `src/keyboards/<name>.zig` のパスを解決する。
+/// 該当ファイルが存在しない場合は `src/keyboards/` 配下の `.zig` を動的にスキャンして
+/// 有効な keyboard 一覧を日本語で表示し、 `process.exit(1)` で build を停止する。
+///
+/// `process.exit(1)` を採用する理由:
+///   1. Zig 0.16 の `std.Build` には build error を構造化して報告する API
+///      (Cargo の `bail!` や Bazel の `fail()` 相当) が存在しない。
+///      `pub fn build(b: *std.Build) void` の戻り値も `void` のため
+///      `return error.X` も使えない。
+///   2. `std.debug.panic` だと冗長なスタックトレースが CI ログを汚す。
+///   3. ユーザは `-Dkeyboard=<name>` 引数の typo を即座に確認したいだけ。
+fn resolveKeyboardPath(b: *std.Build, keyboard: []const u8) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
+    const path = b.fmt("src/keyboards/{s}.zig", .{keyboard});
+    if (cwd.access(io, path, .{})) |_| {
+        return path;
+    } else |_| {}
+
+    // 有効な keyboard 一覧を src/keyboards/*.zig から動的に収集
+    const valid = collectValidKeyboards(b);
+    std.debug.print(
+        "error: 不明な keyboard 名 \"{s}\"。 有効な keyboard: {s}\n",
+        .{ keyboard, valid },
+    );
+    std.process.exit(1);
+}
+
+/// `src/keyboards/` 配下の `.zig` ファイル名を昇順カンマ区切りで列挙する。
+/// 失敗時は空文字を返し、 上位呼出側でエラーを表示するのに任せる。
+fn collectValidKeyboards(b: *std.Build) []const u8 {
+    const io = b.graph.io;
+    const cwd = std.Io.Dir.cwd();
+    var dir = cwd.openDir(io, "src/keyboards", .{ .iterate = true }) catch return "";
+    defer dir.close(io);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    defer names.deinit(b.allocator);
+
+    var iter = dir.iterate();
+    while (iter.next(io) catch null) |entry| {
+        if (entry.kind != .file) continue;
+        const name = entry.name;
+        if (!std.mem.endsWith(u8, name, ".zig")) continue;
+        const stem = name[0 .. name.len - ".zig".len];
+        names.append(b.allocator, b.dupe(stem)) catch return "";
+    }
+
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b_: []const u8) bool {
+            return std.mem.lessThan(u8, a, b_);
+        }
+    }.lessThan);
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(b.allocator);
+    for (names.items, 0..) |n, i| {
+        if (i > 0) buf.appendSlice(b.allocator, ", ") catch return "";
+        buf.appendSlice(b.allocator, n) catch return "";
+    }
+    return buf.toOwnedSlice(b.allocator) catch "";
 }
 
 fn addFlashStep(

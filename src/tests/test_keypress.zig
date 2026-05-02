@@ -14,9 +14,9 @@
 
 const std = @import("std");
 const testing = std.testing;
-const keycode = @import("../core/keycode.zig");
-const report_mod = @import("../core/report.zig");
-const test_fixture = @import("../core/test_fixture.zig");
+const keycode = @import("core").keycode;
+const report_mod = @import("core").report;
+const test_fixture = @import("core").test_fixture;
 
 const KC = keycode.KC;
 const ModBit = report_mod.ModBit;

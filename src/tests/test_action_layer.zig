@@ -11,10 +11,10 @@
 
 const std = @import("std");
 const testing = std.testing;
-const keycode = @import("../core/keycode.zig");
-const layer_mod = @import("../core/layer.zig");
-const report_mod = @import("../core/report.zig");
-const test_fixture = @import("../core/test_fixture.zig");
+const keycode = @import("core").keycode;
+const layer_mod = @import("core").layer;
+const report_mod = @import("core").report;
+const test_fixture = @import("core").test_fixture;
 
 const KC = keycode.KC;
 const LayerState = layer_mod.LayerState;
@@ -190,11 +190,11 @@ test "MomentaryLayerWithKeypress" {
 // (action_tapping_test.zig のアプローチを使用)
 // ============================================================
 
-const action = @import("../core/action.zig");
-const action_code = @import("../core/action_code.zig");
-const event_mod = @import("../core/event.zig");
-const host_mod = @import("../core/host.zig");
-const tapping_mod = @import("../core/action_tapping.zig");
+const action = @import("core").action_mod;
+const action_code = @import("core").action_code;
+const event_mod = @import("core").event;
+const host_mod = @import("core").host_mod;
+const tapping_mod = @import("core").action_tapping;
 
 const Action = action_code.Action;
 const KeyRecord = event_mod.KeyRecord;
@@ -203,7 +203,7 @@ const ModBit = report_mod.ModBit;
 
 const TAPPING_TERM = tapping_mod.TAPPING_TERM;
 
-const DirectMockDriver = @import("../core/test_driver.zig").FixedTestDriver(64, 16);
+const DirectMockDriver = @import("core").test_driver.FixedTestDriver(64, 16);
 
 // --- LayerTapReleasedBeforeKeypressReleaseWithModifiers 用リゾルバ ---
 // キーマップ:
@@ -392,7 +392,7 @@ test "LayerModWithKeypress" {
 // action.zig API を直接使用（TestFixture不使用）。
 // ============================================================
 
-const keymap = @import("../core/keymap.zig");
+const keymap = @import("core").keymap;
 
 test "LayerModHonorsModConfig" {
     action.reset();

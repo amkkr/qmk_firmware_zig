@@ -14,14 +14,10 @@ const std = @import("std");
 const keycode = @import("keycode.zig");
 const action_code = @import("action_code.zig");
 const Keycode = keycode.Keycode;
-const build_options = @import("build_options");
 
-/// キーボード定義モジュール（comptime 選択）
+/// キーボード定義モジュール（build.zig が `-Dkeyboard=<name>` から解決）
 /// layer_state_set_kb / default_layer_state_set_kb コールバックの解決に使用
-const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
-    @import("../keyboards/madbd34.zig")
-else
-    @import("../keyboards/madbd5.zig");
+const kb = @import("active_keyboard");
 
 pub const MAX_LAYERS: u5 = 16;
 pub const LayerState = u32;
@@ -189,8 +185,8 @@ pub fn getHighestLayer(state: LayerState) u5 {
 // so that on release the same layer is used (prevents stuck keys
 // when layers change while a key is held).
 
-const MATRIX_ROWS: u8 = build_options.MATRIX_ROWS;
-const MATRIX_COLS: u8 = build_options.MATRIX_COLS;
+const MATRIX_ROWS: u8 = kb.rows;
+const MATRIX_COLS: u8 = kb.cols;
 const CACHE_ENTRIES = MATRIX_ROWS * MATRIX_COLS;
 const MAX_LAYER_BITS = 4; // log2(MAX_LAYERS) = log2(16) = 4
 

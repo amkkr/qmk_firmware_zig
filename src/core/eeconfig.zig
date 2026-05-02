@@ -11,7 +11,7 @@
 //! QMK upstream の eeconfig_enable/disable/is_enabled に相当する。
 
 const std = @import("std");
-const eeprom = @import("../hal/eeprom.zig");
+const eeprom = @import("hal").eeprom;
 
 /// C版 eeprom_core_t 互換のEEPROMアドレスレイアウト（quantum/nvm/eeprom/nvm_eeprom_eeconfig_internal.h 参照）
 /// struct PACKED {

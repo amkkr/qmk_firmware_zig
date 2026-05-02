@@ -25,7 +25,7 @@ const MouseBtn = report_mod.MouseBtn;
 const KC = keycode_mod.KC;
 const Keycode = keycode_mod.Keycode;
 
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 
 // ============================================================
 // 加速モード

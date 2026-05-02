@@ -14,7 +14,7 @@
 const host = @import("host.zig");
 const report_mod = @import("report.zig");
 const keycode = @import("keycode.zig");
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 const KC = keycode.KC;
 
 /// Caps Word アイドルタイムアウト（ミリ秒）

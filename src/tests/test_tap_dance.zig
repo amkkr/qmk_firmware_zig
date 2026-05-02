@@ -20,16 +20,16 @@
 const std = @import("std");
 const testing = std.testing;
 
-const tap_dance = @import("../core/tap_dance.zig");
-const host = @import("../core/host.zig");
-const report_mod = @import("../core/report.zig");
-const keycode_mod = @import("../core/keycode.zig");
-const timer = @import("../hal/timer.zig");
+const tap_dance = @import("core").tap_dance;
+const host = @import("core").host_mod;
+const report_mod = @import("core").report;
+const keycode_mod = @import("core").keycode;
+const timer = @import("hal").timer;
 
 const KC = keycode_mod.KC;
 const Keycode = keycode_mod.Keycode;
 const TAPPING_TERM = tap_dance.TAPPING_TERM;
-const FixedTestDriver = @import("../core/test_driver.zig").FixedTestDriver;
+const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
 const TestDriver = FixedTestDriver(64, 16);
 
 fn setupTest() *TestDriver {

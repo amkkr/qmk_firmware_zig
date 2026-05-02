@@ -23,7 +23,7 @@ const keycode = @import("keycode.zig");
 const tap_dance = @import("tap_dance.zig");
 const leader = @import("leader.zig");
 const tri_layer = @import("tri_layer.zig");
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 const caps_word = @import("caps_word.zig");
 const repeat_key = @import("repeat_key.zig");
 const layer_lock = @import("layer_lock.zig");
@@ -36,7 +36,7 @@ const mousekey = @import("mousekey.zig");
 const magic = @import("magic.zig");
 const dynamic_tapping_term = @import("dynamic_tapping_term.zig");
 const unicode = @import("unicode.zig");
-const eeprom = @import("../hal/eeprom.zig");
+const eeprom = @import("hal").eeprom;
 
 const KeyEvent = event_mod.KeyEvent;
 const KeyRecord = event_mod.KeyRecord;

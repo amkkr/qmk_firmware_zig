@@ -34,14 +34,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const keycode_mod = @import("../core/keycode.zig");
-const action_code = @import("../core/action_code.zig");
-const report_mod = @import("../core/report.zig");
-const tapping = @import("../core/action_tapping.zig");
-const TestFixture = @import("../core/test_fixture.zig").TestFixture;
-const KeymapKey = @import("../core/test_fixture.zig").KeymapKey;
+const keycode_mod = @import("core").keycode;
+const action_code = @import("core").action_code;
+const report_mod = @import("core").report;
+const tapping = @import("core").action_tapping;
+const TestFixture = @import("core").test_fixture.TestFixture;
+const KeymapKey = @import("core").test_fixture.KeymapKey;
 const KC = keycode_mod.KC;
-const TAPPING_TERM = @import("../core/test_fixture.zig").TAPPING_TERM;
+const TAPPING_TERM = @import("core").test_fixture.TAPPING_TERM;
 
 fn setupNoTapping() *TestFixture {
     const S = struct {

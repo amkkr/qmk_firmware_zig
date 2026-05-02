@@ -17,14 +17,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const keycode = @import("../core/keycode.zig");
-const report_mod = @import("../core/report.zig");
-const test_fixture = @import("../core/test_fixture.zig");
-const secure = @import("../core/secure.zig");
-const action_code = @import("../core/action_code.zig");
-const layer = @import("../core/layer.zig");
-const timer = @import("../hal/timer.zig");
-const tapping = @import("../core/action_tapping.zig");
+const keycode = @import("core").keycode;
+const report_mod = @import("core").report;
+const test_fixture = @import("core").test_fixture;
+const secure = @import("core").secure;
+const action_code = @import("core").action_code;
+const layer = @import("core").layer;
+const timer = @import("hal").timer;
+const tapping = @import("core").action_tapping;
 
 const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;

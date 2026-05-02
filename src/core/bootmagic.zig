@@ -16,8 +16,8 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const matrix = @import("matrix.zig");
 const eeconfig = @import("eeconfig.zig");
-const bootloader = @import("../hal/bootloader.zig");
-const timer = @import("../hal/timer.zig");
+const bootloader = @import("hal").bootloader;
+const timer = @import("hal").timer;
 
 const is_test = builtin.is_test;
 
@@ -94,8 +94,8 @@ pub const test_state = if (is_test) struct {
 // Tests
 // ============================================================
 
-const gpio = @import("../hal/gpio.zig");
-const eeprom = @import("../hal/eeprom.zig");
+const gpio = @import("hal").gpio;
+const eeprom = @import("hal").eeprom;
 
 test "bootmagic: キーが押されていない場合はブートローダーにジャンプしない" {
     gpio.mockReset();

@@ -17,7 +17,7 @@ const host = @import("host.zig");
 const keycode_mod = @import("keycode.zig");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
-const timer = @import("../hal/timer.zig");
+const timer = @import("hal").timer;
 const KC = keycode_mod.KC;
 const Keycode = keycode_mod.Keycode;
 

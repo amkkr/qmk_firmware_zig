@@ -12,12 +12,9 @@
 //! device, configuration, interface, HID, CDC, endpoint, and report descriptors.
 
 const std = @import("std");
-const build_options = @import("build_options");
 
-const kb = if (std.mem.eql(u8, build_options.KEYBOARD, "madbd34"))
-    @import("../keyboards/madbd34.zig")
-else
-    @import("../keyboards/madbd5.zig");
+/// キーボード定義モジュール（build.zig が `-Dkeyboard=<name>` から解決）
+const kb = @import("active_keyboard");
 
 // ============================================================
 // USB Descriptor Type Constants
@@ -270,7 +267,7 @@ pub const keyboard_report_descriptor = blk: {
 /// C版 usb_descriptor.c の NKRO_ENABLE セクションに相当。
 /// Report ID 付きのビットマップ方式: mods(8bit) + keys(NKRO_REPORT_BITS*8 bit)
 pub const nkro_report_descriptor = blk: {
-    const report_mod = @import("../core/report.zig");
+    const report_mod = @import("core").report;
     break :blk
     // Usage Page (Generic Desktop)
         hidUsagePage(0x01) ++

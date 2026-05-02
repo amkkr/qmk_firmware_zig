@@ -12,8 +12,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const gpio = @import("../hal/gpio.zig");
-const timer = @import("../hal/timer.zig");
+const gpio = @import("hal").gpio;
+const timer = @import("hal").timer;
 const debounce = @import("debounce.zig");
 
 pub const MatrixRow = u32;

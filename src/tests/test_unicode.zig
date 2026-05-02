@@ -12,7 +12,7 @@
 
 const std = @import("std");
 const testing = std.testing;
-const core = @import("../core/core.zig");
+const core = @import("core");
 const keycode = core.keycode;
 const KC = keycode.KC;
 const unicode = core.unicode;

@@ -10,10 +10,10 @@
 //!   keyboards/madbd34/keyboard.json
 //!   keyboards/madbd34/keymaps/default/keymap.c
 
-const keycode = @import("../core/keycode.zig");
-const keymap = @import("../core/keymap.zig");
-const matrix = @import("../core/matrix.zig");
-const gpio = @import("../hal/gpio.zig");
+const keycode = @import("core").keycode;
+const keymap = @import("core").keymap;
+const matrix = @import("core").matrix;
+const gpio = @import("hal").gpio;
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
 
