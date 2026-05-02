@@ -443,10 +443,14 @@ fn addOpenocdFlashStep(
 
     const run = b.addSystemCommand(&.{
         tool_path,
-        "-s", scripts_dir,
-        "-f", "interface/cmsis-dap.cfg",
-        "-f", "target/rp2040.cfg",
-        "-c", program_cmd,
+        "-s",
+        scripts_dir,
+        "-f",
+        "interface/cmsis-dap.cfg",
+        "-f",
+        "target/rp2040.cfg",
+        "-c",
+        program_cmd,
     });
 
     run.step.dependOn(install_step);
@@ -473,7 +477,8 @@ fn addProbersFlashStep(
     const run = b.addSystemCommand(&.{
         tool_path,
         "run",
-        "--chip", "RP2040",
+        "--chip",
+        "RP2040",
         elf_path,
     });
 

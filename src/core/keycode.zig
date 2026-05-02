@@ -316,7 +316,6 @@ pub const KC = struct {
     pub const RALT: Keycode = RIGHT_ALT;
     pub const RIGHT_GUI: Keycode = 0x00E7;
     pub const RGUI: Keycode = RIGHT_GUI;
-
 };
 
 // ============================================================

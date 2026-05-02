@@ -216,7 +216,7 @@ const DATA_VAR_REL: u8 = 0x06; // Data, Variable, Relative
 pub const keyboard_report_descriptor = blk: {
     break :blk
     // Usage Page (Generic Desktop)
-        hidUsagePage(0x01) ++
+    hidUsagePage(0x01) ++
         // Usage (Keyboard)
         hidUsage(0x06) ++
         // Collection (Application)
@@ -259,7 +259,6 @@ pub const keyboard_report_descriptor = blk: {
         hidReportCount(6) ++
         hidReportSize(8) ++
         hidInput(DATA_ARR_ABS) ++
-
         hidEndCollection();
 };
 
@@ -270,7 +269,7 @@ pub const nkro_report_descriptor = blk: {
     const report_mod = @import("core").report;
     break :blk
     // Usage Page (Generic Desktop)
-        hidUsagePage(0x01) ++
+    hidUsagePage(0x01) ++
         // Usage (Keyboard)
         hidUsage(0x06) ++
         // Collection (Application)
@@ -297,7 +296,6 @@ pub const nkro_report_descriptor = blk: {
         hidReportCount(report_mod.NKRO_REPORT_BITS * 8) ++
         hidReportSize(1) ++
         hidInput(DATA_VAR_ABS) ++
-
         hidEndCollection();
 };
 
@@ -305,7 +303,7 @@ pub const nkro_report_descriptor = blk: {
 pub const mouse_report_descriptor = blk: {
     break :blk
     // Usage Page (Generic Desktop)
-        hidUsagePage(0x01) ++
+    hidUsagePage(0x01) ++
         // Usage (Mouse)
         hidUsage(0x02) ++
         // Collection (Application)
@@ -351,7 +349,6 @@ pub const mouse_report_descriptor = blk: {
         hidReportSize(8) ++
         hidReportCount(1) ++
         hidInput(DATA_VAR_REL) ++
-
         hidEndCollection() ++ // Physical
         hidEndCollection(); // Application
 };
@@ -361,7 +358,7 @@ pub const mouse_report_descriptor = blk: {
 pub const extra_report_descriptor = blk: {
     break :blk
     // --- System Control ---
-        hidUsagePage(0x01) ++ // Generic Desktop
+    hidUsagePage(0x01) ++ // Generic Desktop
         hidUsage(0x80) ++ // System Control
         hidCollection(0x01) ++
         hidReportId(3) ++ // System
@@ -801,8 +798,14 @@ test "extra report descriptor uses Array type for System and Consumer" {
     var i: usize = 0;
     while (i < desc.len - 1) : (i += 1) {
         if (desc[i] == 0x85) { // Report ID tag
-            if (desc[i + 1] == 3) { in_system = true; in_consumer = false; }
-            if (desc[i + 1] == 4) { in_system = false; in_consumer = true; }
+            if (desc[i + 1] == 3) {
+                in_system = true;
+                in_consumer = false;
+            }
+            if (desc[i + 1] == 4) {
+                in_system = false;
+                in_consumer = true;
+            }
         }
         if (desc[i] == 0x81) { // Input tag
             if (in_system and system_input_flags == null) {

@@ -288,7 +288,10 @@ fn flashCommitImpl() linksection(".data") void {
     // Check if any page actually changed
     var any_dirty = false;
     for (changes.page_dirty) |d| {
-        if (d) { any_dirty = true; break; }
+        if (d) {
+            any_dirty = true;
+            break;
+        }
     }
     if (!any_dirty) return;
 
