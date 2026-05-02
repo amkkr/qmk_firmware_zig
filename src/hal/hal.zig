@@ -14,10 +14,10 @@ pub const clock = @import("clock.zig");
 pub const cdc_console = @import("cdc_console.zig");
 pub const usb = @import("usb.zig");
 pub const usb_descriptors = @import("usb_descriptors.zig");
-/// freestanding 限定モジュール (RP2040 特有の ARM Cortex-M0+ inline asm を含むため、
-/// native test target ではコンパイルできない)。 host ネイティブでは空 struct に置換。
+pub const boot2 = @import("boot2.zig");
+/// vector_table は ARM Cortex-M0+ 固有の inline asm (`bkpt #0`) を持つため
+/// native test target ではコンパイル不可。 host ネイティブでは空 struct に置換する。
 pub const vector_table = if (builtin.os.tag == .freestanding) @import("vector_table.zig") else struct {};
-pub const boot2 = if (builtin.os.tag == .freestanding) @import("boot2.zig") else struct {};
 
 /// Pin type alias
 pub const Pin = gpio.Pin;

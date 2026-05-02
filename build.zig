@@ -104,8 +104,15 @@ pub fn build(b: *std.Build) void {
     active_keyboard_mod.addImport("core", core_mod);
     active_keyboard_mod.addImport("hal", hal_mod);
 
-    // core / hal モジュール間および active_keyboard への循環 import を許容
-    // (Zig は lazy evaluation で循環 import 自体は許容する)
+    // core / hal モジュール間および active_keyboard への循環 import を許容。
+    // Zig は lazy evaluation で循環 import 自体は許容する (互いを参照しない限り
+    // 解決は遅延される)。
+    //
+    // 現時点で `src/hal/*.zig` から `core/*.zig` を参照しているのは
+    // `usb.zig`/`usb_descriptors.zig` のみで、 hal が core に依存する範囲は限定的。
+    // 将来 hal の他モジュールが core を参照する場合や、 active_keyboard が
+    // hal/core の特定モジュールに依存するような大規模変更を行う場合は、
+    // 循環解決順序が問題にならないかビルドで実証する必要がある。
     core_mod.addImport("active_keyboard", active_keyboard_mod);
     core_mod.addImport("hal", hal_mod);
     hal_mod.addImport("core", core_mod);
@@ -227,6 +234,33 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
 
+    // core / hal モジュール内 test ブロック実行用の独立 test target。
+    // root tree (test_mod = src/main.zig) からは refAllDecls(core) で宣言を
+    // 参照しているが、 named module 化により別 module ツリーとなった core /
+    // hal 内の `test "..." { ... }` ブロックは root tree の test runner では
+    // 拾われない。 各モジュールを root_source_file に持つ test target を追加
+    // することでモジュール内テストを実行する。
+    const core_tests = b.addTest(.{
+        .root_module = test_core_mod,
+    });
+    const run_core_tests = b.addRunArtifact(core_tests);
+    test_step.dependOn(&run_core_tests.step);
+
+    const hal_tests = b.addTest(.{
+        .root_module = test_hal_mod,
+    });
+    const run_hal_tests = b.addRunArtifact(hal_tests);
+    test_step.dependOn(&run_hal_tests.step);
+
+    // active_keyboard モジュール内の test ブロック (madbd5 / madbd34 のキーマップ
+    // 検証等) も別 module ツリーにあり root tree から拾えないため、 専用 test
+    // target を追加する。
+    const active_kb_tests = b.addTest(.{
+        .root_module = test_active_kb_mod,
+    });
+    const run_active_kb_tests = b.addRunArtifact(active_kb_tests);
+    test_step.dependOn(&run_active_kb_tests.step);
+
     // Flash tool tests
     const flash_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -250,11 +284,17 @@ pub fn build(b: *std.Build) void {
     // C ABI compatibility tests (included in main test module via compat/*.zig)
     const test_compat_step = b.step("test-compat", "Run all tests (includes C ABI compatibility tests)");
     test_compat_step.dependOn(&run_tests.step);
+    test_compat_step.dependOn(&run_core_tests.step);
+    test_compat_step.dependOn(&run_hal_tests.step);
+    test_compat_step.dependOn(&run_active_kb_tests.step);
 
     // Verify step: run tests + check firmware ELF compilation succeeds
     // CI向け: `zig build verify` でテストとファームウェアコンパイルの両方を検証
     const verify_step = b.step("verify", "Run tests and verify firmware ELF compilation");
     verify_step.dependOn(&run_tests.step);
+    verify_step.dependOn(&run_core_tests.step);
+    verify_step.dependOn(&run_hal_tests.step);
+    verify_step.dependOn(&run_active_kb_tests.step);
     verify_step.dependOn(&run_flash_tests.step);
     verify_step.dependOn(&run_uf2gen_tests.step);
     verify_step.dependOn(&firmware.step);
@@ -263,7 +303,14 @@ pub fn build(b: *std.Build) void {
 /// `-Dkeyboard=<name>` から `src/keyboards/<name>.zig` のパスを解決する。
 /// 該当ファイルが存在しない場合は `src/keyboards/` 配下の `.zig` を動的にスキャンして
 /// 有効な keyboard 一覧を日本語で表示し、 `process.exit(1)` で build を停止する。
-/// panic を避けることで CI ログのスタックトレース冗長化を防ぐ。
+///
+/// `process.exit(1)` を採用する理由:
+///   1. Zig 0.16 の `std.Build` には build error を構造化して報告する API
+///      (Cargo の `bail!` や Bazel の `fail()` 相当) が存在しない。
+///      `pub fn build(b: *std.Build) void` の戻り値も `void` のため
+///      `return error.X` も使えない。
+///   2. `std.debug.panic` だと冗長なスタックトレースが CI ログを汚す。
+///   3. ユーザは `-Dkeyboard=<name>` 引数の typo を即座に確認したいだけ。
 fn resolveKeyboardPath(b: *std.Build, keyboard: []const u8) []const u8 {
     const io = b.graph.io;
     const cwd = std.Io.Dir.cwd();
@@ -293,8 +340,7 @@ fn collectValidKeyboards(b: *std.Build) []const u8 {
     defer names.deinit(b.allocator);
 
     var iter = dir.iterate();
-    while (iter.next(io) catch null) |entry_opt| {
-        const entry = entry_opt;
+    while (iter.next(io) catch null) |entry| {
         if (entry.kind != .file) continue;
         const name = entry.name;
         if (!std.mem.endsWith(u8, name, ".zig")) continue;
