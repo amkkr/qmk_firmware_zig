@@ -3,12 +3,6 @@
 
 const std = @import("std");
 
-const KeyboardConfig = struct { rows: u8, cols: u8 };
-const keyboard_configs = std.StaticStringMap(KeyboardConfig).initComptime(.{
-    .{ "madbd34", KeyboardConfig{ .rows = 4, .cols = 12 } },
-    .{ "madbd5", KeyboardConfig{ .rows = 5, .cols = 16 } },
-});
-
 /// flash バックエンド種別
 const Flasher = enum {
     /// 既存 tools/flash.zig (BOOTSEL ドライブコピー、 default)
@@ -57,15 +51,11 @@ pub fn build(b: *std.Build) void {
     // 日本語エラーで build を停止する (panic ではなく process.exit(1) で UX を改善)。
     const keyboard_path = resolveKeyboardPath(b, keyboard);
 
-    const kb_config = keyboard_configs.get(keyboard) orelse
-        std.debug.panic("Unknown keyboard: '{s}'. Known keyboards: madbd34, madbd5", .{keyboard});
-
     // Build options module (passed to firmware and tests as "build_options")
+    // MATRIX_ROWS / MATRIX_COLS は active_keyboard.rows / .cols で参照するため不要。
     const build_opts = b.addOptions();
     build_opts.addOption(u8, "BOOTMAGIC_ROW", bootmagic_row);
     build_opts.addOption(u8, "BOOTMAGIC_COLUMN", bootmagic_col);
-    build_opts.addOption(u8, "MATRIX_ROWS", kb_config.rows);
-    build_opts.addOption(u8, "MATRIX_COLS", kb_config.cols);
     build_opts.addOption([]const u8, "KEYBOARD", keyboard);
     // Git commit hash を埋込 (個体識別 + reproducible のため --short=12 固定)
     // git 不在 / shallow clone 失敗時は空文字、 ビルド継続
