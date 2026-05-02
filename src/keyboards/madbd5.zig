@@ -119,68 +119,79 @@ pub fn LAYOUT(comptime keys: [key_count]Keycode) [rows][cols]Keycode {
 // デフォルトキーマップ
 // ============================================================
 
+// 物理レイアウト視認性のため zig fmt を無効化。
+// LAYOUT() のキー配列は手動整形により行/列構造（numpad / left / right / thumb）が
+// 視覚的に対応しており、 zig fmt の均等カラム整形では境界が崩れる。
+// zig fmt: off
+
 /// Layer 0: QWERTY ベースレイヤー（テンキー付き）
 const layer0 = LAYOUT(.{
     // Row 0: numpad + QWERTY上段
-    keycode.TG(4), KC.NUM_LOCK, KC.DEL,     KC.KP_SLASH,    KC.TAB,  KC.Q,                  KC.W,                  KC.E,    KC.R,          KC.T,    KC.Y,      KC.U,        KC.I,    KC.O,   KC.P,    KC.BSPC,
+    keycode.TG(4), KC.NUM_LOCK, KC.DEL, KC.KP_SLASH,       KC.TAB,  KC.Q, KC.W, KC.E, KC.R,    KC.T,                                    KC.Y,    KC.U, KC.I,    KC.O,   KC.P,    KC.BSPC,
     // Row 1: numpad + QWERTY中段
-    KC.KP_7,       KC.KP_8,     KC.KP_9,    KC.KP_ASTERISK, KC.LCTL, KC.A,                  KC.S,                  KC.D,    KC.F,          KC.G,    KC.H,      KC.J,        KC.K,    KC.L,   KC.SCLN, KC.ENT,
+    KC.KP_7, KC.KP_8, KC.KP_9, KC.KP_ASTERISK,             KC.LCTL, KC.A, KC.S, KC.D, KC.F,    KC.G,                                    KC.H,    KC.J, KC.K,    KC.L,   KC.SCLN, KC.ENT,
     // Row 2: numpad + QWERTY下段
-    KC.KP_4,       KC.KP_5,     KC.KP_6,    KC.KP_MINUS,    KC.LSFT, KC.Z,                  KC.X,                  KC.C,    KC.V,          KC.B,    KC.N,      KC.M,        KC.COMM, KC.DOT, KC.SLSH,
-        // Row 3: numpad + thumb cluster
-    KC.KP_1,
-    KC.KP_2,       KC.KP_3,     KC.KP_PLUS, KC.LCTL,        KC.LGUI, keycode.LT(1, KC.SPC), keycode.LT(2, KC.ESC), KC.RALT, keycode.MO(1),
+    KC.KP_4, KC.KP_5, KC.KP_6, KC.KP_MINUS,                KC.LSFT, KC.Z, KC.X, KC.C, KC.V,    KC.B,                                    KC.N,    KC.M, KC.COMM, KC.DOT, KC.SLSH,
+    // Row 3: numpad + thumb cluster
+    KC.KP_1, KC.KP_2, KC.KP_3, KC.KP_PLUS,                                                      KC.LCTL, KC.LGUI, keycode.LT(1, KC.SPC), keycode.LT(2, KC.ESC), KC.RALT, keycode.MO(1),
     // Row 4: numpad bottom
-    KC.KP_0, KC.KP_DOT, KC.KP_ENTER,
+    KC.KP_0,          KC.KP_DOT, KC.KP_ENTER,
 });
 
 /// Layer 1: 数字/記号レイヤー
 const layer1 = LAYOUT(.{
-    keycode.TG(4), KC.NUM_LOCK, KC.DEL,     KC.KP_SLASH,    KC.TAB,  KC.@"1", KC.@"2",               KC.@"3", KC.@"4", KC.@"5", KC.@"6",   KC.@"7",     KC.@"8", KC.@"9", KC.@"0", KC.BSPC,
-    KC.KP_7,       KC.KP_8,     KC.KP_9,    KC.KP_ASTERISK, KC.LCTL, KC.NO,   KC.NO,                 KC.NO,   KC.NO,   KC.NO,   KC.MINS,   KC.EQL,      KC.LBRC, KC.RBRC, KC.BSLS, KC.ENT,
-    KC.KP_4,       KC.KP_5,     KC.KP_6,    KC.KP_MINUS,    KC.LSFT, KC.NO,   KC.NO,                 KC.NO,   KC.NO,   KC.SPC,  KC.GRV,    KC.QUOT,     KC.COMM, KC.DOT,  KC.SLSH, KC.KP_1,
-    KC.KP_2,       KC.KP_3,     KC.KP_PLUS, KC.LCTL,        KC.LGUI, KC.TRNS, keycode.LT(3, KC.ESC), KC.RALT, KC.NO,   KC.KP_0, KC.KP_DOT, KC.KP_ENTER,
+    keycode.TG(4), KC.NUM_LOCK, KC.DEL, KC.KP_SLASH,       KC.TAB,  KC.@"1", KC.@"2", KC.@"3", KC.@"4", KC.@"5",                       KC.@"6", KC.@"7", KC.@"8", KC.@"9", KC.@"0", KC.BSPC,
+    KC.KP_7, KC.KP_8, KC.KP_9, KC.KP_ASTERISK,             KC.LCTL, KC.NO,   KC.NO,   KC.NO,   KC.NO,   KC.NO,                          KC.MINS, KC.EQL,  KC.LBRC, KC.RBRC, KC.BSLS, KC.ENT,
+    KC.KP_4, KC.KP_5, KC.KP_6, KC.KP_MINUS,                KC.LSFT, KC.NO,   KC.NO,   KC.NO,   KC.NO,   KC.SPC,                         KC.GRV,  KC.QUOT, KC.COMM, KC.DOT,  KC.SLSH,
+    KC.KP_1, KC.KP_2, KC.KP_3, KC.KP_PLUS,                                                      KC.LCTL, KC.LGUI, KC.TRNS, keycode.LT(3, KC.ESC), KC.RALT, KC.NO,
+    KC.KP_0,          KC.KP_DOT, KC.KP_ENTER,
 });
 
 /// Layer 2: ナビゲーションレイヤー
 const layer2 = LAYOUT(.{
-    keycode.TG(4), KC.NUM_LOCK, KC.DEL,     KC.KP_SLASH,    KC.TAB,  KC.NO,                 KC.NO,   KC.NO,   KC.END,  KC.NO,   KC.HOME,   KC.NO,       KC.NO, KC.NO,   KC.NO, KC.DEL,
-    KC.KP_7,       KC.KP_8,     KC.KP_9,    KC.KP_ASTERISK, KC.LCTL, KC.NO,                 KC.NO,   KC.NO,   KC.PGDN, KC.NO,   KC.LEFT,   KC.DOWN,     KC.UP, KC.RGHT, KC.NO, KC.ENT,
-    KC.KP_4,       KC.KP_5,     KC.KP_6,    KC.KP_MINUS,    KC.LSFT, KC.NO,                 KC.NO,   KC.NO,   KC.NO,   KC.PGUP, KC.NO,     KC.NO,       KC.NO, KC.NO,   KC.NO, KC.KP_1,
-    KC.KP_2,       KC.KP_3,     KC.KP_PLUS, KC.LALT,        KC.LGUI, keycode.LT(3, KC.SPC), KC.TRNS, KC.RALT, KC.NO,   KC.KP_0, KC.KP_DOT, KC.KP_ENTER,
+    keycode.TG(4), KC.NUM_LOCK, KC.DEL, KC.KP_SLASH,       KC.TAB,  KC.NO, KC.NO, KC.NO, KC.END,  KC.NO,                                KC.HOME, KC.NO,   KC.NO, KC.NO,   KC.NO, KC.DEL,
+    KC.KP_7, KC.KP_8, KC.KP_9, KC.KP_ASTERISK,             KC.LCTL, KC.NO, KC.NO, KC.NO, KC.PGDN, KC.NO,                                KC.LEFT, KC.DOWN, KC.UP, KC.RGHT, KC.NO, KC.ENT,
+    KC.KP_4, KC.KP_5, KC.KP_6, KC.KP_MINUS,                KC.LSFT, KC.NO, KC.NO, KC.NO, KC.NO,   KC.PGUP,                              KC.NO,   KC.NO,   KC.NO, KC.NO,   KC.NO,
+    KC.KP_1, KC.KP_2, KC.KP_3, KC.KP_PLUS,                                                        KC.LALT, KC.LGUI, keycode.LT(3, KC.SPC), KC.TRNS, KC.RALT, KC.NO,
+    KC.KP_0,          KC.KP_DOT, KC.KP_ENTER,
 });
 
 /// Layer 3: ファンクション/メディアレイヤー
 const layer3 = LAYOUT(.{
-    keycode.TG(4), KC.NUM_LOCK, KC.DEL,     KC.KP_SLASH,    KC.F1,   KC.F2,   KC.F3,   KC.F4,   KC.F5, KC.F6,   KC.F7,     KC.F8,       KC.F9, KC.F10, KC.F11, KC.F12,
-    KC.KP_7,       KC.KP_8,     KC.KP_9,    KC.KP_ASTERISK, KC.NO,   KC.MUTE, KC.VOLD, KC.VOLU, KC.NO, KC.NO,   KC.NO,     KC.NO,       KC.NO, KC.NO,  KC.NO,  KC.ENT,
-    KC.KP_4,       KC.KP_5,     KC.KP_6,    KC.KP_MINUS,    KC.NO,   KC.NO,   KC.NO,   KC.NO,   KC.NO, KC.NO,   KC.NO,     KC.NO,       KC.NO, KC.NO,  KC.NO,  KC.KP_1,
-    KC.KP_2,       KC.KP_3,     KC.KP_PLUS, KC.LCTL,        KC.LGUI, KC.TRNS, KC.TRNS, KC.RALT, KC.NO, KC.KP_0, KC.KP_DOT, KC.KP_ENTER,
+    keycode.TG(4), KC.NUM_LOCK, KC.DEL, KC.KP_SLASH,       KC.F1, KC.F2,   KC.F3,   KC.F4,   KC.F5,   KC.F6,                            KC.F7,   KC.F8, KC.F9, KC.F10, KC.F11, KC.F12,
+    KC.KP_7, KC.KP_8, KC.KP_9, KC.KP_ASTERISK,             KC.NO, KC.MUTE, KC.VOLD, KC.VOLU, KC.NO,   KC.NO,                            KC.NO,   KC.NO, KC.NO, KC.NO,  KC.NO,  KC.ENT,
+    KC.KP_4, KC.KP_5, KC.KP_6, KC.KP_MINUS,                KC.NO, KC.NO,   KC.NO,   KC.NO,   KC.NO,   KC.NO,                            KC.NO,   KC.NO, KC.NO, KC.NO,  KC.NO,
+    KC.KP_1, KC.KP_2, KC.KP_3, KC.KP_PLUS,                                                    KC.LCTL, KC.LGUI, KC.TRNS, KC.TRNS, KC.RALT, KC.NO,
+    KC.KP_0,          KC.KP_DOT, KC.KP_ENTER,
 });
 
 /// Layer 4: ゲーミングベースレイヤー
 const layer4 = LAYOUT(.{
-    KC.TRNS, KC.END, KC.END, KC.END,        KC.TAB,  KC.Q,   KC.W,   KC.E,    KC.R,          KC.T,    KC.Y,          KC.U,           KC.I,    KC.O,   KC.P,    KC.BSPC,
-    KC.F9,   KC.F10, KC.F11, KC.F12,        KC.LCTL, KC.A,   KC.S,   KC.D,    KC.F,          KC.G,    KC.H,          KC.J,           KC.K,    KC.L,   KC.SCLN, KC.ENT,
-    KC.F5,   KC.F6,  KC.F7,  KC.F8,         KC.LSFT, KC.Z,   KC.X,   KC.C,    KC.V,          KC.B,    KC.N,          KC.M,           KC.COMM, KC.DOT, KC.SLSH, KC.F1,
-    KC.F2,   KC.F3,  KC.F4,  keycode.MO(5), KC.LGUI, KC.SPC, KC.ESC, KC.RALT, keycode.MO(6), KC.KP_0, KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
+    KC.TRNS, KC.END,  KC.END,        KC.END,                KC.TAB,  KC.Q, KC.W, KC.E, KC.R,   KC.T,                                     KC.Y,    KC.U,  KC.I,    KC.O,   KC.P,    KC.BSPC,
+    KC.F9,   KC.F10,  KC.F11,        KC.F12,                KC.LCTL, KC.A, KC.S, KC.D, KC.F,   KC.G,                                     KC.H,    KC.J,  KC.K,    KC.L,   KC.SCLN, KC.ENT,
+    KC.F5,   KC.F6,   KC.F7,         KC.F8,                 KC.LSFT, KC.Z, KC.X, KC.C, KC.V,   KC.B,                                     KC.N,    KC.M,  KC.COMM, KC.DOT, KC.SLSH,
+    KC.F1,   KC.F2,   KC.F3,         KC.F4,                                                     keycode.MO(5), KC.LGUI, KC.SPC, KC.ESC, KC.RALT, keycode.MO(6),
+    KC.KP_0,          KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
 });
 
 /// Layer 5: ゲーミング数字/記号レイヤー
 const layer5 = LAYOUT(.{
-    KC.TRNS, KC.END, KC.END, KC.END,  KC.TAB,  KC.@"1", KC.@"2", KC.@"3", KC.@"4", KC.@"5", KC.@"6",       KC.@"7",        KC.@"8", KC.@"9", KC.@"0", KC.BSPC,
-    KC.F9,   KC.F10, KC.F11, KC.F12,  KC.LCTL, KC.A,    KC.S,    KC.D,    KC.F,    KC.G,    KC.MINS,       KC.EQL,         KC.LBRC, KC.RBRC, KC.BSLS, KC.ENT,
-    KC.F5,   KC.F6,  KC.F7,  KC.F8,   KC.LSFT, KC.Z,    KC.X,    KC.C,    KC.V,    KC.B,    KC.GRV,        KC.QUOT,        KC.COMM, KC.DOT,  KC.SLSH, KC.F1,
-    KC.F2,   KC.F3,  KC.F4,  KC.LCTL, KC.LGUI, KC.SPC,  KC.ESC,  KC.RALT, KC.NO,   KC.KP_0, KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
+    KC.TRNS, KC.END,  KC.END,        KC.END,                KC.TAB,  KC.@"1", KC.@"2", KC.@"3", KC.@"4", KC.@"5",                       KC.@"6", KC.@"7", KC.@"8", KC.@"9", KC.@"0", KC.BSPC,
+    KC.F9,   KC.F10,  KC.F11,        KC.F12,                KC.LCTL, KC.A,    KC.S,    KC.D,    KC.F,    KC.G,                            KC.MINS, KC.EQL,  KC.LBRC, KC.RBRC, KC.BSLS, KC.ENT,
+    KC.F5,   KC.F6,   KC.F7,         KC.F8,                 KC.LSFT, KC.Z,    KC.X,    KC.C,    KC.V,    KC.B,                            KC.GRV,  KC.QUOT, KC.COMM, KC.DOT,  KC.SLSH,
+    KC.F1,   KC.F2,   KC.F3,         KC.F4,                                                     KC.LCTL, KC.LGUI, KC.SPC, KC.ESC, KC.RALT, KC.NO,
+    KC.KP_0,          KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
 });
 
 /// Layer 6: ゲーミングファンクション/ナビゲーションレイヤー
 const layer6 = LAYOUT(.{
-    KC.TRNS, KC.END, KC.END, KC.END,  KC.F1,   KC.F2,   KC.F3,   KC.F4,   KC.F5, KC.F6,   KC.F7,         KC.F8,          KC.F9,       KC.F10,         KC.F11, KC.F12,
-    KC.F9,   KC.F10, KC.F11, KC.F12,  KC.NO,   KC.MUTE, KC.VOLD, KC.VOLU, KC.NO, KC.NO,   KC.LEFT,       KC.DOWN,        KC.UP,       KC.RGHT,        KC.NO,  KC.NO,
-    KC.F5,   KC.F6,  KC.F7,  KC.F8,   KC.NO,   KC.NO,   KC.NO,   KC.NO,   KC.NO, KC.NO,   KC.MS_WH_LEFT, KC.MS_WH_DOWN,  KC.MS_WH_UP, KC.MS_WH_RIGHT, KC.NO,  KC.F1,
-    KC.F2,   KC.F3,  KC.F4,  KC.LCTL, KC.LGUI, KC.SPC,  KC.ESC,  KC.RALT, KC.NO, KC.KP_0, KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
+    KC.TRNS, KC.END,  KC.END,        KC.END,                KC.F1, KC.F2,   KC.F3,   KC.F4,   KC.F5, KC.F6,                              KC.F7,       KC.F8,       KC.F9,      KC.F10,       KC.F11, KC.F12,
+    KC.F9,   KC.F10,  KC.F11,        KC.F12,                KC.NO, KC.MUTE, KC.VOLD, KC.VOLU, KC.NO, KC.NO,                              KC.LEFT,     KC.DOWN,     KC.UP,      KC.RGHT,      KC.NO,  KC.NO,
+    KC.F5,   KC.F6,   KC.F7,         KC.F8,                 KC.NO, KC.NO,   KC.NO,   KC.NO,   KC.NO, KC.NO,                              KC.MS_WH_LEFT, KC.MS_WH_DOWN, KC.MS_WH_UP, KC.MS_WH_RIGHT, KC.NO,
+    KC.F1,   KC.F2,   KC.F3,         KC.F4,                                                   KC.LCTL, KC.LGUI, KC.SPC, KC.ESC, KC.RALT, KC.NO,
+    KC.KP_0,          KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
 });
+// zig fmt: on
 
 /// デフォルトキーマップ（7レイヤー分）
 pub const default_keymap: keymap.Keymap = buildKeymap();

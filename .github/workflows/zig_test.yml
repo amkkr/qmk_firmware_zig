@@ -21,8 +21,17 @@ on:
     - 'tools/**'
     - '.github/workflows/zig_test.yml'
 
+# PR 連発・push 連発時の冗長な run を抑制。
+# PR では同一 ref への新 push で進行中の run をキャンセル、 push (master) では待機。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # 注: 実機 flash テスト (zig build flash) はランナーに RP2040 が無いため CI 対象外。
 # 本ワークフローはホストネイティブのユニットテストと RP2040 向けクロスコンパイル検証のみ実施。
+
+env:
+  ZIG_VERSION: 0.16.0
 
 jobs:
   fmt:
@@ -34,7 +43,7 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
       with:
-        version: 0.16.0
+        version: ${{ env.ZIG_VERSION }}
 
     - name: Check formatting
       run: zig fmt --check src tools build.zig
@@ -51,36 +60,24 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    # setup-zig@v2 は use-cache: true (デフォルト) で Zig global cache
+    # (~/.cache/zig 等) を OS ごとに自動キャッシュする。 actions/cache@v4
+    # での重ねがけは冗長 + 干渉リスクのため使用しない。
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
       with:
-        version: 0.16.0
+        version: ${{ env.ZIG_VERSION }}
 
-    - name: Cache Zig global cache (Linux/macOS)
-      if: runner.os != 'Windows'
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/zig
-        key: ${{ runner.os }}-zig-global-${{ hashFiles('build.zig.zon', 'build.zig') }}
-        restore-keys: |
-          ${{ runner.os }}-zig-global-
-
-    - name: Cache Zig global cache (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/cache@v4
-      with:
-        path: ~\AppData\Local\zig
-        key: ${{ runner.os }}-zig-global-${{ hashFiles('build.zig.zon', 'build.zig') }}
-        restore-keys: |
-          ${{ runner.os }}-zig-global-
-
+    # ローカル .zig-cache はリポジトリ固有のため自前で管理。
+    # キーには runner.os / runner.arch / Zig version を含め、
+    # 環境変更時に古い壊れた cache を復元しないようにする。
     - name: Cache Zig local cache
       uses: actions/cache@v4
       with:
         path: .zig-cache
-        key: ${{ runner.os }}-zig-local-${{ hashFiles('build.zig.zon', 'build.zig', 'src/**', 'tools/**') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-zig-${{ env.ZIG_VERSION }}-local-${{ hashFiles('build.zig.zon', 'build.zig', 'src/**', 'tools/**') }}
         restore-keys: |
-          ${{ runner.os }}-zig-local-
+          ${{ runner.os }}-${{ runner.arch }}-zig-${{ env.ZIG_VERSION }}-local-
 
     - name: Run verify (tests + RP2040 cross-compile)
       run: zig build verify
