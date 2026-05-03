@@ -57,8 +57,9 @@ const AUTO_SHIFT_TIMEOUT = auto_shift.AUTO_SHIFT_TIMEOUT;
 // ============================================================
 
 /// テスト用のフィクスチャセットアップ
-fn setupFixture(fixture: *TestFixture) void {
-    fixture.setup();
+/// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
+/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+fn setupFixture(_: *TestFixture) void {
     timer.mockReset();
     repeat_key.reset();
 }
@@ -84,8 +85,8 @@ fn tapKeyWithDuration(fixture: *TestFixture, row: u8, col: u8, duration_ms: u16)
 // C版 TEST_F(RepeatKey, Basic) に対応
 // ============================================================
 test "RepeatKey: Basic - A, Repeat, Repeat, B, Repeat produces aaabb" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     // Keymap: (0,0)=KC_A, (0,1)=KC_B, (0,2)=QK_REP
@@ -149,8 +150,8 @@ test "RepeatKey: Basic - A, Repeat, Repeat, B, Repeat produces aaabb" {
 // 期待: "bbbaaa"
 // ============================================================
 test "RepeatKey: AcrossLayers - repeat across layer changes" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -218,8 +219,8 @@ test "RepeatKey: AcrossLayers - repeat across layer changes" {
 // C版 TEST_F(RepeatKey, RollingToRepeat) に対応
 // ============================================================
 test "RepeatKey: RollingToRepeat - rolling press from key to repeat" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -260,8 +261,8 @@ test "RepeatKey: RollingToRepeat - rolling press from key to repeat" {
 // C版 TEST_F(RepeatKey, RollingFromRepeat) に対応
 // ============================================================
 test "RepeatKey: RollingFromRepeat - rolling press from repeat to key" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -315,8 +316,8 @@ test "RepeatKey: RollingFromRepeat - rolling press from repeat to key" {
 // C版 TEST_F(RepeatKey, RecallMods) に対応
 // ============================================================
 test "RepeatKey: RecallMods - repeat key restores modifier state" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -381,8 +382,8 @@ test "RepeatKey: RecallMods - repeat key restores modifier state" {
 // 追加修飾キーを重ねて Repeat できることを確認
 // ============================================================
 test "RepeatKey: StackMods - additional mods stack with repeated mods" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -476,8 +477,8 @@ test "RepeatKey: StackMods - additional mods stack with repeated mods" {
 // C版 TEST_F(RepeatKey, IgnoredKeys) に対応
 // ============================================================
 test "RepeatKey: IgnoredKeys - mods and Layer Lock are not remembered" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -527,8 +528,8 @@ test "RepeatKey: IgnoredKeys - mods and Layer Lock are not remembered" {
 // C版期待値: "aaaAAa"（ホールド中の Repeat は Shift+A）
 // ============================================================
 test "RepeatKey: ModTap - repeat with mod-tap key" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -604,8 +605,8 @@ test "RepeatKey: ModTap - repeat with mod-tap key" {
 // C版 TEST_F(RepeatKey, SetRepeatKeyKeycode) の簡略版
 // ============================================================
 test "RepeatKey: SetRepeatKeyKeycode - direct API test" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -668,8 +669,8 @@ test "RepeatKey: SetRepeatKeyKeycode - direct API test" {
 // NoKeyRecorded: 何も押していない状態で Repeat Key は何もしない
 // ============================================================
 test "RepeatKey: NoKeyRecorded - repeat does nothing when no key recorded" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -692,8 +693,8 @@ test "RepeatKey: NoKeyRecorded - repeat does nothing when no key recorded" {
 // ResetClearsState: reset() でキーコードとモッドがクリアされる
 // ============================================================
 test "RepeatKey: ResetClearsState - reset clears keycode and mods" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     fixture.setKeymap(&.{
@@ -720,8 +721,8 @@ test "RepeatKey: ResetClearsState - reset clears keycode and mods" {
 // 期待: Shift+1, Shift+1, Ctrl+Shift+1, Ctrl+Shift+1, Shift+1, 2
 // ============================================================
 test "RepeatKey: ShiftedKeycode - S(KC_1) is remembered and repeated with shift" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     const S_KC_1 = keycode.S(KC.@"1");
@@ -813,8 +814,8 @@ test "RepeatKey: ShiftedKeycode - S(KC_1) is remembered and repeated with shift"
 // 2回目の Repeat は oneshot_mods が消費済みなので "a" になる。
 // ============================================================
 test "RepeatKey: WithOneShotShift - OSM shift applies to repeat" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     // oneshot_enable を有効にする
@@ -898,8 +899,8 @@ test "RepeatKey: WithOneShotShift - OSM shift applies to repeat" {
 // 期待出力: "aaABbB"
 // ============================================================
 test "RepeatKey: AutoShift - auto shift applies to long-press repeat" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     defer fixture.deinit();
 
     // Auto Shift を有効化
