@@ -28,13 +28,11 @@ const KeymapKey = test_fixture.KeymapKey;
 // ============================================================
 
 test "SendKeyboardIsNotCalledWhenNoKeyIsPressed" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.A),
     });
+    defer fixture.deinit();
 
     // キーを押さずにスキャンループを実行
     fixture.runOneScanLoop();
@@ -44,13 +42,11 @@ test "SendKeyboardIsNotCalledWhenNoKeyIsPressed" {
 }
 
 test "CorrectKeyIsReportedWhenPressed" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.A),
     });
+    defer fixture.deinit();
 
     // KC_A を押す
     fixture.pressKey(0, 0);
@@ -69,13 +65,11 @@ test "CorrectKeyIsReportedWhenPressed" {
 }
 
 test "ANonMappedKeyDoesNothing" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.NO),
     });
+    defer fixture.deinit();
 
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
@@ -88,14 +82,12 @@ test "ANonMappedKeyDoesNothing" {
 }
 
 test "CorrectKeysAreReportedWhenTwoKeysArePressed" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.B),
         KeymapKey.init(0, 1, 1, KC.C),
     });
+    defer fixture.deinit();
 
     // B と C を同時押し
     fixture.pressKey(0, 0);
@@ -116,14 +108,12 @@ test "CorrectKeysAreReportedWhenTwoKeysArePressed" {
 }
 
 test "LeftShiftIsReportedCorrectly" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.A),
         KeymapKey.init(0, 3, 0, KC.LEFT_SHIFT),
     });
+    defer fixture.deinit();
 
     // LSHIFT + A を同時押し
     fixture.pressKey(3, 0);
@@ -152,15 +142,13 @@ test "LeftShiftIsReportedCorrectly" {
 }
 
 test "PressLeftShiftAndControl" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     // C版は row=5 を使っているが TestFixture の MATRIX_ROWS=4 のため row=2 に配置
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 3, 0, KC.LEFT_SHIFT),
         KeymapKey.init(0, 2, 0, KC.LEFT_CTRL),
     });
+    defer fixture.deinit();
 
     // LSHIFT + LCTRL を同時押し
     fixture.pressKey(3, 0);
@@ -180,15 +168,13 @@ test "PressLeftShiftAndControl" {
 }
 
 test "LeftAndRightShiftCanBePressedAtTheSameTime" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     // C版は row=3,4 だが MATRIX_ROWS=4 のため row=2,3 に配置
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 2, 0, KC.LEFT_SHIFT),
         KeymapKey.init(0, 3, 0, KC.RIGHT_SHIFT),
     });
+    defer fixture.deinit();
 
     // LSHIFT + RSHIFT を同時押し
     fixture.pressKey(2, 0);
@@ -208,10 +194,6 @@ test "LeftAndRightShiftCanBePressedAtTheSameTime" {
 }
 
 test "RightShiftLeftControlAndCharWithTheSameKey" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     // RSFT(LCTL(KC_O)) — C版の複合修飾キー
     // C版のバグ: RSFT instead of LCTL, reports RCTRL instead of LCTRL
     // QMK の修飾ビット表現: RSFT=0x12, LCTL=0x01
@@ -223,9 +205,11 @@ test "RightShiftLeftControlAndCharWithTheSameKey" {
     // kc = 0x12 (KC_O)
     // final = 0x1312
     const combo_kc = keycode.RSFT(keycode.LCTL(KC.O));
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, combo_kc),
     });
+    defer fixture.deinit();
 
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
@@ -246,16 +230,14 @@ test "RightShiftLeftControlAndCharWithTheSameKey" {
 }
 
 test "PressPlusEqualReleaseBeforePress" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     // KC_PLUS = LSFT(KC_EQUAL) = S(KC_EQUAL)
     const kc_plus = keycode.LSFT(KC.EQUAL);
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 1, 1, kc_plus),
         KeymapKey.init(0, 0, 1, KC.EQUAL),
     });
+    defer fixture.deinit();
 
     // KC_PLUS を押す
     fixture.pressKey(1, 1);
@@ -288,15 +270,13 @@ test "PressPlusEqualReleaseBeforePress" {
 }
 
 test "PressPlusEqualDontReleaseBeforePress" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const kc_plus = keycode.LSFT(KC.EQUAL);
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 1, 1, kc_plus),
         KeymapKey.init(0, 0, 1, KC.EQUAL),
     });
+    defer fixture.deinit();
 
     // KC_PLUS を押す
     fixture.pressKey(1, 1);
@@ -334,15 +314,13 @@ test "PressPlusEqualDontReleaseBeforePress" {
 }
 
 test "PressEqualPlusReleaseBeforePress" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const kc_plus = keycode.LSFT(KC.EQUAL);
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 1, 1, kc_plus),
         KeymapKey.init(0, 0, 1, KC.EQUAL),
     });
+    defer fixture.deinit();
 
     // KC_EQUAL を先に押す
     fixture.pressKey(0, 1);
@@ -374,15 +352,13 @@ test "PressEqualPlusReleaseBeforePress" {
 }
 
 test "PressEqualPlusDontReleaseBeforePress" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const kc_plus = keycode.LSFT(KC.EQUAL);
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 1, 1, kc_plus),
         KeymapKey.init(0, 0, 1, KC.EQUAL),
     });
+    defer fixture.deinit();
 
     // KC_EQUAL を押す
     fixture.pressKey(0, 1);
