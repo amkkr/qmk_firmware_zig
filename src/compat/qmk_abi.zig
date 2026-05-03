@@ -15,7 +15,6 @@ const action_mod = @import("core").action_mod;
 const keyboard_mod = @import("core").keyboard;
 const event_mod = @import("core").event;
 const keymap_mod = @import("core").keymap;
-const keymap_state = @import("core").keymap_state;
 const report_mod = @import("core").report;
 const timer = @import("hal").timer;
 
@@ -252,11 +251,13 @@ export fn advance_time(ms: u32) void {
 // ============================================================
 
 /// Get keycode at given layer and position
-/// keymap_state が保持する現在の keymap を参照する
+/// 依存性注入された keymap lookup (`keyboard.keymapLookup`) 経由で参照する。
+/// production binary では `productionKeymapLookup` 経由で `keymap_state` を引き、
+/// test binary では `test_fixture` の lookup を経由するため、 ABI から
+/// production/test storage を直接触ることはない (DRY 統一)。
 export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
-    const km = keymap_state.getKeymap();
     if (layer >= keymap_mod.MAX_LAYERS) return 0;
-    return keymap_mod.keymapKeyToKeycode(km, @intCast(layer), row, col);
+    return keyboard_mod.keymapLookup(@intCast(layer), row, col);
 }
 
 // ============================================================
@@ -405,24 +406,31 @@ test "qmk_abi: process_record does not crash" {
     process_record(0, 0, false, 200);
 }
 
-test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
+test "qmk_abi: keymap_key_to_keycode returns keycode from injected lookup" {
     const keycode_mod = @import("core").keycode;
     const km_mod = @import("core").keymap;
+
+    // ABI export `keymap_key_to_keycode` は注入済み lookup (`keyboard.keymapLookup`)
+    // 経由でキーマップを参照する。 test 用に専用 storage と lookup を注入し、
+    // ABI 経由のルックアップ経路を検証する。
+    const TestKeymapStorage = struct {
+        var km: km_mod.Keymap = km_mod.emptyKeymap();
+        fn lookup(l: u5, row: u8, col: u8) keycode_mod.Keycode {
+            return km_mod.keymapKeyToKeycode(&km, l, row, col);
+        }
+    };
+
     keyboard_init();
-    // ABI export `keymap_key_to_keycode` は production storage (`keymap_state`) を参照する。
-    // test 専用 storage (test_fixture.test_keymap) とは別物のため、 ここでは
-    // `keymap_state` を直接書き換えて ABI 経由のルックアップを検証する。
-    keymap_state.getKeymap().* = km_mod.emptyKeymap();
+    TestKeymapStorage.km = km_mod.emptyKeymap();
+    keyboard_mod.setKeymapLookup(TestKeymapStorage.lookup);
+    defer keyboard_mod.clearKeymapLookup();
+
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
 
-    // production storage にキーを設定
-    keymap_state.getKeymap()[0][0][0] = keycode_mod.KC.A;
+    // 注入された storage にキーを設定
+    TestKeymapStorage.km[0][0][0] = keycode_mod.KC.A;
     try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
 
     // 範囲外のレイヤーは 0 を返す
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(255, 0, 0));
-
-    // クリーンアップ
-    keymap_state.getKeymap().* = km_mod.emptyKeymap();
-    keyboard_init();
 }
