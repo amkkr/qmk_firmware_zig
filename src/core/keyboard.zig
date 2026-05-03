@@ -49,6 +49,24 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// キーマップ参照関数の型 (依存性注入)
 /// `(layer, row, col) -> Keycode` を返す純粋関数を要求する。
 /// production / test それぞれが自前で keymap storage を持ち、 lookup を注入する。
+///
+/// ## なぜ `(layer_state: u32, row, col)` ではなく `(layer: u5, row, col)` か (Issue #403)
+///
+/// 案として「lookup 内部でレイヤー解決まで行う signature」 (`fn(layer_state, row, col) -> Keycode`)
+/// が検討されたが、以下の理由で採用しなかった:
+///
+/// 1. **C ABI 互換性** — C 版 QMK の `keymap_key_to_keycode(uint8_t layer, ...)` は
+///    単一レイヤー引きの signature。 ABI export (`compat/qmk_abi.zig` の
+///    `keymap_key_to_keycode`) を Zig core と DRY に共有するには signature 一致が必須。
+/// 2. **責務分離** — レイヤー解決は core パイプラインの責務 (`resolveKeycode` /
+///    `keymapActionResolver`) であり、 source layer cache の更新 (キー押下時に
+///    レイヤーを記憶し、 リリース時に同じレイヤーを参照する仕組み) と密結合する。
+///    cache 更新は副作用であり、 「純粋な lookup 関数」 と相容れない。
+/// 3. **DRY** — レイヤー解決を lookup に移すと production / test の両方で同じ
+///    16 layer ループ + 透過判定を書く必要があり重複が発生する。 現状は
+///    `layer.layerSwitchGetLayer` の一箇所のみで重複なし。
+/// 4. **lookup の責務最小化** — 「keymap storage を引くだけ」 の純粋関数は最も
+///    シンプルかつテストしやすい形であり、 production binary でもインライン化が容易。
 pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 
 /// 未設定時のデフォルト lookup。 常に `KC.NO` を返す。
@@ -279,6 +297,10 @@ pub fn task() void {
 
 /// キーコードをキーマップから解決する（Tap Dance 判定用）
 /// pressed 時はソースレイヤーキャッシュも更新する（TD ブランチでも正しいレイヤーが使われるように）
+///
+/// レイヤー解決 (`layerSwitchGetLayer`) と source layer cache の更新は core
+/// パイプラインの責務として keyboard.zig 側に置く。 lookup 関数自体は単一レイヤー
+/// 引きの純粋関数として保ち、 ABI 互換性 (Issue #403) と責務分離を両立する。
 fn resolveKeycode(ev: KeyEvent) Keycode {
     const resolved_layer = layer.layerSwitchGetLayer(keymap_lookup, ev.key.row, ev.key.col);
 
@@ -291,6 +313,9 @@ fn resolveKeycode(ev: KeyEvent) Keycode {
 }
 
 /// キーマップベースのアクションリゾルバ（test_fixture からも使用）
+///
+/// レイヤー解決と source layer cache の更新は `resolveKeycode` と同じ理由で
+/// keyboard.zig 側に置く (Issue #403 の判断結果参照)。
 pub fn keymapActionResolver(ev: KeyEvent) Action {
     const resolved_layer = layer.layerSwitchGetLayer(keymap_lookup, ev.key.row, ev.key.col);
 

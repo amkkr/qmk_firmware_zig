@@ -239,6 +239,10 @@ fn readSourceLayersCacheImpl(entry_number: u16, cache: *const [cacheStorageSize(
 /// Find the active layer that has a non-transparent key at the given position.
 /// Checks layers from highest to lowest, combining layer_state and default_layer_state.
 /// keymapFn: fn(layer: u5, row: u8, col: u8) Keycode
+///
+/// 注: lookup 関数は単一レイヤー引きの signature (C 版 `keymap_key_to_keycode`
+/// 相当) を要求する。 レイヤー状態は本関数内で `layer_state | default_layer_state`
+/// として参照し、 透過判定込みでアクティブレイヤーを決定する。
 pub fn layerSwitchGetLayer(keymapFn: anytype, row: u8, col: u8) u5 {
     const layers = layer_state | default_layer_state;
     // Check from highest layer down
