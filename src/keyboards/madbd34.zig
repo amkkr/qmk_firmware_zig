@@ -114,6 +114,11 @@ pub fn LAYOUT(comptime keys: [key_count]Keycode) [rows][cols]Keycode {
 /// この値は実際に使用するレイヤー数のメタデータとして使用する。
 pub const num_layers: u8 = 4;
 
+// 物理レイアウト視認性のため zig fmt を無効化。
+// LAYOUT() のキー配列は手動整形により行/列構造（左手 / 右手 / thumb）が
+// 視覚的に対応しており、 zig fmt の均等カラム整形では境界が崩れる。
+// zig fmt: off
+
 /// Layer 0: QWERTY ベースレイヤー
 const layer0 = LAYOUT(.{
     KC.TAB,  KC.Q,  KC.W,  KC.E,  KC.R,  KC.T,               KC.Y,  KC.U,  KC.I,    KC.O,    KC.P,    KC.BSPC,
@@ -145,6 +150,7 @@ const layer3 = LAYOUT(.{
     KC.NO, KC.NO,   KC.NO,   KC.NO,   KC.NO, KC.NO,           KC.MS_WH_LEFT, KC.MS_WH_DOWN, KC.MS_WH_UP, KC.MS_WH_RIGHT, KC.NO,
                   KC.LCTL, KC.LGUI, keycode.LT(2, KC.SPC),  keycode.LT(1, KC.ESC), KC.RALT, KC.NO,
 });
+// zig fmt: on
 
 /// デフォルトキーマップ（4レイヤー分）
 pub const default_keymap: keymap.Keymap = buildKeymap();
