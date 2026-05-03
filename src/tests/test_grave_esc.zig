@@ -17,13 +17,11 @@ const TestFixture = test_fixture.TestFixture;
 const KeymapKey = test_fixture.KeymapKey;
 
 test "QK_GESC in keymap sends ESC without modifiers" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_GESC),
     });
+    defer fixture.deinit();
 
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
@@ -39,14 +37,12 @@ test "QK_GESC in keymap sends ESC without modifiers" {
 }
 
 test "QK_GESC in keymap sends GRAVE when SHIFT is held" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.LEFT_SHIFT),
         KeymapKey.init(0, 0, 1, keycode.QK_GESC),
     });
+    defer fixture.deinit();
 
     // SHIFT を押す
     fixture.pressKey(0, 0);
@@ -71,14 +67,12 @@ test "QK_GESC in keymap sends GRAVE when SHIFT is held" {
 }
 
 test "QK_GESC in keymap sends GRAVE when GUI is held" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, KC.LEFT_GUI),
         KeymapKey.init(0, 0, 1, keycode.QK_GESC),
     });
+    defer fixture.deinit();
 
     // GUI を押す
     fixture.pressKey(0, 0);
