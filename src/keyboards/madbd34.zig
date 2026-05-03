@@ -11,7 +11,6 @@
 //!   keyboards/madbd34/keymaps/default/keymap.c
 
 const std = @import("std");
-const builtin = @import("builtin");
 const keycode = @import("core").keycode;
 const keymap = @import("core").keymap;
 const matrix = @import("core").matrix;
@@ -30,16 +29,9 @@ pub const rows: u8 = 4;
 pub const cols: u8 = 12;
 pub const key_count: usize = 41;
 
-// 共通テスト (TestFixture を介した integration_test 等) が要求する最小マトリックス
-// サイズを満たすか、 test ビルド時に検証する。
-// 関連: src/core/test_fixture.zig の MIN_ROWS / MIN_COLS, Issue #393
-comptime {
-    if (builtin.is_test) {
-        const tf = @import("core").test_fixture;
-        std.debug.assert(rows >= tf.MIN_ROWS);
-        std.debug.assert(cols >= tf.MIN_COLS);
-    }
-}
+// マトリックスサイズが共通テスト (TestFixture / integration_test 等) の要件を満たすかは
+// `src/core/test_fixture.zig` の comptime チェック (MIN_ROWS / MIN_COLS) で
+// test バイナリビルド時に検出される。 関連: Issue #393
 
 /// ダイオード方向（マトリックススキャン方式）
 pub const DiodeDirection = enum { col2row, row2col };

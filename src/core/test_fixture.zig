@@ -38,34 +38,41 @@ pub const TAPPING_TERM: u16 = tapping.TAPPING_TERM;
 //   MO1_ROW = 3, MO1_COL = 8        → 必要マトリックス: 4 行 9 列以上
 // よって以下を共通テストの動作保証ライン (=「最大公約数」) として宣言する。
 //
+// 検証は test バイナリビルド時に下の comptime ブロックで自動実施される
+// (keyboard 側に assert を書く必要はない)。 違反時は `@compileError` により
+// 親切なメッセージ付きでビルドが停止する。
+//
 // 将来 MIN 未満の小型 keyboard (例: 3x8 のマクロパッド) を追加する場合は、
 // 以下のいずれかで対応する:
 //   1. 共通テストの座標を縮小 (MIN_* も合わせて引き下げる)
 //   2. 当該 keyboard を `zig build test` の対象から除外
 //   3. test partition を導入 (keyboard ごとに対応する test 群を選択)
 //
-// keyboard 側ではビルド時失敗を起こすため、 `src/keyboards/<name>.zig` 内で
-// 以下のような comptime assert を追加すること:
-//
-// ```zig
-// comptime {
-//     if (builtin.is_test) {
-//         const tf = @import("core").test_fixture;
-//         std.debug.assert(rows >= tf.MIN_ROWS);
-//         std.debug.assert(cols >= tf.MIN_COLS);
-//     }
-// }
-// ```
-//
 // 関連 Issue: #393
 pub const MIN_ROWS: u8 = 4;
 pub const MIN_COLS: u8 = 9;
 
-// 自身の MIN_* が現在の MATRIX_ROWS / MATRIX_COLS を超えないことを検証する
-// (test バイナリビルド時の早期検出 - keyboard 側 assert と二重防衛になる)
+// 対象 keyboard の MATRIX_ROWS / MATRIX_COLS が共通テスト要件を満たすことを
+// test バイナリビルド時に検証する。 違反時は `@compileError` で親切なメッセージを表示。
 comptime {
-    std.debug.assert(MATRIX_ROWS >= MIN_ROWS);
-    std.debug.assert(MATRIX_COLS >= MIN_COLS);
+    if (MATRIX_ROWS < MIN_ROWS) {
+        @compileError(std.fmt.comptimePrint(
+            "Keyboard MATRIX_ROWS={d} is below TestFixture.MIN_ROWS={d}. " ++
+                "共通テスト (integration_test.zig 等) は最大要求座標 ({d}, {d}) を使用するため " ++
+                "{d} 行 {d} 列以上のマトリックスが必要です。 " ++
+                "対処法は src/core/test_fixture.zig 冒頭コメント参照 (1.座標縮小 / 2.test 対象除外 / 3.test partition)。",
+            .{ MATRIX_ROWS, MIN_ROWS, MIN_ROWS - 1, MIN_COLS - 1, MIN_ROWS, MIN_COLS },
+        ));
+    }
+    if (MATRIX_COLS < MIN_COLS) {
+        @compileError(std.fmt.comptimePrint(
+            "Keyboard MATRIX_COLS={d} is below TestFixture.MIN_COLS={d}. " ++
+                "共通テスト (integration_test.zig 等) は最大要求座標 ({d}, {d}) を使用するため " ++
+                "{d} 行 {d} 列以上のマトリックスが必要です。 " ++
+                "対処法は src/core/test_fixture.zig 冒頭コメント参照 (1.座標縮小 / 2.test 対象除外 / 3.test partition)。",
+            .{ MATRIX_COLS, MIN_COLS, MIN_ROWS - 1, MIN_COLS - 1, MIN_ROWS, MIN_COLS },
+        ));
+    }
 }
 
 // ============================================================
