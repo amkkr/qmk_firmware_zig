@@ -8,7 +8,12 @@
 //! Based on quantum/keyboard.h
 
 /// Key position in the matrix
-pub const KeyPos = packed struct {
+///
+/// `packed struct(u16)` で backing integer を明示することで、
+/// `export fn` の値引数として使用可能 (Issue #406)。
+/// signedness が unsigned に確定するため、 C ABI の calling convention 上
+/// 安定した受け渡しが行える。
+pub const KeyPos = packed struct(u16) {
     col: u8,
     row: u8,
 };
