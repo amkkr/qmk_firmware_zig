@@ -340,6 +340,101 @@ test "resolveKeycode: no active layers returns KC_NO" {
     try testing.expectEqual(KC.NO, resolveKeycode(&km, 0, 0, 0));
 }
 
+// ============================================================
+// resolveKeycode: 多レイヤー (Layer 0/1/2/3) 優先度・透過の詳細検証
+// ============================================================
+//
+// 旧 PR #389 で integration_test.zig 上の resolveKeycode テストが
+// 旧 `kb.default_keymap` (実 keyboard の 7/4 レイヤー全部) から人工キーマップ
+// (Layer 0/1 のみ) に縮小された経緯がある (Issue #390)。
+// ここでは Layer 0/1/2/3 の 4 レイヤーで多角的な優先度・透過挙動を検証する。
+// resolveKeycode は pure 関数 (副作用なし) なので、 fixture を介さず
+// `Keymap` を直接構築して unit test として検証する。
+
+test "resolveKeycode: 4 層 highest layer wins (連続/非連続アクティブ)" {
+    var km = emptyKeymap();
+    km[0][0][0] = KC.B;
+    km[1][0][0] = KC.C;
+    km[2][0][0] = KC.D;
+    km[3][0][0] = KC.E;
+
+    // 連続アクティブ: 0/0+1/0+1+2/0+1+2+3
+    try testing.expectEqual(KC.B, resolveKeycode(&km, 0b0001, 0, 0));
+    try testing.expectEqual(KC.C, resolveKeycode(&km, 0b0011, 0, 0));
+    try testing.expectEqual(KC.D, resolveKeycode(&km, 0b0111, 0, 0));
+    try testing.expectEqual(KC.E, resolveKeycode(&km, 0b1111, 0, 0));
+
+    // 非連続アクティブでも最上位が勝つ
+    // Layer 0 + Layer 3 → Layer 3 の E
+    try testing.expectEqual(KC.E, resolveKeycode(&km, 0b1001, 0, 0));
+    // Layer 0 + Layer 2 → Layer 2 の D
+    try testing.expectEqual(KC.D, resolveKeycode(&km, 0b0101, 0, 0));
+    // Layer 1 + Layer 3 → Layer 3 の E (Layer 0 すら非アクティブ)
+    try testing.expectEqual(KC.E, resolveKeycode(&km, 0b1010, 0, 0));
+}
+
+test "resolveKeycode: 中間レイヤー透過で下位レイヤーへ落ちる (非連続アクティブ含む)" {
+    var km = emptyKeymap();
+    km[0][0][0] = KC.F;
+    km[1][0][0] = KC.G;
+    km[2][0][0] = KC.TRNS;
+    km[3][0][0] = KC.TRNS;
+
+    // Layer 0+1+2+3 アクティブ → Layer 3/2 透過 → Layer 1 の G
+    try testing.expectEqual(KC.G, resolveKeycode(&km, 0b1111, 0, 0));
+    // Layer 0+2+3 アクティブ (Layer 1 非アクティブ) → Layer 3/2 透過 → Layer 0 の F
+    try testing.expectEqual(KC.F, resolveKeycode(&km, 0b1101, 0, 0));
+    // Layer 0+1+2 アクティブ → Layer 2 透過 → Layer 1 の G
+    try testing.expectEqual(KC.G, resolveKeycode(&km, 0b0111, 0, 0));
+}
+
+test "resolveKeycode: 全中間レイヤー透過チェインがベースまで解決される" {
+    var km = emptyKeymap();
+    km[0][0][0] = KC.A;
+    km[1][0][0] = KC.TRNS;
+    km[2][0][0] = KC.TRNS;
+    km[3][0][0] = KC.TRNS;
+
+    // Layer 0+1+2+3 全アクティブ → 全中間透過 → ベース Layer 0 の A
+    try testing.expectEqual(KC.A, resolveKeycode(&km, 0b1111, 0, 0));
+    // Layer 0+3 のみ → Layer 3 透過 → ベース Layer 0 の A
+    try testing.expectEqual(KC.A, resolveKeycode(&km, 0b1001, 0, 0));
+}
+
+test "resolveKeycode: Layer 3 のみキー、 中間透過、 ベース KC.NO" {
+    var km = emptyKeymap();
+    // Layer 0 = KC.NO (emptyKeymap デフォルトのまま)
+    km[1][0][0] = KC.TRNS;
+    km[2][0][0] = KC.TRNS;
+    km[3][0][0] = KC.H;
+
+    // Layer 0+1+2+3 全アクティブ → Layer 3 が H を返す
+    try testing.expectEqual(KC.H, resolveKeycode(&km, 0b1111, 0, 0));
+    // Layer 0+1+2 のみ → Layer 2/1 透過 → Layer 0 の KC.NO
+    try testing.expectEqual(KC.NO, resolveKeycode(&km, 0b0111, 0, 0));
+}
+
+test "resolveKeycode: 全レイヤー KC.NO は KC.NO を返す" {
+    const km = emptyKeymap(); // 全レイヤー全位置 KC.NO
+
+    // どのレイヤー組み合わせでも KC.NO を返す
+    try testing.expectEqual(KC.NO, resolveKeycode(&km, 0b0001, 0, 0));
+    try testing.expectEqual(KC.NO, resolveKeycode(&km, 0b1111, 0, 0));
+    try testing.expectEqual(KC.NO, resolveKeycode(&km, 0b1010, 0, 0));
+}
+
+test "resolveKeycode: KC.NO は透過ではない (下位レイヤーへ落ちない)" {
+    var km = emptyKeymap();
+    km[0][0][0] = KC.I;
+    // Layer 1/2/3 = KC.NO (emptyKeymap デフォルトのまま、 KC.TRNS ではない)
+
+    // Layer 0+1+2+3 アクティブ → Layer 3 が KC.NO で確定 (Layer 0 の I までは落ちない)
+    // resolveKeycode は KC.TRNS のみを透過扱いとし、 KC.NO は確定値として扱う。
+    try testing.expectEqual(KC.NO, resolveKeycode(&km, 0b1111, 0, 0));
+    // Layer 0 のみ → Layer 0 の I
+    try testing.expectEqual(KC.I, resolveKeycode(&km, 0b0001, 0, 0));
+}
+
 test "KeymapConfig size is 2 bytes" {
     try testing.expectEqual(@as(usize, 2), @sizeOf(KeymapConfig));
 }
