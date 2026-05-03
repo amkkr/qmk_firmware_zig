@@ -250,14 +250,41 @@ export fn advance_time(ms: u32) void {
 // Keymap
 // ============================================================
 
-/// Get keycode at given layer and position
+/// Get keycode at given layer and position (C ABI export)
 /// 依存性注入された keymap lookup (`keyboard.keymapLookup`) 経由で参照する。
 /// production binary では `productionKeymapLookup` 経由で `kb_mod.default_keymap`
 /// (flash 上の静的 const) を引き、 test binary では `test_fixture.test_keymap` (BSS)
 /// を引くため、 ABI からそれぞれの実体を直接触ることはない (DRY 統一)。
-export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
+///
+/// ## Signature: `(layer: u8, key_pos: KeyPos) u16` (Issue #406)
+///
+/// 元 issue #399 で提案された型安全な signature を採用 (Issue #406)。
+/// 内部 `KeymapLookupFn` は `(layer, row, col)` のままだが、 ABI export だけは
+/// `KeyPos` 構造体を受け取る形に変更。
+/// 利点:
+/// - 型安全 (KeyPos 構造体で row/col をまとめて引数順序ミスを防止)
+/// - 将来の拡張性 (KeyPos に追加情報を持たせる余地)
+/// - upstream C 版 QMK の `keymap_key_to_keycode(uint8_t layer, keypos_t key)`
+///   と完全一致 (値渡し)
+/// - Cortex-M0+ AAPCS では 2 byte packed struct は r0 レジスタ 1 本に収まり、
+///   ポインタ渡しより効率的
+/// - アラインメント問題は packed struct (`@sizeOf == 2`) の設計上発生しない
+///
+/// 内部 lookup signature を維持する理由は `core/keyboard.zig` の
+/// `KeymapLookupFn` docstring 参照 (Issue #403 で確定)。
+///
+/// ## ABI 全体の signature 統一 (将来検討)
+///
+/// 現状、 本ファイル内の他の export 関数 (`action_exec`, `process_record`)
+/// は `(row: u8, col: u8, ...)` 平置き signature。 `keymap_key_to_keycode`
+/// だけ `KeyPos` 値渡しに変更したため、 ABI 内 signature 不統一。
+/// 将来 ABI 全体を `KeyPos` ベースに統一する場合は別 issue で検討する。
+///
+/// 注意: `KeyPos` は `packed struct { col: u8, row: u8 }` で `@sizeOf == 2`。
+/// C 側から呼ぶ場合は `keypos_t` (col, row 順) のレイアウトが必要。
+export fn keymap_key_to_keycode(layer: u8, key_pos: event_mod.KeyPos) u16 {
     if (layer >= keymap_mod.MAX_LAYERS) return 0;
-    return keyboard_mod.keymapLookup(@intCast(layer), row, col);
+    return keyboard_mod.keymapLookup(@intCast(layer), key_pos.row, key_pos.col);
 }
 
 // ============================================================
@@ -425,12 +452,16 @@ test "qmk_abi: keymap_key_to_keycode returns keycode from injected lookup" {
     keyboard_mod.setKeymapLookup(TestKeymapStorage.lookup);
     defer keyboard_mod.clearKeymapLookup();
 
-    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
+    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, event_mod.KeyPos{ .col = 0, .row = 0 }));
 
     // 注入された storage にキーを設定
     TestKeymapStorage.km[0][0][0] = keycode_mod.KC.A;
-    try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
+    try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, event_mod.KeyPos{ .col = 0, .row = 0 }));
 
     // 範囲外のレイヤーは 0 を返す
-    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(255, 0, 0));
+    try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(255, event_mod.KeyPos{ .col = 0, .row = 0 }));
+
+    // 別の (row, col) を別キーコードで検証 (KeyPos 経由のフィールドアクセス確認)
+    TestKeymapStorage.km[0][2][3] = keycode_mod.KC.B;
+    try testing.expectEqual(keycode_mod.KC.B, keymap_key_to_keycode(0, event_mod.KeyPos{ .col = 3, .row = 2 }));
 }
