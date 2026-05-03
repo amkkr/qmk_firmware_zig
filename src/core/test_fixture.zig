@@ -12,6 +12,7 @@ const keycode = @import("keycode.zig");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
 const keyboard = @import("keyboard.zig");
+const keymap_state = @import("keymap_state.zig");
 const timer = @import("hal").timer;
 const tapping = @import("action_tapping.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
@@ -69,7 +70,7 @@ pub const TestFixture = struct {
 
     /// Set the test keymap from a list of key definitions
     pub fn setKeymap(_: *TestFixture, keys: []const KeymapKey) void {
-        const km = keyboard.getTestKeymap();
+        const km = keymap_state.getKeymap();
         km.* = @import("keymap.zig").emptyKeymap();
         for (keys) |key| {
             km[key.layer][key.row][key.col] = key.code;
@@ -78,7 +79,7 @@ pub const TestFixture = struct {
 
     /// Add a single key to the keymap
     pub fn addKey(_: *TestFixture, key: KeymapKey) void {
-        keyboard.setTestKey(key.layer, key.row, key.col, key.code);
+        keymap_state.setKey(key.layer, key.row, key.col, key.code);
     }
 
     // ============================================================
