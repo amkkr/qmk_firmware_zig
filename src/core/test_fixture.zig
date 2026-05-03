@@ -13,7 +13,6 @@ const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
 const keyboard = @import("keyboard.zig");
-const keymap_state = @import("keymap_state.zig");
 const timer = @import("hal").timer;
 const tapping = @import("action_tapping.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
@@ -27,25 +26,40 @@ pub const MATRIX_COLS = keyboard.MATRIX_COLS;
 pub const TAPPING_TERM: u16 = tapping.TAPPING_TERM;
 
 // ============================================================
-// Test-only keymap helpers
+// Test-only keymap storage and helpers
 // ============================================================
-// keymap_state.zig (core/production 共有) には test 専用 API を置かない方針のため、
-// 「キー単位での書き換え」「全体クリア」 は test_fixture 側に集約する。
-// production code (main.zig / qmk_abi.zig の export) はこれらを参照しない。
+// production の keymap storage (main.zig が `kb.default_keymap` をロードする領域) と
+// 共有しないよう、 test 用 keymap は本ファイル内に独立保持する。
+// keyboard.zig は依存性注入された `keymap_lookup` 経由で参照するのみで、
+// production / test それぞれが自分の storage を持つ設計とする (Issue #395)。
 //
 // NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
 // あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
 
+/// test 専用 keymap storage。 keyboard.zig からは `fixtureKeymapLookup` 経由で参照される。
+var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
+
+/// keyboard.zig に注入する lookup 関数。 純粋関数として `test_keymap` を引く。
+fn fixtureKeymapLookup(l: u5, row: u8, col: u8) Keycode {
+    return keymap_mod.keymapKeyToKeycode(&test_keymap, l, row, col);
+}
+
 /// keymap の 1 キーをセットする (範囲外は no-op)。 test 専用。
 pub fn setKey(l: u5, row: u8, col: u8, kc: Keycode) void {
     if (row < keymap_mod.MATRIX_ROWS and col < keymap_mod.MATRIX_COLS and l < keymap_mod.MAX_LAYERS) {
-        keymap_state.getKeymap()[l][row][col] = kc;
+        test_keymap[l][row][col] = kc;
     }
 }
 
 /// keymap を空 (KC_NO 全埋め) にリセットする。 test 専用。
 pub fn resetKeymap() void {
-    keymap_state.getKeymap().* = keymap_mod.emptyKeymap();
+    test_keymap = keymap_mod.emptyKeymap();
+}
+
+/// test 用 keymap への可変ポインタを返す。 test コード内で keymap 全体を参照したい
+/// (例: `keymap_mod.resolveKeycode(km, ...)` で純関数的に検証する) 場合に使用する。
+pub fn getTestKeymap() *keymap_mod.Keymap {
+    return &test_keymap;
 }
 
 /// Key definition for test keymaps
@@ -80,11 +94,14 @@ pub const TestFixture = struct {
 
     /// ドライバ登録を含むフルセットアップ（init() 後、self のアドレスが確定してから呼ぶ）
     pub fn setup(self: *TestFixture) void {
+        resetKeymap();
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.initTest(keyboard.host.HostDriver.from(&self.driver));
     }
 
     pub fn deinit(_: *TestFixture) void {
         keyboard.host.clearDriver();
+        keyboard.clearKeymapLookup();
     }
 
     // ============================================================
@@ -164,6 +181,8 @@ pub const TestFixture = struct {
     /// Reset fixture state for next test
     pub fn reset(self: *TestFixture) void {
         self.driver.reset();
+        resetKeymap();
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.init();
         keyboard.host.setDriver(keyboard.host.HostDriver.from(&self.driver));
         @import("action.zig").setActionResolver(keyboard.keymapActionResolver);

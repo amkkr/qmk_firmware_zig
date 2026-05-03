@@ -88,8 +88,16 @@ pub const startup = if (is_freestanding) struct {
     const keyboard = @import("core").keyboard;
     const action_mod = @import("core").action_mod;
     const host_mod = @import("core").host_mod;
+    const keymap_mod = @import("core").keymap;
     const keymap_state = @import("core").keymap_state;
+    const Keycode = @import("core").Keycode;
     const kb_mod = @import("root").kb;
+
+    /// production keymap 参照関数。 keymap_state が保持する現在の keymap を引く。
+    /// production binary の起動時 (`keyboard.setKeymapLookup`) に注入する。
+    fn productionKeymapLookup(l: u5, row: u8, col: u8) Keycode {
+        return keymap_mod.keymapKeyToKeycode(keymap_state.getKeymap(), l, row, col);
+    }
 
     const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
 
@@ -172,6 +180,7 @@ pub const startup = if (is_freestanding) struct {
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
         keymap_state.getKeymap().* = kb_mod.default_keymap;
+        keyboard.setKeymapLookup(productionKeymapLookup);
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
         // 全ペリフェラル初期化完了後、割り込みを有効化
