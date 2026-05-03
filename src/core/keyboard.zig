@@ -100,9 +100,12 @@ pub fn init() void {
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     secure_consumed = .{0} ** MATRIX_ROWS;
-    // keymap は keymap_state モジュールが BSS 初期値で空保持。
-    // production では init() 直後に main.zig で default_keymap がロードされる。
-    // test では各 fixture/test が getKeymap() 経由でセットアップする。
+    // keymap を空状態にリセット。
+    // 初回 init() では BSS 初期値が空だが、test では同じプロセス内で
+    // init() が複数回呼ばれるため、前回の keymap 状態を引きずらないよう
+    // 明示的にリセットする。production では init() 直後に main.zig で
+    // default_keymap がロードされ、test では各 fixture/test が
+    // getKeymap() 経由でセットアップする。
     keymap_state.getKeymap().* = keymap_mod.emptyKeymap();
 }
 
