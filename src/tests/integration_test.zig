@@ -19,7 +19,6 @@
 
 const std = @import("std");
 const testing = std.testing;
-const build_options = @import("build_options");
 
 // Core modules
 const action = @import("core").action_mod;
@@ -49,39 +48,40 @@ const Keycode = keycode.Keycode;
 const IntegrationMockDriver = @import("core").test_driver.FixedTestDriver(64, 16);
 
 // ============================================================
-// キーボード固有のキーポジション定数
+// キーボード固有のキー位置定数
 // ============================================================
+//
+// 各キーボード定義 (`src/keyboards/<name>.zig`) の `pub const test_positions`
+// から参照する。 これにより integration_test.zig 自体はキーボード非依存となり、
+// 新規キーボード追加時に test_positions を該当 keyboard 定義に追加するだけで
+// このファイルの編集は不要になる。
+// 関連: Issue #359 / #383
 
-const Pos = struct { row: u8, col: u8 };
+/// Layer 0 の基本キー位置
+const Q_POS = kb.test_positions.q_pos;
+const W_POS = kb.test_positions.w_pos;
+const E_POS = kb.test_positions.e_pos;
+const TAB_POS = kb.test_positions.tab_pos;
+const LCTL_POS = kb.test_positions.lctl_pos;
+const A_POS = kb.test_positions.a_pos;
+const LSFT_POS = kb.test_positions.lsft_pos;
+const Z_POS = kb.test_positions.z_pos;
 
-/// キーボード固有のキーポジションを comptime で定義
-const is_madbd5 = std.mem.eql(u8, build_options.KEYBOARD, "madbd5");
-
-/// Layer 0 の基本キーポジション
-const Q_POS = if (is_madbd5) Pos{ .row = 0, .col = 5 } else Pos{ .row = 0, .col = 1 };
-const W_POS = if (is_madbd5) Pos{ .row = 0, .col = 6 } else Pos{ .row = 0, .col = 2 };
-const E_POS = if (is_madbd5) Pos{ .row = 0, .col = 7 } else Pos{ .row = 0, .col = 3 };
-const TAB_POS = if (is_madbd5) Pos{ .row = 0, .col = 4 } else Pos{ .row = 0, .col = 0 };
-const LCTL_POS = if (is_madbd5) Pos{ .row = 1, .col = 4 } else Pos{ .row = 1, .col = 0 };
-const A_POS = if (is_madbd5) Pos{ .row = 1, .col = 5 } else Pos{ .row = 1, .col = 1 };
-const LSFT_POS = if (is_madbd5) Pos{ .row = 2, .col = 4 } else Pos{ .row = 2, .col = 0 };
-const Z_POS = if (is_madbd5) Pos{ .row = 2, .col = 5 } else Pos{ .row = 2, .col = 1 };
-
-/// Layer-Tap / MO キーポジション
-const LT1_SPC_POS = if (is_madbd5) Pos{ .row = 3, .col = 6 } else Pos{ .row = 3, .col = 5 };
-const LT2_ESC_POS = if (is_madbd5) Pos{ .row = 3, .col = 7 } else Pos{ .row = 3, .col = 6 };
-const MO1_POS = if (is_madbd5) Pos{ .row = 3, .col = 9 } else Pos{ .row = 3, .col = 8 };
+/// Layer-Tap / MO キー位置
+const LT1_SPC_POS = kb.test_positions.lt1_spc_pos;
+const LT2_ESC_POS = kb.test_positions.lt2_esc_pos;
+const MO1_POS = kb.test_positions.mo1_pos;
 
 /// Layer 2 ナビゲーションキー
-const L2_LEFT_POS = if (is_madbd5) Pos{ .row = 1, .col = 10 } else Pos{ .row = 1, .col = 6 };
+const L2_LEFT_POS = kb.test_positions.l2_left_pos;
 
-/// Layer 3 ファンクションキー
-const L3_F1_COL: u8 = if (is_madbd5) 4 else 0;
+/// Layer 3 ファンクションキー (F1 開始列)
+const L3_F1_COL: u8 = kb.test_positions.l3_f1_col;
 
 /// Layer 3 メディアキー
-const L3_MUTE_POS = if (is_madbd5) Pos{ .row = 1, .col = 5 } else Pos{ .row = 1, .col = 1 };
-const L3_VOLD_POS = if (is_madbd5) Pos{ .row = 1, .col = 6 } else Pos{ .row = 1, .col = 2 };
-const L3_VOLU_POS = if (is_madbd5) Pos{ .row = 1, .col = 7 } else Pos{ .row = 1, .col = 3 };
+const L3_MUTE_POS = kb.test_positions.l3_mute_pos;
+const L3_VOLD_POS = kb.test_positions.l3_vold_pos;
+const L3_VOLU_POS = kb.test_positions.l3_volu_pos;
 
 // ============================================================
 // kb キーマップからアクションを解決するリゾルバ
