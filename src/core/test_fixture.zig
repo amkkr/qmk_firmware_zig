@@ -36,11 +36,11 @@ pub const TAPPING_TERM: u16 = tapping.TAPPING_TERM;
 // NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
 // あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
 
-/// test 専用 keymap storage。 keyboard.zig からは `lookup` 経由で参照される。
+/// test 専用 keymap storage。 keyboard.zig からは `fixtureKeymapLookup` 経由で参照される。
 var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
 
 /// keyboard.zig に注入する lookup 関数。 純粋関数として `test_keymap` を引く。
-fn lookup(l: u5, row: u8, col: u8) Keycode {
+fn fixtureKeymapLookup(l: u5, row: u8, col: u8) Keycode {
     return keymap_mod.keymapKeyToKeycode(&test_keymap, l, row, col);
 }
 
@@ -95,7 +95,7 @@ pub const TestFixture = struct {
     /// ドライバ登録を含むフルセットアップ（init() 後、self のアドレスが確定してから呼ぶ）
     pub fn setup(self: *TestFixture) void {
         resetKeymap();
-        keyboard.setKeymapLookup(lookup);
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.initTest(keyboard.host.HostDriver.from(&self.driver));
     }
 
@@ -182,7 +182,7 @@ pub const TestFixture = struct {
     pub fn reset(self: *TestFixture) void {
         self.driver.reset();
         resetKeymap();
-        keyboard.setKeymapLookup(lookup);
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.init();
         keyboard.host.setDriver(keyboard.host.HostDriver.from(&self.driver));
         @import("action.zig").setActionResolver(keyboard.keymapActionResolver);

@@ -75,11 +75,6 @@ pub fn clearKeymapLookup() void {
     keymap_lookup = defaultKeymapLookup;
 }
 
-/// 注入された lookup を呼び出す。
-inline fn lookupKey(l: u5, row: u8, col: u8) Keycode {
-    return keymap_lookup(l, row, col);
-}
-
 /// マトリックス状態: 各行のビットマスク（テスト時は外部から設定可能）
 var matrix_state: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
 var matrix_prev: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
@@ -277,26 +272,26 @@ pub fn task() void {
 /// キーコードをキーマップから解決する（Tap Dance 判定用）
 /// pressed 時はソースレイヤーキャッシュも更新する（TD ブランチでも正しいレイヤーが使われるように）
 fn resolveKeycode(ev: KeyEvent) Keycode {
-    const resolved_layer = layer.layerSwitchGetLayer(lookupKey, ev.key.row, ev.key.col);
+    const resolved_layer = layer.layerSwitchGetLayer(keymap_lookup, ev.key.row, ev.key.col);
 
     if (ev.pressed) {
         layer.updateSourceLayersCache(ev.key.row, ev.key.col, resolved_layer);
     }
 
     const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
-    return lookupKey(use_layer, ev.key.row, ev.key.col);
+    return keymap_lookup(use_layer, ev.key.row, ev.key.col);
 }
 
 /// キーマップベースのアクションリゾルバ（test_fixture からも使用）
 pub fn keymapActionResolver(ev: KeyEvent) Action {
-    const resolved_layer = layer.layerSwitchGetLayer(lookupKey, ev.key.row, ev.key.col);
+    const resolved_layer = layer.layerSwitchGetLayer(keymap_lookup, ev.key.row, ev.key.col);
 
     if (ev.pressed) {
         layer.updateSourceLayersCache(ev.key.row, ev.key.col, resolved_layer);
     }
 
     const use_layer = if (ev.pressed) resolved_layer else layer.readSourceLayersCache(ev.key.row, ev.key.col);
-    const kc = lookupKey(use_layer, ev.key.row, ev.key.col);
+    const kc = keymap_lookup(use_layer, ev.key.row, ev.key.col);
     action.setLastResolvedKeycode(kc);
     return action_code.keycodeToAction(kc);
 }
