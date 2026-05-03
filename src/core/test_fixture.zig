@@ -100,8 +100,15 @@ pub const TestFixture = struct {
     }
 
     /// ボイラープレート削減用コンビニエンス API: out ポインタに対して init + setup を行う。
-    /// 呼び出し側でアドレス安定な記憶域 (var) を確保し、 そのアドレスを渡すことで、
-    /// driver の host 登録時にスタックの一時アドレスが使われるリスクを排除する。
+    ///
+    /// out ポインタ版を採用する理由:
+    /// (1) `var fixture = TestFixture.initAndSetup();` のような戻り値式中使用を構文的に防ぐ
+    ///     (戻り値が void のため、 値を受ける書き方ができない)。
+    /// (2) アドレス安定性が API レベルの契約として明示される
+    ///     (呼び出し側が `var fixture: TestFixture = undefined;` で記憶域を確保することを強制する)。
+    /// (3) host driver が保持する self pointer (`&self.driver`) のライフタイムが
+    ///     呼び出し側のスコープに紐付くという意図がシグネチャから明確になる。
+    ///
     /// 標準の使い方:
     /// ```zig
     /// var fixture: TestFixture = undefined;
@@ -115,6 +122,12 @@ pub const TestFixture = struct {
 
     /// ボイラープレート削減用コンビニエンス API: initAndSetup 後に追加の setup_fn を実行する。
     /// 共通のキーマップセットアップ等を関数化して各テストから注入できる。
+    ///
+    /// out ポインタ版を採用する理由は `initAndSetup` と同じ:
+    /// (1) 戻り値式中使用を構文的に防ぐ
+    /// (2) アドレス安定性が API レベルの契約として明示される
+    /// (3) setup_fn が `&out.driver` 等を保持する可能性に備えたライフタイム意図の明確化
+    ///
     /// 標準の使い方:
     /// ```zig
     /// var fixture: TestFixture = undefined;
@@ -128,6 +141,12 @@ pub const TestFixture = struct {
 
     /// ボイラープレート削減用コンビニエンス API: init + setup + setKeymap を一括で実行する。
     /// 単純なキーマップだけを設定するテストで使用する。
+    ///
+    /// out ポインタ版を採用する理由は `initAndSetup` と同じ:
+    /// (1) 戻り値式中使用を構文的に防ぐ
+    /// (2) アドレス安定性が API レベルの契約として明示される
+    /// (3) host driver が保持する `&out.driver` のライフタイム意図の明確化
+    ///
     /// 標準の使い方:
     /// ```zig
     /// var fixture: TestFixture = undefined;
