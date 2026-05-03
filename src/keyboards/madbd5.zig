@@ -28,6 +28,10 @@ pub const rows: u8 = 5;
 pub const cols: u8 = 16;
 pub const key_count: usize = 60;
 
+// マトリックスサイズが共通テスト (TestFixture / integration_test 等) の要件を満たすかは
+// `src/core/test_fixture.zig` の comptime チェック (MIN_ROWS / MIN_COLS) で
+// test バイナリビルド時に検出される。 関連: Issue #393
+
 /// ダイオード方向（マトリックススキャン方式）
 pub const DiodeDirection = enum { col2row, row2col };
 pub const diode_direction: DiodeDirection = .col2row;
