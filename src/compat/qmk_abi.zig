@@ -279,7 +279,6 @@ export fn advance_time(ms: u32) void {
 /// は `(row: u8, col: u8, ...)` 平置き signature。 `keymap_key_to_keycode`
 /// だけ `KeyPos` 値渡しに変更したため、 ABI 内 signature 不統一。
 /// 将来 ABI 全体を `KeyPos` ベースに統一する場合は別 issue で検討する。
-/// 本 PR では `keymap_key_to_keycode` のみ対応。
 ///
 /// 注意: `KeyPos` は `packed struct { col: u8, row: u8 }` で `@sizeOf == 2`。
 /// C 側から呼ぶ場合は `keypos_t` (col, row 順) のレイアウトが必要。

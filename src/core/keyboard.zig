@@ -71,14 +71,6 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// `compat/qmk_abi.zig` の `keymap_key_to_keycode` は型安全性のため
 /// `(layer, KeyPos)` (値渡し) を採用 (Issue #406 で決定)。
 /// ABI 側で KeyPos からフィールドを展開して内部 lookup に渡す薄い wrapper を持つ。
-///
-/// ## ABI 全体の signature 統一 (将来検討)
-///
-/// 現状、 `qmk_abi.zig` の他の export 関数 (`action_exec`, `process_record`)
-/// は `(row: u8, col: u8, ...)` 平置き signature。 `keymap_key_to_keycode`
-/// だけ `KeyPos` 値渡しに変更したため、 ABI 内 signature 不統一。
-/// 将来 ABI 全体を `KeyPos` ベースに統一する場合は別 issue で検討する。
-/// 本 PR では `keymap_key_to_keycode` のみ対応。
 pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 
 /// 未設定時のデフォルト lookup。 常に `KC.NO` を返す。
