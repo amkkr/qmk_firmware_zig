@@ -9,9 +9,11 @@
 
 const std = @import("std");
 const keycode = @import("keycode.zig");
+const keymap_mod = @import("keymap.zig");
 const report_mod = @import("report.zig");
 const layer_mod = @import("layer.zig");
 const keyboard = @import("keyboard.zig");
+const keymap_state = @import("keymap_state.zig");
 const timer = @import("hal").timer;
 const tapping = @import("action_tapping.zig");
 const FixedTestDriver = @import("test_driver.zig").FixedTestDriver;
@@ -23,6 +25,28 @@ pub const MAX_LAYERS = 16;
 pub const MATRIX_ROWS = keyboard.MATRIX_ROWS;
 pub const MATRIX_COLS = keyboard.MATRIX_COLS;
 pub const TAPPING_TERM: u16 = tapping.TAPPING_TERM;
+
+// ============================================================
+// Test-only keymap helpers
+// ============================================================
+// keymap_state.zig (core/production 共有) には test 専用 API を置かない方針のため、
+// 「キー単位での書き換え」「全体クリア」 は test_fixture 側に集約する。
+// production code (main.zig / qmk_abi.zig の export) はこれらを参照しない。
+//
+// NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
+// あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
+
+/// keymap の 1 キーをセットする (範囲外は no-op)。 test 専用。
+pub fn setKey(l: u5, row: u8, col: u8, kc: Keycode) void {
+    if (row < keymap_mod.MATRIX_ROWS and col < keymap_mod.MATRIX_COLS and l < keymap_mod.MAX_LAYERS) {
+        keymap_state.getKeymap()[l][row][col] = kc;
+    }
+}
+
+/// keymap を空 (KC_NO 全埋め) にリセットする。 test 専用。
+pub fn resetKeymap() void {
+    keymap_state.getKeymap().* = keymap_mod.emptyKeymap();
+}
 
 /// Key definition for test keymaps
 pub const KeymapKey = struct {
@@ -69,16 +93,15 @@ pub const TestFixture = struct {
 
     /// Set the test keymap from a list of key definitions
     pub fn setKeymap(_: *TestFixture, keys: []const KeymapKey) void {
-        const km = keyboard.getTestKeymap();
-        km.* = @import("keymap.zig").emptyKeymap();
+        resetKeymap();
         for (keys) |key| {
-            km[key.layer][key.row][key.col] = key.code;
+            setKey(key.layer, key.row, key.col, key.code);
         }
     }
 
     /// Add a single key to the keymap
     pub fn addKey(_: *TestFixture, key: KeymapKey) void {
-        keyboard.setTestKey(key.layer, key.row, key.col, key.code);
+        setKey(key.layer, key.row, key.col, key.code);
     }
 
     // ============================================================

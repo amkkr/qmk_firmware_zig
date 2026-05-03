@@ -88,6 +88,7 @@ pub const startup = if (is_freestanding) struct {
     const keyboard = @import("core").keyboard;
     const action_mod = @import("core").action_mod;
     const host_mod = @import("core").host_mod;
+    const keymap_state = @import("core").keymap_state;
     const kb_mod = @import("root").kb;
 
     const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
@@ -170,7 +171,7 @@ pub const startup = if (is_freestanding) struct {
 
         // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
         keyboard.init();
-        keyboard.getTestKeymap().* = kb_mod.default_keymap;
+        keymap_state.getKeymap().* = kb_mod.default_keymap;
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 
         // 全ペリフェラル初期化完了後、割り込みを有効化

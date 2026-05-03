@@ -15,6 +15,7 @@ const action_mod = @import("core").action_mod;
 const keyboard_mod = @import("core").keyboard;
 const event_mod = @import("core").event;
 const keymap_mod = @import("core").keymap;
+const keymap_state = @import("core").keymap_state;
 const report_mod = @import("core").report;
 const timer = @import("hal").timer;
 
@@ -251,9 +252,9 @@ export fn advance_time(ms: u32) void {
 // ============================================================
 
 /// Get keycode at given layer and position
-/// keyboard_mod の test_keymap を参照する
+/// keymap_state が保持する現在の keymap を参照する
 export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
-    const km = keyboard_mod.getTestKeymap();
+    const km = keymap_state.getKeymap();
     if (layer >= keymap_mod.MAX_LAYERS) return 0;
     return keymap_mod.keymapKeyToKeycode(km, @intCast(layer), row, col);
 }
@@ -406,12 +407,13 @@ test "qmk_abi: process_record does not crash" {
 
 test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
     const keycode_mod = @import("core").keycode;
+    const test_fixture = @import("core").test_fixture;
     keyboard_init();
     // 初期状態ではすべて KC_NO (0)
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
 
     // テストキーマップにキーを設定
-    keyboard_mod.setTestKey(0, 0, 0, keycode_mod.KC.A);
+    test_fixture.setKey(0, 0, 0, keycode_mod.KC.A);
     try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
 
     // 範囲外のレイヤーは 0 を返す

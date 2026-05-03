@@ -17,6 +17,7 @@ pub const layer = @import("layer.zig");
 pub const action_mod = @import("action.zig");
 pub const action_tapping = @import("action_tapping.zig");
 pub const keymap = @import("keymap.zig");
+pub const keymap_state = @import("keymap_state.zig");
 pub const extrakey = @import("extrakey.zig");
 pub const eeconfig = @import("eeconfig.zig");
 pub const bootmagic = @import("bootmagic.zig");
