@@ -126,6 +126,21 @@ pub const TestFixture = struct {
         setup_fn(out);
     }
 
+    /// ボイラープレート削減用コンビニエンス API: init + setup + setKeymap を一括で実行する。
+    /// 単純なキーマップだけを設定するテストで使用する。
+    /// 標準の使い方:
+    /// ```zig
+    /// var fixture: TestFixture = undefined;
+    /// TestFixture.initWithKeymap(&fixture, &.{
+    ///     KeymapKey.init(0, 0, 0, KC.A),
+    /// });
+    /// defer fixture.deinit();
+    /// ```
+    pub fn initWithKeymap(out: *TestFixture, keys: []const KeymapKey) void {
+        TestFixture.initAndSetup(out);
+        out.setKeymap(keys);
+    }
+
     pub fn deinit(_: *TestFixture) void {
         keyboard.host.clearDriver();
         keyboard.clearKeymapLookup();
@@ -386,4 +401,19 @@ test "TestFixture withSetup convenience API" {
     fixture.pressKey(0, 1);
     fixture.runOneScanLoop();
     try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x06)); // KC_C
+}
+
+test "TestFixture initWithKeymap convenience API" {
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
+        KeymapKey.init(0, 0, 0, KC.D),
+    });
+    defer fixture.deinit();
+
+    // initWithKeymap で keymap が登録されていることを確認
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+
+    try std.testing.expect(fixture.driver.keyboard_count >= 1);
+    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x07)); // KC_D
 }
