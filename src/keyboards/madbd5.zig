@@ -119,6 +119,11 @@ pub fn LAYOUT(comptime keys: [key_count]Keycode) [rows][cols]Keycode {
 // デフォルトキーマップ
 // ============================================================
 
+// 物理レイアウト視認性のため zig fmt を無効化。
+// LAYOUT() のキー配列は手動整形により行/列構造（numpad / left / right / thumb）が
+// 視覚的に対応しており、 zig fmt の均等カラム整形では境界が崩れる。
+// zig fmt: off
+
 /// Layer 0: QWERTY ベースレイヤー（テンキー付き）
 const layer0 = LAYOUT(.{
     // Row 0: numpad + QWERTY上段
@@ -186,6 +191,7 @@ const layer6 = LAYOUT(.{
     KC.F1,   KC.F2,   KC.F3,         KC.F4,                                                   KC.LCTL, KC.LGUI, KC.SPC, KC.ESC, KC.RALT, KC.NO,
     KC.KP_0,          KC.LEFT_SHIFT, KC.RIGHT_SHIFT,
 });
+// zig fmt: on
 
 /// デフォルトキーマップ（7レイヤー分）
 pub const default_keymap: keymap.Keymap = buildKeymap();

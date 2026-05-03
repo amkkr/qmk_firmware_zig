@@ -312,7 +312,10 @@ test "ANewTapWithinTappingTermIsBuggy" {
     var found_p1 = false;
     var i: usize = 0;
     while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p1 = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p1 = true;
+            break;
+        }
     }
     try testing.expect(found_p1);
 
@@ -326,7 +329,10 @@ test "ANewTapWithinTappingTermIsBuggy" {
     var found_p2 = false;
     i = count_after_first_tap;
     while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p2 = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p2 = true;
+            break;
+        }
     }
     try testing.expect(found_p2); // 再プレスでも KC_P が送信される（バグ動作）
 
@@ -350,7 +356,10 @@ test "ANewTapWithinTappingTermIsBuggy" {
     var found_p_s2 = false;
     i = count_before_s2;
     while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p_s2 = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p_s2 = true;
+            break;
+        }
     }
     try testing.expect(found_p_s2);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
@@ -428,7 +437,10 @@ test "TapA_CTL_T_KeyWhileReleasingShift" {
     var found_p = false;
     i = count_after_ctl_press;
     while (i < mock.keyboard_count) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p = true;
+            break;
+        }
     }
     try testing.expect(found_p);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
@@ -574,7 +586,10 @@ test "TappingTermBoundary_TermMinusOne_IsTap" {
     var found_p = false;
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p = true;
+            break;
+        }
     }
     try testing.expect(found_p);
 
@@ -624,7 +639,10 @@ test "TappingTermBoundary_TermPlusOne_IsHold" {
     var found_p = false;
     i = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p = true;
+            break;
+        }
     }
     try testing.expect(!found_p);
 
@@ -652,7 +670,10 @@ test "LT_Tap_ReportsKey" {
     var found_b = false;
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x05)) {
+            found_b = true;
+            break;
+        }
     }
     try testing.expect(found_b);
 
@@ -684,7 +705,10 @@ test "LT_Hold_ActivatesLayer" {
     var found_b = false;
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x05)) { found_b = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x05)) {
+            found_b = true;
+            break;
+        }
     }
     try testing.expect(!found_b);
 
@@ -731,7 +755,10 @@ test "ModTap_Hold_WithNormalKeyInterrupt" {
     var found_a = false;
     i = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x04)) { found_a = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x04)) {
+            found_a = true;
+            break;
+        }
     }
     try testing.expect(found_a);
 
@@ -770,7 +797,10 @@ test "ConsecutiveDifferentModTaps" {
     var found_p1 = false;
     var i: usize = 0;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p1 = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p1 = true;
+            break;
+        }
     }
     try testing.expect(found_p1);
     try testing.expect(mock.lastKeyboardReport().isEmpty());
@@ -788,7 +818,10 @@ test "ConsecutiveDifferentModTaps" {
     var found_p2 = false;
     i = count_before_ctl;
     while (i < mock.keyboard_count and i < 64) : (i += 1) {
-        if (mock.keyboard_reports[i].hasKey(0x13)) { found_p2 = true; break; }
+        if (mock.keyboard_reports[i].hasKey(0x13)) {
+            found_p2 = true;
+            break;
+        }
     }
     try testing.expect(found_p2);
     try testing.expect(mock.lastKeyboardReport().isEmpty());

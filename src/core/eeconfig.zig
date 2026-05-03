@@ -21,7 +21,6 @@ const eeprom = @import("hal").eeprom;
 ///   uint16_t keymap;         // offset 4
 ///   ...
 /// }
-
 /// EEPROM magic number のアドレス（QMK upstream互換）
 const EECONFIG_MAGIC_ADDR: u16 = 0;
 

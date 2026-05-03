@@ -765,7 +765,9 @@ test "hasOneshotLayerTimedOut" {
     timer.mockReset();
     oneshot_timeout = 300;
     keymap_mod.keymap_config.oneshot_enable = true;
-    defer { keymap_mod.keymap_config.oneshot_enable = false; }
+    defer {
+        keymap_mod.keymap_config.oneshot_enable = false;
+    }
 
     setOneshotLayer(1, OneshotState.START);
     try testing.expect(!hasOneshotLayerTimedOut());
@@ -778,7 +780,9 @@ test "hasOneshotLayerTimedOut TOGGLED state does not timeout" {
     timer.mockReset();
     oneshot_timeout = 100;
     keymap_mod.keymap_config.oneshot_enable = true;
-    defer { keymap_mod.keymap_config.oneshot_enable = false; }
+    defer {
+        keymap_mod.keymap_config.oneshot_enable = false;
+    }
 
     setOneshotLayer(1, OneshotState.TOGGLED);
     timer.mockAdvance(200);
@@ -876,4 +880,3 @@ test "hostReset clears NKRO state" {
     try testing.expect(!nkro_enabled);
     try testing.expect(nkro_report.isEmpty());
 }
-
