@@ -10,7 +10,6 @@
 //!   keyboards/madbd34/keyboard.json
 //!   keyboards/madbd34/keymaps/default/keymap.c
 
-const std = @import("std");
 const keycode = @import("core").keycode;
 const keymap = @import("core").keymap;
 const matrix = @import("core").matrix;
