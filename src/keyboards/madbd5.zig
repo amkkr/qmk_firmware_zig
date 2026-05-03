@@ -441,3 +441,116 @@ test "LAYOUT関数: C版キーマップと等価な値を生成する" {
     try testing.expectEqual(@as(Keycode, 0x4229), km[0][3][7]); // LT(2, KC_ESC)
     try testing.expectEqual(@as(Keycode, 0x5221), km[0][3][9]); // MO(1)
 }
+
+// ============================================================
+// 実キーマップ依存の統合テスト
+// (旧 src/tests/integration_test.zig から移動: Issue #386)
+//
+// 以下のテストは madbd5 固有のキーマップ配置に依存するため、
+// keyboard 非依存な integration_test.zig ではなくここに配置する。
+// ============================================================
+
+const action_code = @import("core").action_code;
+const keymap_mod = @import("core").keymap;
+
+test "E2E: キーマップ→アクション変換の整合性 (madbd5)" {
+    const km = &default_keymap;
+
+    // TAB → ACTION_KEY(0x2B): (row=0, col=4)
+    const tab_action = action_code.keycodeToAction(km[0][0][4]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_KEY(0x2B)), tab_action.code);
+
+    // Q → ACTION_KEY(0x14): (row=0, col=5)
+    const q_action = action_code.keycodeToAction(km[0][0][5]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_KEY(0x14)), q_action.code);
+
+    // LT(1, KC.SPC) → ACTION_LAYER_TAP_KEY(1, 0x2C): (row=3, col=6)
+    const lt1_action = action_code.keycodeToAction(km[0][3][6]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_TAP_KEY(1, 0x2C)), lt1_action.code);
+
+    // LT(2, KC.ESC) → ACTION_LAYER_TAP_KEY(2, 0x29): (row=3, col=7)
+    const lt2_action = action_code.keycodeToAction(km[0][3][7]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_TAP_KEY(2, 0x29)), lt2_action.code);
+
+    // MO(1) → ACTION_LAYER_MOMENTARY(1): (row=3, col=9)
+    const mo1_action = action_code.keycodeToAction(km[0][3][9]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_MOMENTARY(1)), mo1_action.code);
+}
+
+test "E2E: 全レイヤーのキー定義検証 (madbd5)" {
+    const km = &default_keymap;
+
+    // 定義済みレイヤーがそれぞれ少なくとも 1 つの非 KC.NO キーを持つ
+    for (0..num_layers) |l| {
+        var layer_key_count: usize = 0;
+        for (0..rows) |r| {
+            for (0..cols) |c| {
+                if (km[l][r][c] != KC.NO) {
+                    layer_key_count += 1;
+                }
+            }
+        }
+        try testing.expect(layer_key_count > 0);
+    }
+
+    // Layer 0 の非 KC.NO キー数がキーボードの物理キー数と一致
+    var layer0_count: usize = 0;
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            if (km[0][r][c] != KC.NO) {
+                layer0_count += 1;
+            }
+        }
+    }
+    try testing.expectEqual(@as(usize, key_count), layer0_count);
+
+    // 定義済みレイヤーより上は空
+    for (num_layers..keymap_mod.MAX_LAYERS) |l| {
+        for (0..rows) |r| {
+            for (0..cols) |c| {
+                try testing.expectEqual(KC.NO, km[l][r][c]);
+            }
+        }
+    }
+}
+
+test "E2E: Layer 3 のメディアキー配置 (madbd5)" {
+    const km = &default_keymap;
+
+    // Layer 3: MUTE/VOLD/VOLU は (row=1, col=5/6/7) に連続配置
+    try testing.expectEqual(KC.MUTE, km[3][1][5]);
+    try testing.expectEqual(KC.VOLD, km[3][1][6]);
+    try testing.expectEqual(KC.VOLU, km[3][1][7]);
+}
+
+test "E2E: Layer 3 のファンクションキー配置 (madbd5)" {
+    const km = &default_keymap;
+
+    // Layer 3: F1〜F12 は row 0 の col 4 から連続配置
+    const f1_col: u8 = 4;
+    try testing.expectEqual(KC.F1, km[3][0][f1_col]);
+    try testing.expectEqual(KC.F2, km[3][0][f1_col + 1]);
+    try testing.expectEqual(KC.F3, km[3][0][f1_col + 2]);
+    try testing.expectEqual(KC.F4, km[3][0][f1_col + 3]);
+    try testing.expectEqual(KC.F5, km[3][0][f1_col + 4]);
+    try testing.expectEqual(KC.F6, km[3][0][f1_col + 5]);
+    try testing.expectEqual(KC.F7, km[3][0][f1_col + 6]);
+    try testing.expectEqual(KC.F8, km[3][0][f1_col + 7]);
+    try testing.expectEqual(KC.F9, km[3][0][f1_col + 8]);
+    try testing.expectEqual(KC.F10, km[3][0][f1_col + 9]);
+    try testing.expectEqual(KC.F11, km[3][0][f1_col + 10]);
+    try testing.expectEqual(KC.F12, km[3][0][f1_col + 11]);
+}
+
+test "E2E: マトリックス設定が rows/cols と一致する (madbd5)" {
+    const matrix_mod = @import("core").matrix;
+    const cfg = matrixConfig();
+
+    try testing.expectEqual(@as(usize, rows), cfg.row_pins.len);
+    try testing.expectEqual(@as(usize, cols), cfg.col_pins.len);
+
+    var mat = matrix_mod.Matrix(rows, cols).init(cfg);
+    _ = &mat;
+    try testing.expectEqual(@as(usize, rows), mat.config.row_pins.len);
+    try testing.expectEqual(@as(usize, cols), mat.config.col_pins.len);
+}
