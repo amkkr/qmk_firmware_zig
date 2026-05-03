@@ -13,6 +13,7 @@
 const keycode = @import("core").keycode;
 const keymap = @import("core").keymap;
 const matrix = @import("core").matrix;
+const event = @import("core").event;
 const gpio = @import("hal").gpio;
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
@@ -164,34 +165,35 @@ fn buildKeymap() keymap.Keymap {
 /// `src/tests/integration_test.zig` から参照されるキー位置情報。
 /// キーボード固有のレイアウト差を吸収し、 統合テストをキーボード非依存に保つ。
 /// 新規キーボード追加時はこの構造体を同等に定義することで integration_test.zig の編集が不要になる。
+///
+/// 型は `core.event.KeyPos` を使用 (フィールド順は col, row)。
+/// 既存の KeyEvent.key と同じ型を流用することで二重定義を避ける。
 pub const test_positions = struct {
-    pub const Pos = struct { row: u8, col: u8 };
-
     /// Layer 0 の基本キー位置
-    pub const q_pos = Pos{ .row = 0, .col = 1 };
-    pub const w_pos = Pos{ .row = 0, .col = 2 };
-    pub const e_pos = Pos{ .row = 0, .col = 3 };
-    pub const tab_pos = Pos{ .row = 0, .col = 0 };
-    pub const lctl_pos = Pos{ .row = 1, .col = 0 };
-    pub const a_pos = Pos{ .row = 1, .col = 1 };
-    pub const lsft_pos = Pos{ .row = 2, .col = 0 };
-    pub const z_pos = Pos{ .row = 2, .col = 1 };
+    pub const q_pos = event.KeyPos{ .col = 1, .row = 0 };
+    pub const w_pos = event.KeyPos{ .col = 2, .row = 0 };
+    pub const e_pos = event.KeyPos{ .col = 3, .row = 0 };
+    pub const tab_pos = event.KeyPos{ .col = 0, .row = 0 };
+    pub const lctl_pos = event.KeyPos{ .col = 0, .row = 1 };
+    pub const a_pos = event.KeyPos{ .col = 1, .row = 1 };
+    pub const lsft_pos = event.KeyPos{ .col = 0, .row = 2 };
+    pub const z_pos = event.KeyPos{ .col = 1, .row = 2 };
 
     /// Layer-Tap / MO キー位置 (thumb cluster)
-    pub const lt1_spc_pos = Pos{ .row = 3, .col = 5 };
-    pub const lt2_esc_pos = Pos{ .row = 3, .col = 6 };
-    pub const mo1_pos = Pos{ .row = 3, .col = 8 };
+    pub const lt1_spc_pos = event.KeyPos{ .col = 5, .row = 3 };
+    pub const lt2_esc_pos = event.KeyPos{ .col = 6, .row = 3 };
+    pub const mo1_pos = event.KeyPos{ .col = 8, .row = 3 };
 
     /// Layer 2 ナビゲーションキー (LEFT)
-    pub const l2_left_pos = Pos{ .row = 1, .col = 6 };
+    pub const l2_left_pos = event.KeyPos{ .col = 6, .row = 1 };
 
     /// Layer 3 ファンクションキー (F1 開始列、 row 0 の F1〜F12 が連続して並ぶ)
     pub const l3_f1_col: u8 = 0;
 
     /// Layer 3 メディアキー
-    pub const l3_mute_pos = Pos{ .row = 1, .col = 1 };
-    pub const l3_vold_pos = Pos{ .row = 1, .col = 2 };
-    pub const l3_volu_pos = Pos{ .row = 1, .col = 3 };
+    pub const l3_mute_pos = event.KeyPos{ .col = 1, .row = 1 };
+    pub const l3_vold_pos = event.KeyPos{ .col = 2, .row = 1 };
+    pub const l3_volu_pos = event.KeyPos{ .col = 3, .row = 1 };
 };
 
 // ============================================================
