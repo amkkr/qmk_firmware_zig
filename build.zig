@@ -263,14 +263,23 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_active_kb_tests.step);
 
     // Flash tool tests
-    const flash_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/flash.zig"),
-            .target = native_target,
-        }),
-    });
-    const run_flash_tests = b.addRunArtifact(flash_tests);
-    test_step.dependOn(&run_flash_tests.step);
+    // Zig 0.16.0 の Windows 用 std (std.process.Environ.GlobalBlock.view) に
+    // バグがあり、 environ.getPosix() を含む parseArgs / selectBootselFromDetected が
+    // コンパイル不可。 RP2040 BOOTSEL は Windows でも動作するが、 flash CLI 自体は
+    // Linux/macOS 専用設計のため Windows 上のテストはスキップする。
+    // 将来 std bug 解決時または flash.zig の environ 依存解消時に再有効化予定。
+    const flash_tests_enabled = native_target.result.os.tag != .windows;
+    const run_flash_tests_opt: ?*std.Build.Step.Run = if (flash_tests_enabled) blk: {
+        const flash_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tools/flash.zig"),
+                .target = native_target,
+            }),
+        });
+        const run = b.addRunArtifact(flash_tests);
+        test_step.dependOn(&run.step);
+        break :blk run;
+    } else null;
 
     // UF2 generator tool tests
     const uf2gen_tests = b.addTest(.{
@@ -296,7 +305,7 @@ pub fn build(b: *std.Build) void {
     verify_step.dependOn(&run_core_tests.step);
     verify_step.dependOn(&run_hal_tests.step);
     verify_step.dependOn(&run_active_kb_tests.step);
-    verify_step.dependOn(&run_flash_tests.step);
+    if (run_flash_tests_opt) |run| verify_step.dependOn(&run.step);
     verify_step.dependOn(&run_uf2gen_tests.step);
     verify_step.dependOn(&firmware.step);
 }
