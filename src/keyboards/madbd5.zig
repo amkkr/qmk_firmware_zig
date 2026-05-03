@@ -13,7 +13,6 @@
 const keycode = @import("core").keycode;
 const keymap = @import("core").keymap;
 const matrix = @import("core").matrix;
-const event = @import("core").event;
 const gpio = @import("hal").gpio;
 const Keycode = keycode.Keycode;
 const KC = keycode.KC;
@@ -210,48 +209,11 @@ fn buildKeymap() keymap.Keymap {
 }
 
 // ============================================================
-// 統合テスト用キー位置定数
-// ============================================================
-
-/// `src/tests/integration_test.zig` から参照されるキー位置情報。
-/// キーボード固有のレイアウト差を吸収し、 統合テストをキーボード非依存に保つ。
-/// 新規キーボード追加時はこの構造体を同等に定義することで integration_test.zig の編集が不要になる。
-///
-/// 型は `core.event.KeyPos` を使用 (フィールド順は col, row)。
-/// 既存の KeyEvent.key と同じ型を流用することで二重定義を避ける。
-pub const test_positions = struct {
-    /// Layer 0 の基本キー位置
-    pub const q_pos = event.KeyPos{ .col = 5, .row = 0 };
-    pub const w_pos = event.KeyPos{ .col = 6, .row = 0 };
-    pub const e_pos = event.KeyPos{ .col = 7, .row = 0 };
-    pub const tab_pos = event.KeyPos{ .col = 4, .row = 0 };
-    pub const lctl_pos = event.KeyPos{ .col = 4, .row = 1 };
-    pub const a_pos = event.KeyPos{ .col = 5, .row = 1 };
-    pub const lsft_pos = event.KeyPos{ .col = 4, .row = 2 };
-    pub const z_pos = event.KeyPos{ .col = 5, .row = 2 };
-
-    /// Layer-Tap / MO キー位置 (thumb cluster)
-    pub const lt1_spc_pos = event.KeyPos{ .col = 6, .row = 3 };
-    pub const lt2_esc_pos = event.KeyPos{ .col = 7, .row = 3 };
-    pub const mo1_pos = event.KeyPos{ .col = 9, .row = 3 };
-
-    /// Layer 2 ナビゲーションキー (LEFT)
-    pub const l2_left_pos = event.KeyPos{ .col = 10, .row = 1 };
-
-    /// Layer 3 ファンクションキー (F1 開始列、 row 0 の F1〜F12 が連続して並ぶ)
-    pub const l3_f1_col: u8 = 4;
-
-    /// Layer 3 メディアキー
-    pub const l3_mute_pos = event.KeyPos{ .col = 5, .row = 1 };
-    pub const l3_vold_pos = event.KeyPos{ .col = 6, .row = 1 };
-    pub const l3_volu_pos = event.KeyPos{ .col = 7, .row = 1 };
-};
-
-// ============================================================
 // テスト
 // ============================================================
 
 const testing = @import("std").testing;
+const action_code = @import("core").action_code;
 
 test "ハードウェア設定が正しい" {
     try testing.expectEqual(@as(u8, 5), rows);
@@ -379,11 +341,22 @@ test "デフォルトキーマップ: Layer 2 (ナビゲーション) の検証"
 test "デフォルトキーマップ: Layer 3 (ファンクション/メディア) の検証" {
     const km = default_keymap;
 
-    // ファンクションキー
-    try testing.expectEqual(KC.F1, km[3][0][4]);
-    try testing.expectEqual(KC.F12, km[3][0][15]);
+    // ファンクションキー: F1〜F12 は row 0 の col 4 から連続配置
+    const f1_col: u8 = 4;
+    try testing.expectEqual(KC.F1, km[3][0][f1_col]);
+    try testing.expectEqual(KC.F2, km[3][0][f1_col + 1]);
+    try testing.expectEqual(KC.F3, km[3][0][f1_col + 2]);
+    try testing.expectEqual(KC.F4, km[3][0][f1_col + 3]);
+    try testing.expectEqual(KC.F5, km[3][0][f1_col + 4]);
+    try testing.expectEqual(KC.F6, km[3][0][f1_col + 5]);
+    try testing.expectEqual(KC.F7, km[3][0][f1_col + 6]);
+    try testing.expectEqual(KC.F8, km[3][0][f1_col + 7]);
+    try testing.expectEqual(KC.F9, km[3][0][f1_col + 8]);
+    try testing.expectEqual(KC.F10, km[3][0][f1_col + 9]);
+    try testing.expectEqual(KC.F11, km[3][0][f1_col + 10]);
+    try testing.expectEqual(KC.F12, km[3][0][f1_col + 11]);
 
-    // メディアキー
+    // メディアキー: MUTE/VOLD/VOLU は (row=1, col=5/6/7) に連続配置
     try testing.expectEqual(KC.MUTE, km[3][1][5]);
     try testing.expectEqual(KC.VOLD, km[3][1][6]);
     try testing.expectEqual(KC.VOLU, km[3][1][7]);
@@ -405,11 +378,35 @@ test "デフォルトキーマップ: Layer 4 (ゲーミング) の検証" {
     try testing.expectEqual(keycode.MO(6), km[4][3][9]);
 }
 
-test "デフォルトキーマップ: 未使用レイヤーが空である" {
+test "デフォルトキーマップ: 全レイヤーのキー定義検証" {
     const km = default_keymap;
 
-    // Layer 7以降は全て KC.NO
-    for (7..keymap.MAX_LAYERS) |l| {
+    // 定義済みレイヤーがそれぞれ少なくとも 1 つの非 KC.NO キーを持つ
+    for (0..num_layers) |l| {
+        var layer_key_count: usize = 0;
+        for (0..rows) |r| {
+            for (0..cols) |c| {
+                if (km[l][r][c] != KC.NO) {
+                    layer_key_count += 1;
+                }
+            }
+        }
+        try testing.expect(layer_key_count > 0);
+    }
+
+    // Layer 0 の非 KC.NO キー数がキーボードの物理キー数と一致
+    var layer0_count: usize = 0;
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            if (km[0][r][c] != KC.NO) {
+                layer0_count += 1;
+            }
+        }
+    }
+    try testing.expectEqual(@as(usize, key_count), layer0_count);
+
+    // 定義済みレイヤーより上は全て KC.NO
+    for (num_layers..keymap.MAX_LAYERS) |l| {
         for (0..rows) |r| {
             for (0..cols) |c| {
                 try testing.expectEqual(KC.NO, km[l][r][c]);
@@ -422,6 +419,16 @@ test "matrixConfig: 設定値が正しい" {
     const cfg = matrixConfig();
     try testing.expectEqual(@as(usize, 16), cfg.col_pins.len);
     try testing.expectEqual(@as(usize, 5), cfg.row_pins.len);
+
+    // rows/cols 定数と一致すること
+    try testing.expectEqual(@as(usize, rows), cfg.row_pins.len);
+    try testing.expectEqual(@as(usize, cols), cfg.col_pins.len);
+
+    // Matrix(rows, cols).init(cfg) で正しく初期化できること
+    var mat = matrix.Matrix(rows, cols).init(cfg);
+    _ = &mat;
+    try testing.expectEqual(@as(usize, rows), mat.config.row_pins.len);
+    try testing.expectEqual(@as(usize, cols), mat.config.col_pins.len);
 }
 
 test "LAYOUT関数: C版キーマップと等価な値を生成する" {
@@ -440,4 +447,26 @@ test "LAYOUT関数: C版キーマップと等価な値を生成する" {
     try testing.expectEqual(@as(Keycode, 0x412C), km[0][3][6]); // LT(1, KC_SPC)
     try testing.expectEqual(@as(Keycode, 0x4229), km[0][3][7]); // LT(2, KC_ESC)
     try testing.expectEqual(@as(Keycode, 0x5221), km[0][3][9]); // MO(1)
+
+    // キーマップ→アクション変換の整合性
+    // (action_code 経由でキーコードが正しいアクションへ変換される)
+    // TAB → ACTION_KEY(0x2B): (row=0, col=4)
+    const tab_action = action_code.keycodeToAction(km[0][0][4]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_KEY(0x2B)), tab_action.code);
+
+    // Q → ACTION_KEY(0x14): (row=0, col=5)
+    const q_action = action_code.keycodeToAction(km[0][0][5]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_KEY(0x14)), q_action.code);
+
+    // LT(1, KC.SPC) → ACTION_LAYER_TAP_KEY(1, 0x2C): (row=3, col=6)
+    const lt1_action = action_code.keycodeToAction(km[0][3][6]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_TAP_KEY(1, 0x2C)), lt1_action.code);
+
+    // LT(2, KC.ESC) → ACTION_LAYER_TAP_KEY(2, 0x29): (row=3, col=7)
+    const lt2_action = action_code.keycodeToAction(km[0][3][7]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_TAP_KEY(2, 0x29)), lt2_action.code);
+
+    // MO(1) → ACTION_LAYER_MOMENTARY(1): (row=3, col=9)
+    const mo1_action = action_code.keycodeToAction(km[0][3][9]);
+    try testing.expectEqual(@as(u16, action_code.ACTION_LAYER_MOMENTARY(1)), mo1_action.code);
 }
