@@ -89,14 +89,13 @@ pub const startup = if (is_freestanding) struct {
     const action_mod = @import("core").action_mod;
     const host_mod = @import("core").host_mod;
     const keymap_mod = @import("core").keymap;
-    const keymap_state = @import("core").keymap_state;
     const Keycode = @import("core").Keycode;
     const kb_mod = @import("root").kb;
 
-    /// production keymap 参照関数。 keymap_state が保持する現在の keymap を引く。
+    /// production keymap 参照関数。 キーボード定義の静的 const `default_keymap` を直接引く。
     /// production binary の起動時 (`keyboard.setKeymapLookup`) に注入する。
     fn productionKeymapLookup(l: u5, row: u8, col: u8) Keycode {
-        return keymap_mod.keymapKeyToKeycode(keymap_state.getKeymap(), l, row, col);
+        return keymap_mod.keymapKeyToKeycode(&kb_mod.default_keymap, l, row, col);
     }
 
     const MatrixType = matrix_mod.Matrix(kb_mod.rows, kb_mod.cols);
@@ -177,9 +176,9 @@ pub const startup = if (is_freestanding) struct {
         // EEPROM初期化（フラッシュからRAMキャッシュに読み込み）
         eeprom_mod.init();
 
-        // キーボード内部状態初期化・キーマップロード・アクションリゾルバ設定
+        // キーボード内部状態初期化・アクションリゾルバ設定
+        // keymap は kb_mod.default_keymap (静的 const) を productionKeymapLookup 経由で直接参照する
         keyboard.init();
-        keymap_state.getKeymap().* = kb_mod.default_keymap;
         keyboard.setKeymapLookup(productionKeymapLookup);
         action_mod.setActionResolver(keyboard.keymapActionResolver);
 

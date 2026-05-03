@@ -252,9 +252,9 @@ export fn advance_time(ms: u32) void {
 
 /// Get keycode at given layer and position
 /// 依存性注入された keymap lookup (`keyboard.keymapLookup`) 経由で参照する。
-/// production binary では `productionKeymapLookup` 経由で `keymap_state` を引き、
-/// test binary では `test_fixture` の lookup を経由するため、 ABI から
-/// production/test storage を直接触ることはない (DRY 統一)。
+/// production binary では `productionKeymapLookup` 経由で `kb_mod.default_keymap`
+/// (flash 上の静的 const) を引き、 test binary では `test_fixture.test_keymap` (BSS)
+/// を引くため、 ABI からそれぞれの実体を直接触ることはない (DRY 統一)。
 export fn keymap_key_to_keycode(layer: u8, row: u8, col: u8) u16 {
     if (layer >= keymap_mod.MAX_LAYERS) return 0;
     return keyboard_mod.keymapLookup(@intCast(layer), row, col);
