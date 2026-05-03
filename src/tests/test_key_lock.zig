@@ -17,14 +17,12 @@ const TestFixture = test_fixture.TestFixture;
 const KeymapKey = test_fixture.KeymapKey;
 
 test "QK_LOCK then key press locks the key" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_LOCK),
         KeymapKey.init(0, 0, 1, KC.A),
     });
+    defer fixture.deinit();
 
     // QK_LOCK を押す→リリース（watching 状態にする）
     fixture.pressKey(0, 0);
@@ -54,14 +52,12 @@ test "QK_LOCK then key press locks the key" {
 }
 
 test "QK_LOCK pressed twice cancels watching" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_LOCK),
         KeymapKey.init(0, 0, 1, KC.B),
     });
+    defer fixture.deinit();
 
     // QK_LOCK を2回押す（watching をトグルして解除）
     fixture.pressKey(0, 0);

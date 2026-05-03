@@ -11,8 +11,9 @@ const KC = keycode.KC;
 const TestFixture = test_fixture.TestFixture;
 const KeymapKey = test_fixture.KeymapKey;
 
-fn setupFixture(fixture: *TestFixture) void {
-    fixture.setup();
+/// 各 test 共通のセットアップ。 timer mock のリセットを 1 箇所に集約することで、
+/// 新規 test 追加時に mockReset() を忘れるリスクを回避する。
+fn setupFixture(_: *TestFixture) void {
     timer.mockReset();
 }
 
@@ -24,77 +25,84 @@ fn tapKey(fixture: *TestFixture, row: u8, col: u8) void {
 }
 
 test "DT_UP increases tapping_term via pipeline" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_UP },
     });
+    defer fixture.deinit();
     const initial = tapping.tapping_term;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(initial + 5, tapping.tapping_term);
 }
 
 test "DT_DOWN decreases tapping_term via pipeline" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_DOWN },
     });
+    defer fixture.deinit();
     const initial = tapping.tapping_term;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(initial - 5, tapping.tapping_term);
 }
 
 test "DT_DOWN saturates at 0 via pipeline" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_DOWN },
     });
+    defer fixture.deinit();
     tapping.tapping_term = 3;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(@as(u16, 0), tapping.tapping_term);
 }
 
 test "DT_UP is consumed and produces no HID report" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_UP },
     });
+    defer fixture.deinit();
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 }
 
 test "DT_DOWN is consumed and produces no HID report" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_DOWN },
     });
+    defer fixture.deinit();
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 }
 
 test "DT_PRNT is consumed and produces no HID report" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_PRNT },
     });
+    defer fixture.deinit();
     const count_before = fixture.driver.keyboard_count;
     tapKey(&fixture, 0, 0);
     try testing.expectEqual(count_before, fixture.driver.keyboard_count);
 }
 
 test "cumulative DT_UP via pipeline" {
-    var fixture = TestFixture.init();
-    setupFixture(&fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupFixture);
     fixture.setKeymap(&[_]KeymapKey{
         .{ .layer = 0, .row = 0, .col = 0, .code = keycode.DT_UP },
     });
+    defer fixture.deinit();
     const initial = tapping.tapping_term;
     tapKey(&fixture, 0, 0);
     tapKey(&fixture, 0, 0);

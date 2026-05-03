@@ -131,13 +131,11 @@ test "LayerOff" {
 // ============================================================
 
 test "MomentaryLayerDoesNothing" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.MO(1)),
     });
+    defer fixture.deinit();
 
     // MO(1) を押してリリース — HIDレポートは送信されない
     fixture.pressKey(0, 0);
@@ -150,16 +148,14 @@ test "MomentaryLayerDoesNothing" {
 }
 
 test "MomentaryLayerWithKeypress" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.MO(1)),
         KeymapKey.init(0, 1, 0, KC.A),
         // 同じマトリックス位置 (1,0) のレイヤー1にKC_Bを配置
         KeymapKey.init(1, 1, 0, KC.B),
     });
+    defer fixture.deinit();
 
     // MO(1) を押す → レイヤー1が有効化
     fixture.pressKey(0, 0);

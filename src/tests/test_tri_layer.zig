@@ -31,14 +31,12 @@ const KeymapKey = test_fixture.KeymapKey;
 // QK_TRI_LAYER_LOWER を押下すると lower レイヤー(1)が有効になり、
 // upper(2) と adjust(3) は無効のまま。解放すると全レイヤーが無効になる。
 test "TriLayerLowerTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_TRI_LAYER_LOWER),
         KeymapKey.init(1, 0, 0, KC.TRNS),
     });
+    defer fixture.deinit();
 
     // Press Lower
     fixture.pressKey(0, 0);
@@ -61,14 +59,12 @@ test "TriLayerLowerTest" {
 // QK_TRI_LAYER_UPPER を押下すると upper レイヤー(2)が有効になり、
 // lower(1) と adjust(3) は無効のまま。解放すると全レイヤーが無効になる。
 test "TriLayerUpperTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_TRI_LAYER_UPPER),
         KeymapKey.init(2, 0, 0, KC.TRNS),
     });
+    defer fixture.deinit();
 
     // Press Upper
     fixture.pressKey(0, 0);
@@ -92,11 +88,8 @@ test "TriLayerUpperTest" {
 // Lower を先に解放すると Adjust が無効になり Upper だけが残る。
 // Upper も解放すると全レイヤーが無効になる。
 test "TriLayerAdjustTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
         KeymapKey.init(0, 0, 0, keycode.QK_TRI_LAYER_LOWER),
         KeymapKey.init(0, 0, 1, keycode.QK_TRI_LAYER_UPPER),
         KeymapKey.init(1, 0, 0, KC.TRNS),
@@ -106,6 +99,7 @@ test "TriLayerAdjustTest" {
         KeymapKey.init(3, 0, 0, KC.TRNS),
         KeymapKey.init(3, 0, 1, KC.TRNS),
     });
+    defer fixture.deinit();
 
     // Press Lower
     fixture.pressKey(0, 0);
