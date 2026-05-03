@@ -116,10 +116,9 @@ fn setupKeymap(fixture: *TestFixture) void {
 // ============================================================
 
 test "E2E: 単一キー押下→リリースでHIDレポートが正しく生成される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // KC.Q (HID 0x14) を押す
     fixture.pressKey(Q_ROW, Q_COL);
@@ -135,10 +134,9 @@ test "E2E: 単一キー押下→リリースでHIDレポートが正しく生成
 }
 
 test "E2E: 複数キー同時押しで6KROレポートに正しく含まれる" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(Q_ROW, Q_COL); // Q
     fixture.pressKey(W_ROW, W_COL); // W
@@ -158,10 +156,9 @@ test "E2E: 複数キー同時押しで6KROレポートに正しく含まれる" 
 }
 
 test "E2E: 修飾キー(LCTL)がHIDレポートのmodsに反映される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LCTL_ROW, LCTL_COL);
     fixture.runOneScanLoop();
@@ -178,10 +175,9 @@ test "E2E: 修飾キー(LCTL)がHIDレポートのmodsに反映される" {
 }
 
 test "E2E: 修飾キー＋通常キー同時押し (Ctrl+A)" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LCTL_ROW, LCTL_COL); // LCTL
     fixture.pressKey(A_ROW, A_COL); // A
@@ -198,10 +194,9 @@ test "E2E: 修飾キー＋通常キー同時押し (Ctrl+A)" {
 }
 
 test "E2E: LSFT + Z (Shift+Z) の組み合わせ" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LSFT_ROW, LSFT_COL); // LSFT
     fixture.pressKey(Z_ROW, Z_COL); // Z
@@ -222,10 +217,9 @@ test "E2E: LSFT + Z (Shift+Z) の組み合わせ" {
 // ============================================================
 
 test "E2E: MO(1)でレイヤー1が有効化される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(MO1_ROW, MO1_COL);
     fixture.idleFor(TAPPING_TERM + 1);
@@ -238,10 +232,9 @@ test "E2E: MO(1)でレイヤー1が有効化される" {
 }
 
 test "E2E: MO(1)ホールド中にレイヤー1のキーが入力される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // MO(1) をホールド
     fixture.pressKey(MO1_ROW, MO1_COL);
@@ -268,10 +261,9 @@ test "E2E: MO(1)ホールド中にレイヤー1のキーが入力される" {
 }
 
 test "E2E: LT(1,SPC) タップでスペースが入力される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // 短いタップ (TAPPING_TERM 未満) → SPC が出力
     fixture.pressKey(LT1_SPC_ROW, LT1_SPC_COL);
@@ -294,10 +286,9 @@ test "E2E: LT(1,SPC) タップでスペースが入力される" {
 }
 
 test "E2E: LT(1,SPC) ホールドでレイヤー1が有効化される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LT1_SPC_ROW, LT1_SPC_COL);
     fixture.idleFor(TAPPING_TERM + 1);
@@ -310,10 +301,9 @@ test "E2E: LT(1,SPC) ホールドでレイヤー1が有効化される" {
 }
 
 test "E2E: LT(2,ESC) タップでESCが入力される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LT2_ESC_ROW, LT2_ESC_COL);
     fixture.idleFor(50);
@@ -332,10 +322,9 @@ test "E2E: LT(2,ESC) タップでESCが入力される" {
 }
 
 test "E2E: LT(2,ESC) ホールドでレイヤー2が有効化される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     fixture.pressKey(LT2_ESC_ROW, LT2_ESC_COL);
     fixture.idleFor(TAPPING_TERM + 1);
@@ -352,10 +341,9 @@ test "E2E: LT(2,ESC) ホールドでレイヤー2が有効化される" {
 // ============================================================
 
 test "E2E: レイヤー2で矢印キーが入力される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // LT(2, ESC) ホールドでレイヤー2有効化
     fixture.pressKey(LT2_ESC_ROW, LT2_ESC_COL);
@@ -386,10 +374,9 @@ test "E2E: レイヤー2で矢印キーが入力される" {
 // ============================================================
 
 test "E2E: LT(1,SPC) ホールド中に他キーを押すとinterrupt発生" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // LT(1, SPC) をプレス
     fixture.pressKey(LT1_SPC_ROW, LT1_SPC_COL);
@@ -416,10 +403,9 @@ test "E2E: LT(1,SPC) ホールド中に他キーを押すとinterrupt発生" {
 // ============================================================
 
 test "E2E: 同一キーの連続タップが正しく処理される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // KC.Q を連続タップ
     fixture.pressKey(Q_ROW, Q_COL);
@@ -449,10 +435,9 @@ test "E2E: 同一キーの連続タップが正しく処理される" {
 // ============================================================
 
 test "E2E: レイヤー切替後にベースレイヤーに正しく戻る" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // 初期状態: Layer 0 のみ
     try testing.expect(fixture.isLayerOn(0));
@@ -502,10 +487,9 @@ test "E2E: MouseReportのサイズが5バイト" {
 // ============================================================
 
 test "E2E: レイヤー切替中のキーリリースが正しいレイヤーで処理される" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // Layer 0 でキー Q をプレス
     fixture.pressKey(Q_ROW, Q_COL);
@@ -530,10 +514,9 @@ test "E2E: レイヤー切替中のキーリリースが正しいレイヤーで
 // ============================================================
 
 test "E2E: Layer 1 の LT(3,ESC) でレイヤー3にアクセスできる" {
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // まず MO(1) でレイヤー 1 を有効化
     fixture.pressKey(MO1_ROW, MO1_COL);
@@ -606,10 +589,9 @@ test "E2E: レイヤー操作キーコードのアクション変換" {
 
 test "E2E: keymap resolveKeycode がレイヤー優先度を正しく処理する" {
     const keymap_mod = @import("core").keymap;
-    var fixture = TestFixture.init();
-    fixture.setup();
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupKeymap);
     defer fixture.deinit();
-    setupKeymap(&fixture);
 
     // setupKeymap が登録した test 用 keymap を直接参照する
     // (production の `kb_mod.default_keymap` 直参照とは別物; 依存性注入で分離されている)
