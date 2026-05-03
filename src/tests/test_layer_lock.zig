@@ -90,16 +90,14 @@ test "LayerLockState" {
 // ============================================================
 
 test "LayerLockMomentaryTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const key_layer = KeymapKey.init(0, 0, 0, keycode.MO(1));
     const key_a = KeymapKey.init(0, 1, 0, KC.A);
     const key_trns = KeymapKey.init(1, 0, 0, KC.TRNS);
     const key_ll = KeymapKey.init(1, 1, 0, keycode.QK_LAYER_LOCK);
 
-    fixture.setKeymap(&.{ key_layer, key_a, key_trns, key_ll });
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{ key_layer, key_a, key_trns, key_ll });
+    defer fixture.deinit();
 
     fixture.pressKey(key_layer.row, key_layer.col);
     fixture.runOneScanLoop();
@@ -129,16 +127,14 @@ test "LayerLockMomentaryTest" {
 // ============================================================
 
 test "LayerLockLayerTapTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const key_layer = KeymapKey.init(0, 0, 0, keycode.LT(1, KC.B));
     const key_a = KeymapKey.init(0, 1, 0, KC.A);
     const key_trns = KeymapKey.init(1, 0, 0, KC.TRNS);
     const key_ll = KeymapKey.init(1, 1, 0, keycode.QK_LAYER_LOCK);
 
-    fixture.setKeymap(&.{ key_layer, key_a, key_trns, key_ll });
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{ key_layer, key_a, key_trns, key_ll });
+    defer fixture.deinit();
 
     fixture.pressKey(key_layer.row, key_layer.col);
     fixture.idleFor(TAPPING_TERM);
@@ -163,18 +159,18 @@ test "LayerLockLayerTapTest" {
 // ============================================================
 
 test "LayerLockTimeoutTest" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
-    layer_lock.idle_timeout = LAYER_LOCK_IDLE_TIMEOUT;
-
     const key_layer = KeymapKey.init(0, 0, 0, keycode.MO(1));
     const key_a = KeymapKey.init(0, 1, 0, KC.A);
     const key_trns = KeymapKey.init(1, 0, 0, KC.TRNS);
     const key_ll = KeymapKey.init(1, 1, 0, keycode.QK_LAYER_LOCK);
 
-    fixture.setKeymap(&.{ key_layer, key_a, key_trns, key_ll });
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{ key_layer, key_a, key_trns, key_ll });
+    defer fixture.deinit();
+
+    // initTest が layer_lock.reset() で idle_timeout=0 にリセットするため、
+    // setup の後で設定する必要がある。
+    layer_lock.idle_timeout = LAYER_LOCK_IDLE_TIMEOUT;
 
     fixture.pressKey(key_layer.row, key_layer.col);
     fixture.runOneScanLoop();
@@ -202,15 +198,13 @@ test "LayerLockTimeoutTest" {
 // ============================================================
 
 test "ToKeyOverridesLayerLock" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const key_layer = KeymapKey.init(0, 0, 0, keycode.MO(1));
     const key_to0 = KeymapKey.init(1, 0, 0, keycode.TO(0));
     const key_ll = KeymapKey.init(1, 1, 0, keycode.QK_LAYER_LOCK);
 
-    fixture.setKeymap(&.{ key_layer, key_to0, key_ll });
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{ key_layer, key_to0, key_ll });
+    defer fixture.deinit();
 
     layer_lock.layerLockOn(1);
     fixture.runOneScanLoop();
@@ -230,15 +224,13 @@ test "ToKeyOverridesLayerLock" {
 // ============================================================
 
 test "LayerClearOverridesLayerLock" {
-    var fixture = TestFixture.init();
-    fixture.setup();
-    defer fixture.deinit();
-
     const key_layer = KeymapKey.init(0, 0, 0, keycode.MO(1));
     const key_a = KeymapKey.init(0, 1, 0, KC.A);
     const key_ll = KeymapKey.init(1, 1, 0, keycode.QK_LAYER_LOCK);
 
-    fixture.setKeymap(&.{ key_layer, key_a, key_ll });
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{ key_layer, key_a, key_ll });
+    defer fixture.deinit();
 
     layer_lock.layerLockOn(1);
     fixture.runOneScanLoop();
