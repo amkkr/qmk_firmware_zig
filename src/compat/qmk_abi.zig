@@ -407,12 +407,13 @@ test "qmk_abi: process_record does not crash" {
 
 test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
     const keycode_mod = @import("core").keycode;
+    const test_fixture = @import("core").test_fixture;
     keyboard_init();
     // 初期状態ではすべて KC_NO (0)
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
 
     // テストキーマップにキーを設定
-    keymap_state.setKey(0, 0, 0, keycode_mod.KC.A);
+    test_fixture.setKey(0, 0, 0, keycode_mod.KC.A);
     try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
 
     // 範囲外のレイヤーは 0 を返す

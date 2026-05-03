@@ -13,15 +13,14 @@
 //!   - production startup (`src/main.zig`):
 //!       `getKeymap().* = kb.default_keymap;` で keymap をロード
 //!   - test (`src/core/test_fixture.zig`, 兄弟テスト):
-//!       `getKeymap().* = ...;` または `setKey()` で人工キーマップを構築
+//!       `getKeymap().* = ...;` で人工キーマップを構築
+//!       (test 専用の setKey / reset は `test_fixture.zig` 側に配置)
 //!   - resolver (`src/core/keyboard.zig` の keymapActionResolver / resolveKeycode):
 //!       `getKeymap()` 経由で keycode を引く
 
 const keymap_mod = @import("keymap.zig");
-const keycode_mod = @import("keycode.zig");
 
 const Keymap = keymap_mod.Keymap;
-const Keycode = keycode_mod.Keycode;
 
 /// 現在アクティブな keymap (BSS 配置、 初期値は emptyKeymap)
 var current_keymap: Keymap = keymap_mod.emptyKeymap();
@@ -31,16 +30,4 @@ var current_keymap: Keymap = keymap_mod.emptyKeymap();
 /// resolver からの呼び出しが直接アドレス参照に展開されるようにする) ため。
 pub inline fn getKeymap() *Keymap {
     return &current_keymap;
-}
-
-/// 1 キーをセットする (範囲外は no-op)
-pub fn setKey(l: u5, row: u8, col: u8, kc: Keycode) void {
-    if (row < keymap_mod.MATRIX_ROWS and col < keymap_mod.MATRIX_COLS and l < keymap_mod.MAX_LAYERS) {
-        current_keymap[l][row][col] = kc;
-    }
-}
-
-/// keymap を空 (KC_NO 全埋め) にリセットする
-pub fn reset() void {
-    current_keymap = keymap_mod.emptyKeymap();
 }

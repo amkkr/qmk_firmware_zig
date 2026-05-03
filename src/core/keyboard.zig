@@ -100,7 +100,10 @@ pub fn init() void {
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     secure_consumed = .{0} ** MATRIX_ROWS;
-    keymap_state.reset();
+    // keymap は keymap_state モジュールが BSS 初期値で空保持。
+    // production では init() 直後に main.zig で default_keymap がロードされる。
+    // test では各 fixture/test が getKeymap() 経由でセットアップする。
+    keymap_state.getKeymap().* = keymap_mod.emptyKeymap();
 }
 
 /// テスト用: フル初期化（ドライバ設定 + アクションリゾルバ設定含む）
