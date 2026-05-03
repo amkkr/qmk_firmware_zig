@@ -99,6 +99,33 @@ pub const TestFixture = struct {
         keyboard.initTest(keyboard.host.HostDriver.from(&self.driver));
     }
 
+    /// ボイラープレート削減用コンビニエンス API: out ポインタに対して init + setup を行う。
+    /// 呼び出し側でアドレス安定な記憶域 (var) を確保し、 そのアドレスを渡すことで、
+    /// driver の host 登録時にスタックの一時アドレスが使われるリスクを排除する。
+    /// 標準の使い方:
+    /// ```zig
+    /// var fixture: TestFixture = undefined;
+    /// TestFixture.initAndSetup(&fixture);
+    /// defer fixture.deinit();
+    /// ```
+    pub fn initAndSetup(out: *TestFixture) void {
+        out.* = TestFixture.init();
+        out.setup();
+    }
+
+    /// ボイラープレート削減用コンビニエンス API: initAndSetup 後に追加の setup_fn を実行する。
+    /// 共通のキーマップセットアップ等を関数化して各テストから注入できる。
+    /// 標準の使い方:
+    /// ```zig
+    /// var fixture: TestFixture = undefined;
+    /// TestFixture.withSetup(&fixture, setupKeymap);
+    /// defer fixture.deinit();
+    /// ```
+    pub fn withSetup(out: *TestFixture, comptime setup_fn: fn (*TestFixture) void) void {
+        TestFixture.initAndSetup(out);
+        setup_fn(out);
+    }
+
     pub fn deinit(_: *TestFixture) void {
         keyboard.host.clearDriver();
         keyboard.clearKeymapLookup();
@@ -310,4 +337,53 @@ test "TestFixture resolveKeycode transparency" {
     fixture.pressKey(0, 0);
     fixture.runOneScanLoop();
     try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x04));
+}
+
+// ============================================================
+// コンビニエンス API のテスト
+// ============================================================
+
+test "TestFixture initAndSetup convenience API" {
+    var fixture: TestFixture = undefined;
+    TestFixture.initAndSetup(&fixture);
+    defer fixture.deinit();
+
+    fixture.setKeymap(&.{
+        KeymapKey.init(0, 0, 0, KC.A),
+    });
+
+    // 通常の init() + setup() と同じ挙動になることを確認
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+
+    try std.testing.expect(fixture.driver.keyboard_count >= 1);
+    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x04));
+
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+}
+
+test "TestFixture withSetup convenience API" {
+    const setup_fn = struct {
+        fn setupKeymap(f: *TestFixture) void {
+            f.setKeymap(&.{
+                KeymapKey.init(0, 0, 0, KC.B),
+                KeymapKey.init(0, 0, 1, KC.C),
+            });
+        }
+    }.setupKeymap;
+
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setup_fn);
+    defer fixture.deinit();
+
+    // setup_fn で登録された keymap が反映されていることを確認
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x05)); // KC_B
+
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x06)); // KC_C
 }
