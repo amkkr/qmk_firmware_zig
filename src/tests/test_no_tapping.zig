@@ -43,28 +43,20 @@ const KeymapKey = @import("core").test_fixture.KeymapKey;
 const KC = keycode_mod.KC;
 const TAPPING_TERM = @import("core").test_fixture.TAPPING_TERM;
 
-fn setupNoTapping() *TestFixture {
-    const S = struct {
-        var fixture: TestFixture = TestFixture.init();
-    };
-    S.fixture = TestFixture.init();
-    S.fixture.setup();
-    // NO_ACTION_TAPPING を有効化
+/// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
+/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// NO_ACTION_TAPPING のみ有効化。
+fn setupNoTapping(_: *TestFixture) void {
     action_code.no_action_tapping = true;
     action_code.no_action_tapping_modtap_mods = false;
-    return &S.fixture;
 }
 
-fn setupNoModTapMods() *TestFixture {
-    const S = struct {
-        var fixture: TestFixture = TestFixture.init();
-    };
-    S.fixture = TestFixture.init();
-    S.fixture.setup();
-    // NO_ACTION_TAPPING + NO_ACTION_TAPPING_MODTAP_MODS を有効化
+/// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
+/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// NO_ACTION_TAPPING + NO_ACTION_TAPPING_MODTAP_MODS を有効化。
+fn setupNoModTapMods(_: *TestFixture) void {
     action_code.no_action_tapping = true;
     action_code.no_action_tapping_modtap_mods = true;
-    return &S.fixture;
 }
 
 fn teardown(fixture: *TestFixture) void {
@@ -79,8 +71,9 @@ fn teardown(fixture: *TestFixture) void {
 
 // LT(1, KC_P) タップ → 即座に KC_P が送信される
 test "NoTapping_LayerTap: TapP_Layer_Tap_KeyReportsKey" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     // LT(1, KC_P)
     const lt_key = keycode_mod.LT(1, KC.P);
@@ -104,8 +97,9 @@ test "NoTapping_LayerTap: TapP_Layer_Tap_KeyReportsKey" {
 
 // LT(1, KC_P) ホールド → KC_P のまま（レイヤー切替なし）
 test "NoTapping_LayerTap: HoldP_Layer_Tap_KeyReportsKey" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     const lt_key = keycode_mod.LT(1, KC.P);
     fixture.setKeymap(&.{
@@ -138,8 +132,9 @@ test "NoTapping_LayerTap: HoldP_Layer_Tap_KeyReportsKey" {
 
 // SFT_T(KC_P) タップ → 即座に KC_P が送信される
 test "NoTapping_ModTap: TapA_SHFT_T_KeyReportsKey" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     // SFT_T(KC_P) = MT(MOD_LSFT, KC_P)
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
@@ -163,8 +158,9 @@ test "NoTapping_ModTap: TapA_SHFT_T_KeyReportsKey" {
 
 // SFT_T(KC_P) ホールド → KC_P のまま（Shiftにならない）
 test "NoTapping_ModTap: HoldA_SHFT_T_KeyReportsShift" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
     fixture.setKeymap(&.{
@@ -193,8 +189,9 @@ test "NoTapping_ModTap: HoldA_SHFT_T_KeyReportsShift" {
 
 // SFT_T(KC_P) の連続タップ
 test "NoTapping_ModTap: ANewTapWithinTappingTermIsBuggy" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
     fixture.setKeymap(&.{
@@ -252,8 +249,9 @@ test "NoTapping_ModTap: ANewTapWithinTappingTermIsBuggy" {
 
 // OSM(MOD_LSFT) → NO_ACTION_TAPPING 時は即座に LSFT が送信される
 test "NoTapping_OneShot: OSMWithoutAdditionalKeypressDoesNothing" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     // OSM(MOD_LSFT)
     const osm_key = keycode_mod.OSM(keycode_mod.Mod.LSFT);
@@ -279,8 +277,9 @@ test "NoTapping_OneShot: OSMWithoutAdditionalKeypressDoesNothing" {
 // NO_ACTION_TAPPING 時の OSL は MO（layer_on/layer_off）として動作する
 // C版: OSL タップ後は layer_off されるため、regular_key は layer 0 の KC_NO として処理される
 test "NoTapping_OneShot: OSL_No_ReportPress" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     const osl_key = keycode_mod.OSL(1);
     fixture.setKeymap(&.{
@@ -316,8 +315,9 @@ test "NoTapping_OneShot: OSL_No_ReportPress" {
 // C版: EXPECT_NO_REPORT は run_one_scan_loop() 後に設定されるため、
 // Google Mock の Times(0) 仕様上、実際の KC_A レポートは検証対象外
 test "NoTapping_OneShot: OSL_ReportPress" {
-    const fixture = setupNoTapping();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoTapping);
+    defer teardown(&fixture);
 
     const osl_key = keycode_mod.OSL(1);
     fixture.setKeymap(&.{
@@ -357,8 +357,9 @@ test "NoTapping_OneShot: OSL_ReportPress" {
 
 // SFT_T(KC_P) → 即座に LSFT（モディファイヤとして動作）
 test "NoModTapMods: TapA_SHFT_T_KeyReportsKey" {
-    const fixture = setupNoModTapMods();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoModTapMods);
+    defer teardown(&fixture);
 
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
     fixture.setKeymap(&.{
@@ -381,8 +382,9 @@ test "NoModTapMods: TapA_SHFT_T_KeyReportsKey" {
 
 // SFT_T(KC_P) ホールド → LSFT のまま
 test "NoModTapMods: HoldA_SHFT_T_KeyReportsShift" {
-    const fixture = setupNoModTapMods();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoModTapMods);
+    defer teardown(&fixture);
 
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
     fixture.setKeymap(&.{
@@ -413,8 +415,9 @@ test "NoModTapMods: HoldA_SHFT_T_KeyReportsShift" {
 
 // 連続タップでも LSFT のまま
 test "NoModTapMods: ANewTapWithinTappingTermIsBuggy" {
-    const fixture = setupNoModTapMods();
-    defer teardown(fixture);
+    var fixture: TestFixture = undefined;
+    TestFixture.withSetup(&fixture, setupNoModTapMods);
+    defer teardown(&fixture);
 
     const sft_t_key = keycode_mod.MT(keycode_mod.Mod.LSFT, KC.P);
     fixture.setKeymap(&.{
