@@ -28,10 +28,10 @@ pub const TAPPING_TERM: u16 = tapping.TAPPING_TERM;
 // ============================================================
 // Test-only keymap storage and helpers
 // ============================================================
-// production の keymap storage (main.zig が `kb.default_keymap` をロードする領域) と
-// 共有しないよう、 test 用 keymap は本ファイル内に独立保持する。
+// production の keymap (main.zig が `kb.default_keymap` を直接参照する flash 上の
+// 静的 const) と共有しないよう、 test 用 keymap は本ファイル内に独立保持する (BSS)。
 // keyboard.zig は依存性注入された `keymap_lookup` 経由で参照するのみで、
-// production / test それぞれが自分の storage を持つ設計とする (Issue #395)。
+// production / test それぞれが自分の領域を持つ設計とする (Issue #395)。
 //
 // NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
 // あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
