@@ -407,18 +407,22 @@ test "qmk_abi: process_record does not crash" {
 
 test "qmk_abi: keymap_key_to_keycode returns keycode from test keymap" {
     const keycode_mod = @import("core").keycode;
-    const test_fixture = @import("core").test_fixture;
+    const km_mod = @import("core").keymap;
     keyboard_init();
-    // 初期状態ではすべて KC_NO (0)
+    // ABI export `keymap_key_to_keycode` は production storage (`keymap_state`) を参照する。
+    // test 専用 storage (test_fixture.test_keymap) とは別物のため、 ここでは
+    // `keymap_state` を直接書き換えて ABI 経由のルックアップを検証する。
+    keymap_state.getKeymap().* = km_mod.emptyKeymap();
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, 0, 0));
 
-    // テストキーマップにキーを設定
-    test_fixture.setKey(0, 0, 0, keycode_mod.KC.A);
+    // production storage にキーを設定
+    keymap_state.getKeymap()[0][0][0] = keycode_mod.KC.A;
     try testing.expectEqual(keycode_mod.KC.A, keymap_key_to_keycode(0, 0, 0));
 
     // 範囲外のレイヤーは 0 を返す
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(255, 0, 0));
 
     // クリーンアップ
+    keymap_state.getKeymap().* = km_mod.emptyKeymap();
     keyboard_init();
 }
