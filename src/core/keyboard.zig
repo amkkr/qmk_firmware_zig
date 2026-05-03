@@ -75,6 +75,14 @@ pub fn clearKeymapLookup() void {
     keymap_lookup = defaultKeymapLookup;
 }
 
+/// 注入済みキーマップ参照関数を呼び出すラッパー。
+/// production / test それぞれの storage に依存せず、 注入された lookup
+/// を経由してキーコードを取得するための統一エントリポイント。
+/// C ABI export (`compat/qmk_abi.zig`) からも参照される。
+pub fn keymapLookup(l: u5, row: u8, col: u8) Keycode {
+    return keymap_lookup(l, row, col);
+}
+
 /// マトリックス状態: 各行のビットマスク（テスト時は外部から設定可能）
 var matrix_state: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
 var matrix_prev: [MATRIX_ROWS]u32 = .{0} ** MATRIX_ROWS;
