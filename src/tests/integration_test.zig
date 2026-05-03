@@ -46,6 +46,12 @@ const TAPPING_TERM = tapping_mod.TAPPING_TERM;
 // すべての E2E テストはこの位置定数に従い、 `TestFixture.setKeymap()` で
 // 人工キーマップを構築する。 整数リテラルではなく定数を使うことで意図を明示する。
 // row / col は最小キーボード (madbd34: 4x12) でも動くよう 4x12 領域内に収める。
+//
+// この前提は `src/core/test_fixture.zig` の `MIN_ROWS` / `MIN_COLS` と紐付いており、
+// 各 keyboard 定義は test ビルド時に MATRIX_ROWS/COLS が MIN_* 以上であることを
+// comptime assert で検証する。
+// 将来 4x12 未満の keyboard を追加する場合は両者を揃えて引き下げる必要がある。
+// 関連: Issue #393
 
 /// Layer 0 の基本キー
 const Q_ROW: u8 = 0;
