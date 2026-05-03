@@ -55,18 +55,22 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// 案として「lookup 内部でレイヤー解決まで行う signature」 (`fn(layer_state, row, col) -> Keycode`)
 /// が検討されたが、以下の理由で採用しなかった:
 ///
-/// 1. **C ABI 互換性** — C 版 QMK の `keymap_key_to_keycode(uint8_t layer, ...)` は
-///    単一レイヤー引きの signature。 ABI export (`compat/qmk_abi.zig` の
-///    `keymap_key_to_keycode`) を Zig core と DRY に共有するには signature 一致が必須。
-/// 2. **責務分離** — レイヤー解決は core パイプラインの責務 (`resolveKeycode` /
+/// 1. **責務分離** — レイヤー解決は core パイプラインの責務 (`resolveKeycode` /
 ///    `keymapActionResolver`) であり、 source layer cache の更新 (キー押下時に
 ///    レイヤーを記憶し、 リリース時に同じレイヤーを参照する仕組み) と密結合する。
 ///    cache 更新は副作用であり、 「純粋な lookup 関数」 と相容れない。
-/// 3. **DRY** — レイヤー解決を lookup に移すと production / test の両方で同じ
+/// 2. **DRY** — レイヤー解決を lookup に移すと production / test の両方で同じ
 ///    16 layer ループ + 透過判定を書く必要があり重複が発生する。 現状は
 ///    `layer.layerSwitchGetLayer` の一箇所のみで重複なし。
-/// 4. **lookup の責務最小化** — 「keymap storage を引くだけ」 の純粋関数は最も
+/// 3. **lookup の責務最小化** — 「keymap storage を引くだけ」 の純粋関数は最も
 ///    シンプルかつテストしやすい形であり、 production binary でもインライン化が容易。
+///
+/// ## 内部 signature と ABI export signature の差異 (Issue #406)
+///
+/// 内部 `KeymapLookupFn` は `(layer, row, col)` のままだが、 ABI export
+/// `compat/qmk_abi.zig` の `keymap_key_to_keycode` は型安全性のため
+/// `(layer, *const KeyPos)` を採用 (Issue #406 で決定)。
+/// ABI 側で KeyPos からフィールドを展開して内部 lookup に渡す薄い wrapper を持つ。
 pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 
 /// 未設定時のデフォルト lookup。 常に `KC.NO` を返す。
