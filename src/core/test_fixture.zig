@@ -520,7 +520,9 @@ test "TestFixture initWithKeymap: out-of-range な row/col を含む keys は無
     // ここではユーザーが誤って out-of-range な KeymapKey を渡しても
     // クラッシュせず、 範囲内の有効なキーだけが登録されることを検証する。
 
-    // 範囲外座標を comptime で計算 (MATRIX_ROWS=4, MATRIX_COLS=9 を超える値)
+    // 範囲外座標 = 最初の無効インデックス (= MATRIX_ROWS / MATRIX_COLS の値そのもの)。
+    // 実値はキーボード定義 (madbd5: 5x16, madbd34: 4x12 等) によって決まるため、
+    // 数値をハードコードせず keymap_mod の定数を直接参照する。
     const oor_row: u8 = keymap_mod.MATRIX_ROWS;
     const oor_col: u8 = keymap_mod.MATRIX_COLS;
 
