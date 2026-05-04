@@ -1,4 +1,4 @@
-# 動的 keymap (VIA / Vial / EEPROM 書き換え) 機能を再導入する場合のリバート手順
+# 動的 keymap (VIA / Vial / EEPROM 書き換え) 機能を再導入する場合の設計方針
 
 ## 背景
 
@@ -15,22 +15,30 @@ PR #407 (Issue #400) で `src/core/keymap_state.zig` を完全削除し、produc
 (`kb_mod.default_keymap` は `pub const` で flash に配置され、書き換えできない)。
 
 将来 VIA / Vial / EEPROM 書き換え等の動的 keymap 機能を追加する場合、mutable な BSS keymap
-storage を再導入する必要がある。本ドキュメントはそのリバート手順を記録する。
+storage を再導入する必要がある。本ドキュメントはその設計方針を記録する。
+
+### `git revert` で済まない理由
+
+PR #407 以降、後続 PR (#419 等) が `keymap_state` 削除後の API (panic 化された
+`defaultKeymapLookup`、`keyboard.init()` 内の `keymap_lookup` リセット契約)
+に依存している。 単純な `git revert <PR #407>` では後続変更とコンフリクトし、
+storage を機械的に戻すだけでは現行設計の整合性が崩れる。 そのため新規実装に近い
+形で動的 keymap 経路を組み立てる必要があり、本ドキュメントはその設計方針を示す。
 
 ## 経緯となる PR (時系列)
 
 | PR | 概要 |
 |---|---|
-| [#391] | `core/keyboard.zig` 内の `var test_keymap` の関心混在解消の地ならし (コメント整理) |
 | [#394] | `var test_keymap` を新モジュール `core/keymap_state.zig` (`current_keymap` + `getKeymap()`) に分離。 production / test 兼用の global storage |
 | [#398] | 依存性注入により `core/keyboard.zig` から `keymap_state` 直接参照を排除。`KeymapLookupFn` (`fn (u5, u8, u8) Keycode`) と `setKeymapLookup` API を導入 |
+| [#402] | `core/keyboard.zig` と `core/test_fixture.zig` に同名で存在していた `var test_keymap` の衝突を rename で解消 |
 | [#404] | C ABI export `keymap_key_to_keycode` も `keyboard.keymapLookup` 経由に統一。同一 keymap データへのアクセス経路が 1 本化 |
 | [#407] | `keymap_state.zig` 完全削除。`productionKeymapLookup` を `&kb_mod.default_keymap` 直参照に変更。**Issue #400 で本ドキュメントの起点となる「動的 keymap の予定なし」という前提に基づく決断** |
 | [#419] | `defaultKeymapLookup` を panic 化し、`setKeymapLookup` 呼び忘れをサイレントバグ化させない (Issue #401) |
 
-[#391]: https://github.com/amkkr/qmk_firmware_zig/pull/391
 [#394]: https://github.com/amkkr/qmk_firmware_zig/pull/394
 [#398]: https://github.com/amkkr/qmk_firmware_zig/pull/398
+[#402]: https://github.com/amkkr/qmk_firmware_zig/pull/402
 [#404]: https://github.com/amkkr/qmk_firmware_zig/pull/404
 [#407]: https://github.com/amkkr/qmk_firmware_zig/pull/407
 [#419]: https://github.com/amkkr/qmk_firmware_zig/pull/419
@@ -55,19 +63,19 @@ PR #407 以降の現状:
         └──────────── keymap_key_to_keycode (C ABI export)
 
 [test binary]
-  test_fixture.test_keymap (BSS, mutable)
+  test_fixture.fixture_test_keymap (BSS, mutable)
         ▲
         │ fixtureKeymapLookup (test_fixture.zig)
         │
   keyboard.keymap_lookup (test setup で TestFixture が注入)
 ```
 
-依存性注入 (`KeymapLookupFn`) は維持されているため、**keymap 経由の lookup 関数を差し替えるだけで動的 keymap に対応できる構造は残されている**。
+依存性注入 (`KeymapLookupFn`) は維持されているため、**lookup 関数を差し替えるだけで動的 keymap に対応できる構造は残されている**。
 
 つまり「BSS 上の mutable storage と、それを引く lookup 関数」を再導入し、`productionKeymapLookup`
 の差し替え + 起動時のロード処理を加えれば良い。
 
-## リバート時に必要な作業
+## 再導入時に必要な作業
 
 ### 1. mutable storage モジュールの再導入
 
@@ -88,7 +96,7 @@ pub inline fn getKeymap() *Keymap {
 
 **注意点**:
 
-- `inline` 指定は production binary に追加 export を出さないため (LTO 不在環境でもインライン展開させる)
+- `inline` 指定は呼び出し側で常にインライン展開させ、関数呼び出しコストを排除するため (LTO 不在環境でもインライン化させる意図)
 - 動的 keymap で書き込み API を露出する場合は `setKey` / `loadFromEeprom` 等のメソッドを追加
 - VIA / Vial 連携時は EEPROM 書き換え後に `current_keymap` を再ロードする必要がある (キャッシュ整合性)
 
@@ -139,41 +147,14 @@ PR #419 (Issue #401) で `keyboard.init()` は内部で `keymap_lookup = default
 リセットする契約に統一されている。**起動 / リセット後は必ず `setKeymapLookup` を再呼び出しする**
 契約を維持すること (動的 keymap 機能で reload を行う場合も同様)。
 
-### 7. RAM 使用量への影響
-
-- `Keymap` 型の `@sizeOf` は `MATRIX_LAYERS * MATRIX_ROWS * MATRIX_COLS * 2` bytes
-- madbd5 (16 layers × 5 rows × 16 cols × 2): 2,560 bytes
-- madbd34 (16 layers × 4 rows × 12 cols × 2): 1,536 bytes
-
-RP2040 (264 KB SRAM) では問題ないが、リソース制約のあるターゲットで本機能を有効化する場合は
-build option (例: `-Ddynamic_keymap=true`) で切り替えるのが望ましい。
-
-### 8. テストの追加
-
-- 動的 keymap の書き換え API のユニットテスト
-- VIA / Vial プロトコル経由での書き換えシーケンスを再現する integration test
-- EEPROM 永続化と reload の往復テスト
-
-`src/core/test_fixture.zig` の `test_keymap` (mutable BSS) は既に動的書き換えのリファレンス実装に
-なっているので、production 側の動的 API もそれと整合させる。
-
-## 設計判断のメモ
-
-- 単に「動的 keymap を将来追加するかも」というだけなら、PR #407 のリバートで十分
-- VIA / Vial をフルサポートする場合は本ドキュメント以外にも以下が必要:
-  - VIA プロトコル handler (HID raw report 経由)
-  - Vial 暗号化レイヤー (Vial の場合のみ)
-  - EEPROM レイアウト定義 (keymap, encoder, combo 等の領域確保)
-  - `qmk_settings` 相当の設定 API (Vial)
-  - Bootmagic Lite と EEPROM の相互作用 (リセット時のクリア対象)
-- これらは独立した issue / PR で進めること
-
 ## 参考: 削除された keymap_state.zig (PR #407 時点)
 
-PR #407 の commit `220ec49e` の `git show` で全文確認可能:
+PR #407 の削除コミット `220ec49e` の **parent** で全文確認可能 (削除コミット本体では
+ファイル自体が消えているため `^` で 1 つ前を参照する):
 
 ```bash
-git show 220ec49e:src/core/keymap_state.zig
+git show 220ec49e^:src/core/keymap_state.zig
+# 等価: git show 99babb51^:src/core/keymap_state.zig
 ```
 
 ## 関連 Issue
