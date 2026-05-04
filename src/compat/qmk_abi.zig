@@ -40,6 +40,18 @@ export fn keyboard_task() void {
 /// C版の action_exec(keyevent_t) に相当するが、シグネチャは意図的に異なる。
 /// C版は keyevent_t 構造体を値渡しするが、Zig版は C++ テストとの直接リンクを
 /// 目的とせず、FFI 経由の呼び出しやテストアダプタ経由での使用を想定している。
+///
+/// Issue #418 で「`keymap_key_to_keycode` (KeyPos 値渡し) と signature が
+/// 不統一」と再検討されたが、 Won't Do として確定:
+/// - C 側からの caller 0 件 (`quantum/` 配下 grep で確認済み)
+/// - upstream へ push しない一方向同期 (CLAUDE.md 明記)
+/// - upstream 完全準拠 (`KeyEvent` 値渡し) 化は YAGNI、 KeyPos 統一は
+///   `event_type` (TICK/ENCODER/DIP_SWITCH 等) を渡せず将来 encoder ABI で
+///   破綻するため致命的欠点あり
+/// 「異なる責務 (lookup vs state transition、 production lookup vs FFI/テスト
+/// アダプタ) で signature が異なる」 のは合理的設計として確定。 詳細は
+/// `keymap_key_to_keycode` docstring の 「ABI 内 signature 不統一の確定」 節
+/// および Issue #418 を参照。
 export fn action_exec(row: u8, col: u8, pressed: bool, time: u16) void {
     const ev = if (pressed)
         event_mod.KeyEvent.keyPress(row, col, time)
@@ -56,6 +68,10 @@ export fn action_exec(row: u8, col: u8, pressed: bool, time: u16) void {
 /// Process a key record through action resolution and execution
 /// C版の process_record(keyrecord_t*) に相当するが、シグネチャは意図的に異なる。
 /// action_exec と同様、FFI 経由の呼び出しやテストアダプタ経由での使用を想定。
+///
+/// Issue #418 で signature 統一を再検討した結果、 Won't Do として確定。
+/// 詳細は `action_exec` docstring および `keymap_key_to_keycode` docstring の
+/// 「ABI 内 signature 不統一の確定」 節を参照。
 export fn process_record(row: u8, col: u8, pressed: bool, time: u16) void {
     const ev = if (pressed)
         event_mod.KeyEvent.keyPress(row, col, time)
@@ -273,12 +289,38 @@ export fn advance_time(ms: u32) void {
 /// 内部 lookup signature を維持する理由は `core/keyboard.zig` の
 /// `KeymapLookupFn` docstring 参照 (Issue #403 で確定)。
 ///
-/// ## ABI 全体の signature 統一 (将来検討)
+/// ## ABI 内 signature 不統一の確定 (Issue #418, Won't Do)
 ///
-/// 現状、 本ファイル内の他の export 関数 (`action_exec`, `process_record`)
-/// は `(row: u8, col: u8, ...)` 平置き signature。 `keymap_key_to_keycode`
-/// だけ `KeyPos` 値渡しに変更したため、 ABI 内 signature 不統一。
-/// 将来 ABI 全体を `KeyPos` ベースに統一する場合は別 issue で検討する。
+/// 本ファイル内の他の export 関数 (`action_exec`, `process_record`) は
+/// `(row: u8, col: u8, ...)` 平置き signature を維持しており、
+/// `keymap_key_to_keycode` だけ `KeyPos` 値渡しを採用しているため ABI 内
+/// signature は不統一。 これは Issue #418 で 3 案 (A: upstream 完全準拠 /
+/// B: KeyPos 統一 / C: 現状維持 + 明文化) を比較検討した結果、 案 C を採用し
+/// **意図的設計として確定** したもの。
+///
+/// 統一しない理由:
+/// - **責務が異なる**: `keymap_key_to_keycode` は副作用のない lookup、
+///   `action_exec` / `process_record` は state transition。 異なる責務に
+///   異なる signature を割り当てるのは合理的。
+/// - **ターゲットが異なる**: `keymap_key_to_keycode` は upstream の
+///   `keymap_key_to_keycode(uint8_t layer, keypos_t key)` と完全一致して
+///   いるため upstream 整合を優先、 `action_exec` / `process_record` は
+///   FFI / テストアダプタ向けで C++ テスト直接リンクを想定していないため
+///   平置き signature が合理的。
+/// - **YAGNI**: C 側からの caller 0 件 (PR #404 / PR #417 で確認済み)、
+///   upstream へ push しない一方向同期 (CLAUDE.md 明記) のため、 統一の
+///   実利益が薄い。
+/// - **案 B (KeyPos 統一) の致命的欠点**: upstream の `keyevent_t` は
+///   `event_type` (TICK / ENCODER / DIP_SWITCH 等 7 種類) を持つため
+///   `KeyPos` だけでは将来 encoder ABI 等で破綻し、 二重変換ロジックが
+///   永続化する。
+/// - **案 A (upstream 完全準拠) の過剰投資**: `KeyEvent` / `KeyRecord` の
+///   `extern struct` 化 + C ABI layout 互換確保コストに対し、 想定する
+///   C 側 caller が存在しない。
+///
+/// PR #413 (Issue #403, `KeymapLookupFn` 内部 signature 維持) と同じ
+/// Won't Do パターンとして処理。 今後 C 側 caller が登場する等で前提が
+/// 崩れた場合のみ再検討する。
 ///
 /// 注意: `KeyPos` は `packed struct { col: u8, row: u8 }` で `@sizeOf == 2`。
 /// C 側から呼ぶ場合は `keypos_t` (col, row 順) のレイアウトが必要。
