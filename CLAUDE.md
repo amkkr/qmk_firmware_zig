@@ -168,6 +168,7 @@ src/
 
 - 各 HAL モジュールは `builtin.os.tag == .freestanding` で実機/テストを切り替え
 - テスト時はモック実装が自動的に使用され、ホストネイティブで `zig build test` 実行可能
+- production binary の keymap は `kb_mod.default_keymap` (flash 上の静的 const) を直接参照する設計。動的 keymap (VIA / Vial / EEPROM 書き換え) を後から追加する場合は [`docs/dynamic-keymap-revert-plan.md`](docs/dynamic-keymap-revert-plan.md) を参照
 
 ### 移行上の重要ポイント
 
