@@ -316,7 +316,10 @@ export fn advance_time(ms: u32) void {
 ///   永続化する。
 /// - **案 A (upstream 完全準拠) の過剰投資**: `KeyEvent` / `KeyRecord` の
 ///   `extern struct` 化 + C ABI layout 互換確保コストに対し、 想定する
-///   C 側 caller が存在しない。
+///   C 側 caller が存在しない。 ただし公平性のため明記すると、 案 A は将来
+///   encoder ABI 等で `event_type` (TICK / ENCODER / DIP_SWITCH 等) を
+///   渡せる拡張性メリットを持つ。 現時点では encoder 等の C 側 caller 自体が
+///   未実装で YAGNI、 必要になった時点で再評価する。
 ///
 /// PR #413 (Issue #403, `KeymapLookupFn` 内部 signature 維持) と同じ
 /// Won't Do パターンとして処理。 今後 C 側 caller が登場する等で前提が

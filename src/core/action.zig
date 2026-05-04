@@ -87,6 +87,9 @@ const OP_ONESHOT: u8 = 0xF4;
 pub const TAPPING_TOGGLE: u8 = 5;
 
 /// Main entry point: execute action for a key event
+///
+/// ABI signature 設計に関する議論は Issue #418 で確定済み (Won't Do)。
+/// `compat/qmk_abi.zig` の `action_exec` / `keymap_key_to_keycode` docstring 参照。
 pub fn actionExec(record: *KeyRecord) void {
     // ONESHOT_TIMEOUT: タイムアウトチェック
     // C版 action_exec() 冒頭の ONESHOT_TIMEOUT チェックに相当
@@ -116,6 +119,9 @@ pub fn actionExec(record: *KeyRecord) void {
 
 /// Process a record through action resolution and execution
 /// C版 process_record_quantum() と同様に、Key Lock をアクション実行前にチェックする。
+///
+/// ABI signature 設計に関する議論は Issue #418 で確定済み (Won't Do)。
+/// `compat/qmk_abi.zig` の `process_record` / `keymap_key_to_keycode` docstring 参照。
 pub fn processRecord(keyp: *KeyRecord) void {
     const act = resolveAction(keyp.event);
 
