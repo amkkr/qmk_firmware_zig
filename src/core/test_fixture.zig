@@ -86,10 +86,14 @@ comptime {
 // NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
 // あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
 //
-// 命名規則: `fixture_*` prefix は test_fixture 経由のテスト専用 storage を表す。
-// keyboard.zig 内のファイル内テストは別の `kb_test_keymap` を使用する独立 storage を持つ。
-// 同一プロセス内に `test_keymap` という同名 static 変数が 2 か所存在する状況を解消するため
-// 両者を明示的に rename している (Issue #402)。
+// `fixture_` prefix は本ファイルローカルな同名衝突回避のための rename であり、
+// 他の file-scope var に同じ prefix を適用する意図はない
+// (Issue #402: 同名 `test_keymap` の grep / IDE jump-to-definition での
+// 認知的混同を解消するための局所的命名。 keyboard.zig 側は `kb_test_keymap` を使用)。
+//
+// なお「片方の storage に書いて他方が読まれる」 サイレントバグは PR #419 の
+// `defaultKeymapLookup` panic 化により既に物理的に防御済みで、 本 rename は
+// 読みやすさ向上のみが目的。
 
 /// test 専用 keymap storage。 keyboard.zig からは `fixtureKeymapLookup` 経由で参照される。
 var fixture_test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
