@@ -43,7 +43,7 @@ export fn keyboard_task() void {
 ///
 /// Issue #418 で「`keymap_key_to_keycode` (KeyPos 値渡し) と signature が
 /// 不統一」と再検討されたが、 Won't Do として確定:
-/// - C 側からの caller 0 件 (`quantum/` 配下 grep で確認済み)
+/// - C 側からの caller 0 件 (`quantum/` および `tmk_core/` 配下 grep で確認済み)
 /// - upstream へ push しない一方向同期 (CLAUDE.md 明記)
 /// - upstream 完全準拠 (`KeyEvent` 値渡し) 化は YAGNI、 KeyPos 統一は
 ///   `event_type` (TICK/ENCODER/DIP_SWITCH 等) を渡せず将来 encoder ABI で
@@ -307,9 +307,9 @@ export fn advance_time(ms: u32) void {
 ///   いるため upstream 整合を優先、 `action_exec` / `process_record` は
 ///   FFI / テストアダプタ向けで C++ テスト直接リンクを想定していないため
 ///   平置き signature が合理的。
-/// - **YAGNI**: C 側からの caller 0 件 (PR #404 / PR #417 で確認済み)、
-///   upstream へ push しない一方向同期 (CLAUDE.md 明記) のため、 統一の
-///   実利益が薄い。
+/// - **YAGNI**: C 側からの caller 0 件 (`quantum/` および `tmk_core/`
+///   配下 grep で確認済み、 PR #404 / PR #417 でも追認済み)、 upstream へ
+///   push しない一方向同期 (CLAUDE.md 明記) のため、 統一の実利益が薄い。
 /// - **案 B (KeyPos 統一) の致命的欠点**: upstream の `keyevent_t` は
 ///   `event_type` (TICK / ENCODER / DIP_SWITCH 等 7 種類) を持つため
 ///   `KeyPos` だけでは将来 encoder ABI 等で破綻し、 二重変換ロジックが
