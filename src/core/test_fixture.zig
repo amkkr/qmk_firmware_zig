@@ -143,10 +143,14 @@ pub const TestFixture = struct {
     }
 
     /// ドライバ登録を含むフルセットアップ（init() 後、self のアドレスが確定してから呼ぶ）
+    ///
+    /// 呼び出し順序契約 (Issue #401):
+    /// `keyboard.init()` (initTest 内で呼ばれる) は keymap_lookup を defaultKeymapLookup
+    /// に戻すため、 必ず `initTest` の **後に** `setKeymapLookup` を呼ぶこと。
     pub fn setup(self: *TestFixture) void {
         resetKeymap();
-        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.initTest(keyboard.host.HostDriver.from(&self.driver));
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
     }
 
     /// ボイラープレート削減用コンビニエンス API: out ポインタに対して init + setup を行う。
@@ -290,11 +294,15 @@ pub const TestFixture = struct {
     }
 
     /// Reset fixture state for next test
+    ///
+    /// 呼び出し順序契約 (Issue #401):
+    /// `init()` は keymap_lookup と action_resolver をクリアするため、
+    /// `setKeymapLookup` / `setActionResolver` は init() の **後に** 呼ぶこと。
     pub fn reset(self: *TestFixture) void {
         self.driver.reset();
         resetKeymap();
-        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.init();
+        keyboard.setKeymapLookup(fixtureKeymapLookup);
         keyboard.host.setDriver(keyboard.host.HostDriver.from(&self.driver));
         @import("action.zig").setActionResolver(keyboard.keymapActionResolver);
     }

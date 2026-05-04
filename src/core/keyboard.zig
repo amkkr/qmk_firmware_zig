@@ -86,7 +86,7 @@ pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 /// 現状のテストパターン (`fixture.deinit()` を `defer` で予約し、 その後
 /// `task()` を呼ばない) では問題にならない。
 fn defaultKeymapLookup(_: u5, _: u8, _: u8) Keycode {
-    @panic("keymap_lookup not initialized — call keyboard.setKeymapLookup() in startup");
+    @panic("keymap_lookup not initialized - call keyboard.setKeymapLookup() in startup");
 }
 
 /// 現在注入されているキーマップ参照関数。
@@ -170,9 +170,13 @@ pub fn init() void {
     matrix_state = .{0} ** MATRIX_ROWS;
     matrix_prev = .{0} ** MATRIX_ROWS;
     secure_consumed = .{0} ** MATRIX_ROWS;
-    // 注: keymap storage 自体のリセットは呼び出し側 (production startup / test fixture)
-    // の責務とする。 keyboard コアパイプラインは keymap storage の所有権を持たず、
-    // `keymap_lookup` 経由で参照するのみ。
+    // Issue #401: test 境界で keymap_lookup が前テストからリークすると、 panic
+    // 化された defaultKeymapLookup の検出網が無効化される。 init() で
+    // defaultKeymapLookup に戻し、 呼び出し側 (production startup / test setup)
+    // が `setKeymapLookup` を init() の後に必ず呼ぶ契約に統一する。
+    // 注: keymap storage 自体のリセットは呼び出し側の責務 (storage の所有権を
+    // keyboard コアパイプラインは持たないため)。
+    keymap_lookup = defaultKeymapLookup;
 }
 
 /// テスト用: フル初期化（ドライバ設定 + アクションリゾルバ設定含む）
@@ -370,8 +374,10 @@ fn testKeymapLookup(l: u5, row: u8, col: u8) Keycode {
 fn setup() *TestMockDriver {
     mock_driver = .{};
     test_keymap = keymap_mod.emptyKeymap();
-    setKeymapLookup(testKeymapLookup);
+    // 呼び出し順序契約 (Issue #401): init() は keymap_lookup をクリアするため、
+    // 必ず initTest の **後に** setKeymapLookup を呼ぶ。
     initTest(host.HostDriver.from(&mock_driver));
+    setKeymapLookup(testKeymapLookup);
     return &mock_driver;
 }
 

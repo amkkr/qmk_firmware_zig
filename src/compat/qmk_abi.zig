@@ -421,21 +421,29 @@ test "qmk_abi: host_set_driver/host_get_driver null" {
     try testing.expectEqual(@as(?*const CHostDriver, null), host_get_driver());
 }
 
+/// Issue #401 のテスト用 file-scope な lookup スタブ。
+/// 「ABI 経由で action_exec / process_record を呼んでもクラッシュしない」 を
+/// 検証するため、 panic しない最小の lookup として常に `KC.NO` を返す。
+///
+/// anonymous struct (test 内 inline 定義) ではなく file-scope に出した理由:
+/// 関数ポインタ取得を test 関数本体の comptime コンテキスト外で完結させ、
+/// test 順序を入れ替えても挙動が変わらないことを構造的に保証する。
+fn testNoCrashLookup(_: u5, _: u8, _: u8) @import("core").keycode.Keycode {
+    return @import("core").keycode.KC.NO;
+}
+
 test "qmk_abi: action_exec does not crash" {
-    // keymap_lookup / action_resolver の前テストからのリークを排除し、
     // 「ABI 経由で action_exec を呼んでもクラッシュしない」 を純粋に検証する。
     // Issue #401: defaultKeymapLookup が panic 化されたため、 keymap_lookup を
-    // 呼びうるパスを通すテストは明示的に lookup を注入する必要がある。
-    const keycode_mod = @import("core").keycode;
-    const TestStorage = struct {
-        fn lookup(_: u5, _: u8, _: u8) keycode_mod.Keycode {
-            return keycode_mod.KC.NO;
-        }
-    };
-    keyboard_mod.setKeymapLookup(TestStorage.lookup);
+    // 呼びうるパスを通すテストは明示的に lookup と action_resolver を注入する。
+    //
+    // 呼び出し順序契約: keyboard_init() は内部で keymap_lookup と action_resolver を
+    // リセットするため、 必ず init の **後に** setKeymapLookup / setActionResolver
+    // を呼ぶこと。
+    keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
     defer keyboard_mod.clearKeymapLookup();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
-    keyboard_init();
 
     action_exec(0, 0, true, 100);
     action_exec(0, 0, false, 200);
@@ -443,16 +451,10 @@ test "qmk_abi: action_exec does not crash" {
 
 test "qmk_abi: process_record does not crash" {
     // Issue #401: action_exec does not crash と同様の理由で lookup / resolver を注入。
-    const keycode_mod = @import("core").keycode;
-    const TestStorage = struct {
-        fn lookup(_: u5, _: u8, _: u8) keycode_mod.Keycode {
-            return keycode_mod.KC.NO;
-        }
-    };
-    keyboard_mod.setKeymapLookup(TestStorage.lookup);
+    keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
     defer keyboard_mod.clearKeymapLookup();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
-    keyboard_init();
 
     process_record(0, 0, true, 100);
     process_record(0, 0, false, 200);

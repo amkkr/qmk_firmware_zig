@@ -760,6 +760,11 @@ pub fn reset() void {
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
     key_lock.reset();
+    // Issue #401: テスト境界で action_resolver が前テストからリークすると
+    // keymap_lookup が未注入の状態でも resolver 経由で呼ばれてしまい panic する。
+    // reset() で resolver を null に戻し、 各呼び出し側 (startup / test setup)
+    // が `setActionResolver` を明示的に呼ぶ契約に統一する。
+    action_resolver = null;
 }
 
 // ============================================================
