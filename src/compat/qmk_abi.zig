@@ -422,13 +422,38 @@ test "qmk_abi: host_set_driver/host_get_driver null" {
 }
 
 test "qmk_abi: action_exec does not crash" {
+    // keymap_lookup / action_resolver の前テストからのリークを排除し、
+    // 「ABI 経由で action_exec を呼んでもクラッシュしない」 を純粋に検証する。
+    // Issue #401: defaultKeymapLookup が panic 化されたため、 keymap_lookup を
+    // 呼びうるパスを通すテストは明示的に lookup を注入する必要がある。
+    const keycode_mod = @import("core").keycode;
+    const TestStorage = struct {
+        fn lookup(_: u5, _: u8, _: u8) keycode_mod.Keycode {
+            return keycode_mod.KC.NO;
+        }
+    };
+    keyboard_mod.setKeymapLookup(TestStorage.lookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     keyboard_init();
+
     action_exec(0, 0, true, 100);
     action_exec(0, 0, false, 200);
 }
 
 test "qmk_abi: process_record does not crash" {
+    // Issue #401: action_exec does not crash と同様の理由で lookup / resolver を注入。
+    const keycode_mod = @import("core").keycode;
+    const TestStorage = struct {
+        fn lookup(_: u5, _: u8, _: u8) keycode_mod.Keycode {
+            return keycode_mod.KC.NO;
+        }
+    };
+    keyboard_mod.setKeymapLookup(TestStorage.lookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     keyboard_init();
+
     process_record(0, 0, true, 100);
     process_record(0, 0, false, 200);
 }

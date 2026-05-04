@@ -73,17 +73,26 @@ pub const MATRIX_COLS = keymap_mod.MATRIX_COLS;
 /// ABI 側で KeyPos からフィールドを展開して内部 lookup に渡す薄い wrapper を持つ。
 pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 
-/// 未設定時のデフォルト lookup。 常に `KC.NO` を返す。
+/// 未設定時のデフォルト lookup。 呼ばれた時点で panic する。
+///
 /// 関数ポインタを optional にすると hot path の null チェックが残るため、
-/// non-optional + デフォルト関数で安全側に倒す。
+/// non-optional + デフォルト関数で fail-fast に倒す。
+///
+/// 旧実装は `KC.NO` を返していたが、 production で `setKeymapLookup` の呼び忘れが
+/// 「全キー無反応」 のサイレント・バグになり原因特定が困難だった (Issue #401)。
+/// panic 化により未初期化状態を即座に検出する。
+///
+/// teardown (`clearKeymapLookup`) 後にこの関数が呼ばれた場合も panic するが、
+/// 現状のテストパターン (`fixture.deinit()` を `defer` で予約し、 その後
+/// `task()` を呼ばない) では問題にならない。
 fn defaultKeymapLookup(_: u5, _: u8, _: u8) Keycode {
-    return keycode.KC.NO;
+    @panic("keymap_lookup not initialized — call keyboard.setKeymapLookup() in startup");
 }
 
 /// 現在注入されているキーマップ参照関数。
 /// production startup (`main.zig`) / test setup (`test_fixture.zig`) で必ず設定する。
-/// 未設定の状態で `task()` が走っても `defaultKeymapLookup` が `KC.NO` を返すため
-/// クラッシュはしないが、 全キーが KC_NO 扱いになる。
+/// 未設定の状態で `keymap_lookup` が呼ばれた場合は `defaultKeymapLookup` が panic
+/// し、 setKeymapLookup の呼び忘れを即座に検出する (Issue #401)。
 var keymap_lookup: KeymapLookupFn = defaultKeymapLookup;
 
 /// キーマップ参照関数を注入する。
@@ -92,7 +101,10 @@ pub fn setKeymapLookup(lookup: KeymapLookupFn) void {
     keymap_lookup = lookup;
 }
 
-/// キーマップ参照関数をデフォルト (常に KC.NO) に戻す (test の teardown 用)。
+/// キーマップ参照関数をデフォルト (panic 動作) に戻す (test の teardown 用)。
+///
+/// teardown 後に `keymap_lookup` が呼ばれると panic する。 テスト独立性は
+/// 各テストの setup で `setKeymapLookup` が再注入されることで担保される。
 pub fn clearKeymapLookup() void {
     keymap_lookup = defaultKeymapLookup;
 }
