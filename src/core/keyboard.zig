@@ -109,7 +109,7 @@ pub fn clearKeymapLookup() void {
     keymap_lookup = defaultKeymapLookup;
 }
 
-/// 外部 (qmk_abi 等) からの安定 entrypoint。 hot path は keymap_lookup を直接使用 (Issue #405、 PR #398 経緯)。
+/// 外部 ABI 向け安定 entrypoint。 内部 hot path は keymap_lookup を直接使用。
 pub fn keymapLookup(l: u5, row: u8, col: u8) Keycode {
     return keymap_lookup(l, row, col);
 }
