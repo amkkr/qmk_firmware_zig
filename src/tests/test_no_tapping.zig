@@ -44,7 +44,7 @@ const KC = keycode_mod.KC;
 const TAPPING_TERM = @import("core").test_fixture.TAPPING_TERM;
 
 /// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
-/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// (withSetup → init() + setup() で既にセットアップ済み)。
 /// NO_ACTION_TAPPING のみ有効化。
 fn setupNoTapping(_: *TestFixture) void {
     action_code.no_action_tapping = true;
@@ -52,7 +52,7 @@ fn setupNoTapping(_: *TestFixture) void {
 }
 
 /// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
-/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// (withSetup → init() + setup() で既にセットアップ済み)。
 /// NO_ACTION_TAPPING + NO_ACTION_TAPPING_MODTAP_MODS を有効化。
 fn setupNoModTapMods(_: *TestFixture) void {
     action_code.no_action_tapping = true;
