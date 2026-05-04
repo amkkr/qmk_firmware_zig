@@ -150,34 +150,16 @@ pub const TestFixture = struct {
         keyboard.setKeymapLookup(fixtureKeymapLookup);
     }
 
-    /// ボイラープレート削減用コンビニエンス API: out ポインタに対して init + setup を行う。
+    /// ボイラープレート削減用コンビニエンス API: init + setup 後に追加の setup_fn を実行する。
+    /// 共通のキーマップセットアップ等を関数化して各テストから注入できる。
     ///
     /// out ポインタ版を採用する理由:
-    /// (1) `var fixture = TestFixture.initAndSetup();` のような戻り値式中使用を構文的に防ぐ
+    /// (1) `var fixture = TestFixture.withSetup(...);` のような戻り値式中使用を構文的に防ぐ
     ///     (戻り値が void のため、 値を受ける書き方ができない)。
     /// (2) アドレス安定性が API レベルの契約として明示される
     ///     (呼び出し側が `var fixture: TestFixture = undefined;` で記憶域を確保することを強制する)。
-    /// (3) host driver が保持する self pointer (`&self.driver`) のライフタイムが
+    /// (3) setup_fn / host driver が保持する `&out.driver` 等のライフタイムが
     ///     呼び出し側のスコープに紐付くという意図がシグネチャから明確になる。
-    ///
-    /// 標準の使い方:
-    /// ```zig
-    /// var fixture: TestFixture = undefined;
-    /// TestFixture.initAndSetup(&fixture);
-    /// defer fixture.deinit();
-    /// ```
-    pub fn initAndSetup(out: *TestFixture) void {
-        out.* = TestFixture.init();
-        out.setup();
-    }
-
-    /// ボイラープレート削減用コンビニエンス API: initAndSetup 後に追加の setup_fn を実行する。
-    /// 共通のキーマップセットアップ等を関数化して各テストから注入できる。
-    ///
-    /// out ポインタ版を採用する理由は `initAndSetup` と同じ:
-    /// (1) 戻り値式中使用を構文的に防ぐ
-    /// (2) アドレス安定性が API レベルの契約として明示される
-    /// (3) setup_fn が `&out.driver` 等を保持する可能性に備えたライフタイム意図の明確化
     ///
     /// 標準の使い方:
     /// ```zig
@@ -185,15 +167,19 @@ pub const TestFixture = struct {
     /// TestFixture.withSetup(&fixture, setupKeymap);
     /// defer fixture.deinit();
     /// ```
+    ///
+    /// 単に `init() + setup()` だけが必要な場合は本 API を使わず、
+    /// 直接 `var fixture = TestFixture.init(); fixture.setup();` と書くこと。
     pub fn withSetup(out: *TestFixture, comptime setup_fn: fn (*TestFixture) void) void {
-        TestFixture.initAndSetup(out);
+        out.* = TestFixture.init();
+        out.setup();
         setup_fn(out);
     }
 
     /// ボイラープレート削減用コンビニエンス API: init + setup + setKeymap を一括で実行する。
     /// 単純なキーマップだけを設定するテストで使用する。
     ///
-    /// out ポインタ版を採用する理由は `initAndSetup` と同じ:
+    /// out ポインタ版を採用する理由は `withSetup` と同じ:
     /// (1) 戻り値式中使用を構文的に防ぐ
     /// (2) アドレス安定性が API レベルの契約として明示される
     /// (3) host driver が保持する `&out.driver` のライフタイム意図の明確化
@@ -207,7 +193,8 @@ pub const TestFixture = struct {
     /// defer fixture.deinit();
     /// ```
     pub fn initWithKeymap(out: *TestFixture, keys: []const KeymapKey) void {
-        TestFixture.initAndSetup(out);
+        out.* = TestFixture.init();
+        out.setup();
         out.setKeymap(keys);
     }
 
@@ -431,27 +418,6 @@ test "TestFixture resolveKeycode transparency" {
 // ============================================================
 // コンビニエンス API のテスト
 // ============================================================
-
-test "TestFixture initAndSetup convenience API" {
-    var fixture: TestFixture = undefined;
-    TestFixture.initAndSetup(&fixture);
-    defer fixture.deinit();
-
-    fixture.setKeymap(&.{
-        KeymapKey.init(0, 0, 0, KC.A),
-    });
-
-    // 通常の init() + setup() と同じ挙動になることを確認
-    fixture.pressKey(0, 0);
-    fixture.runOneScanLoop();
-
-    try std.testing.expect(fixture.driver.keyboard_count >= 1);
-    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x04));
-
-    fixture.releaseKey(0, 0);
-    fixture.runOneScanLoop();
-    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
-}
 
 test "TestFixture withSetup convenience API" {
     const setup_fn = struct {

@@ -45,7 +45,7 @@ const TEST_UNLOCK_SEQUENCE = [_]secure.KeyPos{
 
 /// テスト共通セットアップ（C版 Secure::SetUp() 相当）
 /// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
-/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// (withSetup → init() + setup() で既にセットアップ済み)。
 fn setupFixture(_: *TestFixture) void {
     timer.mockReset();
     secure.reset();
