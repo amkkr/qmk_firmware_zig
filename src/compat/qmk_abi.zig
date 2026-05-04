@@ -253,7 +253,7 @@ export fn advance_time(ms: u32) void {
 /// Get keycode at given layer and position (C ABI export)
 /// 依存性注入された keymap lookup (`keyboard.keymapLookup`) 経由で参照する。
 /// production binary では `productionKeymapLookup` 経由で `kb_mod.default_keymap`
-/// (flash 上の静的 const) を引き、 test binary では `test_fixture.test_keymap` (BSS)
+/// (flash 上の静的 const) を引き、 test binary では `test_fixture.fixture_test_keymap` (BSS)
 /// を引くため、 ABI からそれぞれの実体を直接触ることはない (DRY 統一)。
 ///
 /// ## Signature: `(layer: u8, key_pos: KeyPos) u16` (Issue #406)

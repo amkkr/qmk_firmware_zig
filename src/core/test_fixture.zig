@@ -85,31 +85,36 @@ comptime {
 //
 // NOTE: TestFixture struct 内に同名の reset メソッド (fixture 全体の状態リセット) が
 // あるため、 file-scope 関数は keymap 関連であることを明示する命名にしている。
+//
+// 命名規則: `fixture_*` prefix は test_fixture 経由のテスト専用 storage を表す。
+// keyboard.zig 内のファイル内テストは別の `kb_test_keymap` を使用する独立 storage を持つ。
+// 同一プロセス内に `test_keymap` という同名 static 変数が 2 か所存在する状況を解消するため
+// 両者を明示的に rename している (Issue #402)。
 
 /// test 専用 keymap storage。 keyboard.zig からは `fixtureKeymapLookup` 経由で参照される。
-var test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
+var fixture_test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
 
-/// keyboard.zig に注入する lookup 関数。 純粋関数として `test_keymap` を引く。
+/// keyboard.zig に注入する lookup 関数。 純粋関数として `fixture_test_keymap` を引く。
 fn fixtureKeymapLookup(l: u5, row: u8, col: u8) Keycode {
-    return keymap_mod.keymapKeyToKeycode(&test_keymap, l, row, col);
+    return keymap_mod.keymapKeyToKeycode(&fixture_test_keymap, l, row, col);
 }
 
 /// keymap の 1 キーをセットする (範囲外は no-op)。 test 専用。
 pub fn setKey(l: u5, row: u8, col: u8, kc: Keycode) void {
     if (row < keymap_mod.MATRIX_ROWS and col < keymap_mod.MATRIX_COLS and l < keymap_mod.MAX_LAYERS) {
-        test_keymap[l][row][col] = kc;
+        fixture_test_keymap[l][row][col] = kc;
     }
 }
 
 /// keymap を空 (KC_NO 全埋め) にリセットする。 test 専用。
 pub fn resetKeymap() void {
-    test_keymap = keymap_mod.emptyKeymap();
+    fixture_test_keymap = keymap_mod.emptyKeymap();
 }
 
 /// test 用 keymap への可変ポインタを返す。 test コード内で keymap 全体を参照したい
 /// (例: `keymap_mod.resolveKeycode(km, ...)` で純関数的に検証する) 場合に使用する。
 pub fn getTestKeymap() *keymap_mod.Keymap {
-    return &test_keymap;
+    return &fixture_test_keymap;
 }
 
 /// Key definition for test keymaps
