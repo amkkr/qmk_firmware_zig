@@ -48,7 +48,7 @@ const LEADER_TIMEOUT = leader.LEADER_TIMEOUT;
 
 /// テスト共通セットアップ
 /// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
-/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// (withSetup → init() + setup() で既にセットアップ済み)。
 fn setupFixture(_: *TestFixture) void {
     timer.mockReset();
     leader.reset();

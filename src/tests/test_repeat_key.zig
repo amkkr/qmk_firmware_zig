@@ -58,7 +58,7 @@ const AUTO_SHIFT_TIMEOUT = auto_shift.AUTO_SHIFT_TIMEOUT;
 
 /// テスト用のフィクスチャセットアップ
 /// `TestFixture.withSetup` から呼び出されることを前提とし、 `setup()` 自体は呼ばない
-/// (withSetup → initAndSetup → setup() で既にセットアップ済み)。
+/// (withSetup → init() + setup() で既にセットアップ済み)。
 fn setupFixture(_: *TestFixture) void {
     timer.mockReset();
     repeat_key.reset();
