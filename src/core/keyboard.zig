@@ -109,10 +109,7 @@ pub fn clearKeymapLookup() void {
     keymap_lookup = defaultKeymapLookup;
 }
 
-/// 注入済みキーマップ参照関数を呼び出すラッパー。
-/// production / test それぞれの storage に依存せず、 注入された lookup
-/// を経由してキーコードを取得するための統一エントリポイント。
-/// C ABI export (`compat/qmk_abi.zig`) からも参照される。
+/// 外部 ABI 向け安定 entrypoint。 内部 hot path は keymap_lookup を直接使用。
 pub fn keymapLookup(l: u5, row: u8, col: u8) Keycode {
     return keymap_lookup(l, row, col);
 }
