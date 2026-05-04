@@ -491,3 +491,64 @@ test "TestFixture initWithKeymap convenience API" {
     try std.testing.expect(fixture.driver.keyboard_count >= 1);
     try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x07)); // KC_D
 }
+
+// ============================================================
+// コンビニエンス API のエッジケーステスト (Issue #411)
+// ============================================================
+
+test "TestFixture initWithKeymap: 空 keymap でも初期化が完了する" {
+    // 空配列を渡してもクラッシュせず、 全キーが KC_NO 状態になる。
+    // setup の冪等性 (resetKeymap → 全 KC_NO) と、 deinit が正常に呼べることを保証する。
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{});
+    defer fixture.deinit();
+
+    // 何のキーも登録されていないので、 (0,0) を押下しても
+    // KC_NO として処理され、 keyboard report にキーが乗らない。
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+}
+
+test "TestFixture initWithKeymap: out-of-range な row/col を含む keys は無視される (no-op)" {
+    // setKey は row >= MATRIX_ROWS / col >= MATRIX_COLS / layer >= MAX_LAYERS の
+    // いずれかが満たされた場合に no-op になる契約 (test_fixture.zig: setKey)。
+    // ここではユーザーが誤って out-of-range な KeymapKey を渡しても
+    // クラッシュせず、 範囲内の有効なキーだけが登録されることを検証する。
+
+    // 範囲外座標を comptime で計算 (MATRIX_ROWS=4, MATRIX_COLS=9 を超える値)
+    const oor_row: u8 = keymap_mod.MATRIX_ROWS;
+    const oor_col: u8 = keymap_mod.MATRIX_COLS;
+
+    var fixture: TestFixture = undefined;
+    TestFixture.initWithKeymap(&fixture, &.{
+        // 有効なキー
+        KeymapKey.init(0, 0, 0, KC.A),
+        // row 範囲外 → 無視されるべき
+        KeymapKey.init(0, oor_row, 0, KC.B),
+        // col 範囲外 → 無視されるべき
+        KeymapKey.init(0, 0, oor_col, KC.C),
+        // row, col 共に範囲外 → 無視されるべき
+        KeymapKey.init(0, oor_row, oor_col, KC.D),
+    });
+    defer fixture.deinit();
+
+    // 有効なキーは押せる
+    fixture.pressKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().hasKey(0x04)); // KC_A
+
+    fixture.releaseKey(0, 0);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+
+    // 範囲外キーは登録されていないので、 マトリックス内の他の位置 (0, 1) は KC_NO のまま
+    // (= report にキーが乗らない)
+    fixture.pressKey(0, 1);
+    fixture.runOneScanLoop();
+    try std.testing.expect(fixture.driver.lastKeyboardReport().isEmpty());
+}
