@@ -363,18 +363,7 @@ const TestMockDriver = FixedTestDriver(64, 16);
 
 var mock_driver: TestMockDriver = .{};
 
-/// keyboard.zig 内テスト専用 keymap storage と lookup。
-/// production code には影響しない (test_fixture.zig の `fixture_test_keymap`
-/// とは別の独立した static 変数)。
-///
-/// `kb_` prefix は本ファイルローカルな同名衝突回避のための rename であり、
-/// 他の file-scope var (`mock_driver` 等) に同じ prefix を適用する意図はない
-/// (Issue #402: 同名 `test_keymap` の grep / IDE jump-to-definition での
-/// 認知的混同を解消するための局所的命名)。
-///
-/// なお「片方の storage に書いて他方が読まれる」 サイレントバグは PR #419 の
-/// `defaultKeymapLookup` panic 化により既に物理的に防御済みで、 本 rename は
-/// 読みやすさ向上のみが目的。
+/// keyboard.zig 内テスト専用 keymap storage (Issue #402)。
 var kb_test_keymap: keymap_mod.Keymap = keymap_mod.emptyKeymap();
 
 fn kbTestKeymapLookup(l: u5, row: u8, col: u8) Keycode {
