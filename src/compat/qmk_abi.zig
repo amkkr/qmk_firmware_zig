@@ -415,7 +415,7 @@ test "qmk_abi: keyboard_init/task lifecycle" {
     // init の **後に** setKeymapLookup / setActionResolver を呼ぶこと。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -432,7 +432,7 @@ test "qmk_abi: register_code/unregister_code with mock driver" {
     // panic を招く。 各テストの自己完結性のため明示的に注入する。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -456,7 +456,7 @@ test "qmk_abi: register_code modifier key" {
     // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -481,7 +481,7 @@ test "qmk_abi: clear_keyboard clears all state" {
     // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -499,7 +499,7 @@ test "qmk_abi: host_set_driver/host_get_driver null" {
     // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
