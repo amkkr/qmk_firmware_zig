@@ -200,7 +200,7 @@ pub const TestFixture = struct {
 
     pub fn deinit(_: *TestFixture) void {
         keyboard.host.clearDriver();
-        keyboard.clearKeymapLookup();
+        keyboard.resetKeymapLookupToPanic();
     }
 
     // ============================================================

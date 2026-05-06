@@ -82,7 +82,7 @@ pub const KeymapLookupFn = *const fn (l: u5, row: u8, col: u8) Keycode;
 /// 「全キー無反応」 のサイレント・バグになり原因特定が困難だった (Issue #401)。
 /// panic 化により未初期化状態を即座に検出する。
 ///
-/// teardown (`clearKeymapLookup`) 後にこの関数が呼ばれた場合も panic するが、
+/// teardown (`resetKeymapLookupToPanic`) 後にこの関数が呼ばれた場合も panic するが、
 /// 現状のテストパターン (`fixture.deinit()` を `defer` で予約し、 その後
 /// `task()` を呼ばない) では問題にならない。
 fn defaultKeymapLookup(_: u5, _: u8, _: u8) Keycode {
@@ -101,11 +101,16 @@ pub fn setKeymapLookup(lookup: KeymapLookupFn) void {
     keymap_lookup = lookup;
 }
 
-/// キーマップ参照関数をデフォルト (panic 動作) に戻す (test の teardown 用)。
+/// キーマップ参照関数を panic 動作 (デフォルト未初期化状態) にリセットする。
 ///
-/// teardown 後に `keymap_lookup` が呼ばれると panic する。 テスト独立性は
-/// 各テストの setup で `setKeymapLookup` が再注入されることで担保される。
-pub fn clearKeymapLookup() void {
+/// テスト独立性のため teardown で使用する。 リセット後に `keymap_lookup` が
+/// 呼ばれた場合は `defaultKeymapLookup` が panic し、 次のテストの setup で
+/// `setKeymapLookup` が再注入されることで前テストからの状態漏れを遮断する。
+///
+/// 名前のとおり 「panic 動作 (=未初期化デフォルト) に戻す」 セマンティクスで
+/// あり、 単に関数ポインタをクリアして null 化するわけではない (関数ポインタは
+/// non-optional のため null にはできない設計; 詳細は `defaultKeymapLookup` 参照)。
+pub fn resetKeymapLookupToPanic() void {
     keymap_lookup = defaultKeymapLookup;
 }
 
@@ -379,7 +384,7 @@ fn setup() *TestMockDriver {
 
 fn teardown() void {
     host.clearDriver();
-    clearKeymapLookup();
+    resetKeymapLookupToPanic();
 }
 
 test "keyboard_task: 単一キー押下→リリースでHIDレポートが正しく生成される" {
