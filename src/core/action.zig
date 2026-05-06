@@ -40,7 +40,39 @@ const KeyEvent = event_mod.KeyEvent;
 /// Given a KeyEvent, return the action code to execute.
 pub const ActionResolver = *const fn (event: KeyEvent) Action;
 
-var action_resolver: ?ActionResolver = null;
+/// production / test 起動経路で `setActionResolver` が呼び忘れられた場合の
+/// 安全網 (Issue #421, #423)。 旧実装は `null` フォールバックで `ACTION_NO` を
+/// 黙って返していたため呼び忘れを検出できなかった。 production startup
+/// (`keyboard.init()`) と qmk_abi の `defer clearActionResolver()` 経由で
+/// この panic 化 default に戻すことで、 stale な状態で resolveAction を
+/// 通したケースを即時クラッシュとして捕捉する。
+fn defaultActionResolver(ev: KeyEvent) Action {
+    _ = ev;
+    @panic("action_resolver not initialized - call action.setActionResolver() in startup");
+}
+
+/// テスト境界 (`action.reset()`) 用の no-op resolver。
+///
+/// `processAction` は OSL release path で内部的に `processRecord` →
+/// `resolveAction` を呼ぶため、 explicit action を渡すだけのテストでも
+/// resolver が必要になるケースがある。 これらのテストは本来 resolver の
+/// 振る舞いに依存しないので、 ACTION_NO を返して silent に処理させる。
+///
+/// production 起動経路では `keyboard.init()` がこの noop の上に
+/// `clearActionResolver()` で panic 化 default を再設定するため、
+/// 「呼び忘れ即 panic」契約は維持される。
+fn noopActionResolver(ev: KeyEvent) Action {
+    _ = ev;
+    return .{ .code = action_code.ACTION_NO };
+}
+
+/// アクション解決コールバック。
+///
+/// 初期値は `defaultActionResolver` (panic) で、 `setActionResolver` 呼び忘れを
+/// 即座に検出する (Issue #421, #423)。 `action.reset()` が呼ばれると
+/// `noopActionResolver` (silent ACTION_NO) に切り替わり、 テスト境界での
+/// 偶発的な resolveAction 呼び出しを panic させずに通過させる。
+var action_resolver: ActionResolver = defaultActionResolver;
 
 /// 直前に解決されたキーコード（Key Lock 用）
 /// keyboard.zig の keymapActionResolver から設定され、processRecord で参照される。
@@ -60,7 +92,17 @@ pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
 
-pub fn getActionResolver() ?ActionResolver {
+/// 注入済みの action_resolver を panic 化された default に戻す。
+///
+/// テスト境界で resolver がリークすると、 後続テストや内部実装変更で stale な
+/// resolver が呼ばれ偶発的な誤動作を招く。 各テストの setup で
+/// `setActionResolver` を再注入する契約と組み合わせることで、 resolver 注入の
+/// 呼び忘れを panic として即座に検出する。
+pub fn clearActionResolver() void {
+    action_resolver = defaultActionResolver;
+}
+
+pub fn getActionResolver() ActionResolver {
     return action_resolver;
 }
 
@@ -70,10 +112,7 @@ pub fn setLastResolvedKeycode(kc: keycode_mod.Keycode) void {
 }
 
 fn resolveAction(event: KeyEvent) Action {
-    if (action_resolver) |resolver| {
-        return resolver(event);
-    }
-    return .{ .code = action_code.ACTION_NO };
+    return action_resolver(event);
 }
 
 /// Layer tap operations (encoded in the key.code field)
@@ -766,11 +805,15 @@ pub fn reset() void {
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
     key_lock.reset();
-    // Issue #401: テスト境界で action_resolver が前テストからリークすると
-    // keymap_lookup が未注入の状態でも resolver 経由で呼ばれてしまい panic する。
-    // reset() で resolver を null に戻し、 各呼び出し側 (startup / test setup)
-    // が `setActionResolver` を明示的に呼ぶ契約に統一する。
-    action_resolver = null;
+    // Issue #401, #421, #423: テスト境界で action_resolver が前テストからリーク
+    // すると、 keymap_lookup が未注入の状態でも resolver 経由で呼ばれてしまい
+    // 偶発的成功 / 失敗を招く。 reset() で resolver を `noopActionResolver` に
+    // 戻し、 stale な resolver が次テストへ漏れることを防ぐ。
+    //
+    // 一方 production 起動経路では `keyboard.init()` が reset() 後に
+    // `clearActionResolver()` を呼んで panic 化 default に再設定するため、
+    // production / qmk_abi で「呼び忘れ即 panic」の契約は引き続き保証される。
+    action_resolver = noopActionResolver;
 }
 
 // ============================================================

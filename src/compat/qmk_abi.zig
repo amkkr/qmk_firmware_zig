@@ -405,7 +405,20 @@ test "qmk_abi: timer_clear resets timer" {
 }
 
 test "qmk_abi: keyboard_init/task lifecycle" {
+    // Issue #420, #421, #423: keyboard_init() は keymap_lookup と action_resolver
+    // を panic 化された default にリセットする (defaultKeymapLookup /
+    // defaultActionResolver)。 task() の内部実装が将来 「常に lookup を呼ぶ」
+    // 形に変わっても fail しないよう、 init 直後に明示的に lookup と resolver
+    // を注入する。
+    //
+    // 呼び出し順序契約: keyboard_init() 内部で両者をリセットするため、 必ず
+    // init の **後に** setKeymapLookup / setActionResolver を呼ぶこと。
     keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
+
     keyboard_task();
 }
 
@@ -413,7 +426,16 @@ test "qmk_abi: register_code/unregister_code with mock driver" {
     const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
+    // Issue #420: register_code / unregister_code 自体は lookup / resolver に
+    // 触れないが、 keyboard_init() による reset 後に未注入のまま放置すると
+    // テスト境界で stale な状態を残し、 後続テストや内部実装変更で偶発的な
+    // panic を招く。 各テストの自己完結性のため明示的に注入する。
     keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
+
     var mock = MockDriver{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock));
     defer host_mod.clearDriver();
@@ -431,7 +453,13 @@ test "qmk_abi: register_code modifier key" {
     const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
+    // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
+
     host_mod.hostReset(); // real_mods を確実にクリアして前テストの影響を排除
     var mock = MockDriver{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock));
@@ -450,7 +478,13 @@ test "qmk_abi: clear_keyboard clears all state" {
     const FixedTestDriver = @import("core").test_driver.FixedTestDriver;
     const MockDriver = FixedTestDriver(32, 4);
 
+    // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
+
     var mock = MockDriver{};
     host_mod.setDriver(host_mod.HostDriver.from(&mock));
     defer host_mod.clearDriver();
@@ -462,7 +496,13 @@ test "qmk_abi: clear_keyboard clears all state" {
 }
 
 test "qmk_abi: host_set_driver/host_get_driver null" {
+    // Issue #420: 詳細は "register_code/unregister_code with mock driver" を参照。
     keyboard_init();
+    keyboard_mod.setKeymapLookup(testNoCrashLookup);
+    defer keyboard_mod.clearKeymapLookup();
+    action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
+
     host_set_driver(null);
     try testing.expectEqual(@as(?*const CHostDriver, null), host_get_driver());
 }
@@ -486,10 +526,14 @@ test "qmk_abi: action_exec does not crash" {
     // 呼び出し順序契約: keyboard_init() は内部で keymap_lookup と action_resolver を
     // リセットするため、 必ず init の **後に** setKeymapLookup / setActionResolver
     // を呼ぶこと。
+    //
+    // Issue #420: action_resolver も defer で teardown し、 後続テストへの
+    // 状態リークを防ぐ。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
     defer keyboard_mod.clearKeymapLookup();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
 
     action_exec(0, 0, true, 100);
     action_exec(0, 0, false, 200);
@@ -497,10 +541,12 @@ test "qmk_abi: action_exec does not crash" {
 
 test "qmk_abi: process_record does not crash" {
     // Issue #401: action_exec does not crash と同様の理由で lookup / resolver を注入。
+    // Issue #420: action_resolver も defer で teardown する。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
     defer keyboard_mod.clearKeymapLookup();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
+    defer action_mod.clearActionResolver();
 
     process_record(0, 0, true, 100);
     process_record(0, 0, false, 200);

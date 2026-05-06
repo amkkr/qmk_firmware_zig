@@ -174,6 +174,13 @@ pub fn init() void {
     // 注: keymap storage 自体のリセットは呼び出し側の責務 (storage の所有権を
     // keyboard コアパイプラインは持たないため)。
     keymap_lookup = defaultKeymapLookup;
+    // Issue #421, #423: action_resolver を panic 化 default に再設定する。
+    // `action.reset()` 直後の resolver は `noopActionResolver` (silent) だが、
+    // production / qmk_abi 起動経路では init() の後に必ず `setActionResolver`
+    // を呼ぶ契約のため、 ここで panic 化 default に上書きして「呼び忘れ即
+    // panic」の保護網を張る。 内部 action.zig テストは `keyboard.init()` を
+    // 呼ばず `action.reset()` のみ呼ぶため、 noopActionResolver を維持する。
+    action.clearActionResolver();
 }
 
 /// テスト用: フル初期化（ドライバ設定 + アクションリゾルバ設定含む）
