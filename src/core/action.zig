@@ -40,7 +40,26 @@ const KeyEvent = event_mod.KeyEvent;
 /// Given a KeyEvent, return the action code to execute.
 pub const ActionResolver = *const fn (event: KeyEvent) Action;
 
-var action_resolver: ?ActionResolver = null;
+/// `action_resolver` の安全な初期値。
+///
+/// 未注入のまま resolveAction が呼ばれた場合、 旧実装は `ACTION_NO` を黙って
+/// 返していたが、 production / test での `setActionResolver` 呼び忘れを検出
+/// できなかった (Issue #421, #423)。 panic する default を持たせることで、
+/// stale な状態でアクションパスを通したケースを即座にクラッシュとして捕捉する。
+///
+/// 各テスト境界では `action.reset()` または `clearActionResolver()` でこの
+/// default に戻し、 呼び出し側 (production startup / test setup) が
+/// `setActionResolver` を明示的に呼ぶ契約に統一する。
+fn defaultActionResolver(ev: KeyEvent) Action {
+    _ = ev;
+    @panic("action_resolver not initialized - call action.setActionResolver() in startup");
+}
+
+/// アクション解決コールバック。
+///
+/// 未設定の状態で `resolveAction` が呼ばれた場合は `defaultActionResolver` が
+/// panic し、 setActionResolver の呼び忘れを即座に検出する (Issue #421, #423)。
+var action_resolver: ActionResolver = defaultActionResolver;
 
 /// 直前に解決されたキーコード（Key Lock 用）
 /// keyboard.zig の keymapActionResolver から設定され、processRecord で参照される。
@@ -60,7 +79,17 @@ pub fn setActionResolver(resolver: ActionResolver) void {
     action_resolver = resolver;
 }
 
-pub fn getActionResolver() ?ActionResolver {
+/// 注入済みの action_resolver を panic 化された default に戻す。
+///
+/// テスト境界で resolver がリークすると、 後続テストや内部実装変更で stale な
+/// resolver が呼ばれ偶発的な誤動作を招く。 各テストの setup で
+/// `setActionResolver` を再注入する契約と組み合わせることで、 resolver 注入の
+/// 呼び忘れを panic として即座に検出する。
+pub fn clearActionResolver() void {
+    action_resolver = defaultActionResolver;
+}
+
+pub fn getActionResolver() ActionResolver {
     return action_resolver;
 }
 
@@ -70,10 +99,7 @@ pub fn setLastResolvedKeycode(kc: keycode_mod.Keycode) void {
 }
 
 fn resolveAction(event: KeyEvent) Action {
-    if (action_resolver) |resolver| {
-        return resolver(event);
-    }
-    return .{ .code = action_code.ACTION_NO };
+    return action_resolver(event);
 }
 
 /// Layer tap operations (encoded in the key.code field)
@@ -766,11 +792,12 @@ pub fn reset() void {
     keymap_mod.keymap_config = .{};
     swap_hands.reset();
     key_lock.reset();
-    // Issue #401: テスト境界で action_resolver が前テストからリークすると
-    // keymap_lookup が未注入の状態でも resolver 経由で呼ばれてしまい panic する。
-    // reset() で resolver を null に戻し、 各呼び出し側 (startup / test setup)
-    // が `setActionResolver` を明示的に呼ぶ契約に統一する。
-    action_resolver = null;
+    // Issue #401, #421, #423: テスト境界で action_resolver が前テストからリーク
+    // すると、 keymap_lookup が未注入の状態でも resolver 経由で呼ばれてしまい
+    // panic する。 reset() で resolver を panic 化された default に戻し、 各
+    // 呼び出し側 (startup / test setup) が `setActionResolver` を明示的に呼ぶ
+    // 契約に統一する。
+    action_resolver = defaultActionResolver;
 }
 
 // ============================================================
