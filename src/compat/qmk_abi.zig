@@ -531,7 +531,7 @@ test "qmk_abi: action_exec does not crash" {
     // 状態リークを防ぐ。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -544,7 +544,7 @@ test "qmk_abi: process_record does not crash" {
     // Issue #420: action_resolver も defer で teardown する。
     keyboard_init();
     keyboard_mod.setKeymapLookup(testNoCrashLookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
     action_mod.setActionResolver(keyboard_mod.keymapActionResolver);
     defer action_mod.clearActionResolver();
 
@@ -569,7 +569,7 @@ test "qmk_abi: keymap_key_to_keycode returns keycode from injected lookup" {
     keyboard_init();
     TestKeymapStorage.km = km_mod.emptyKeymap();
     keyboard_mod.setKeymapLookup(TestKeymapStorage.lookup);
-    defer keyboard_mod.clearKeymapLookup();
+    defer keyboard_mod.resetKeymapLookupToPanic();
 
     try testing.expectEqual(@as(u16, 0), keymap_key_to_keycode(0, event_mod.KeyPos{ .col = 0, .row = 0 }));
 
