@@ -61,7 +61,7 @@ jobs:
     - uses: actions/checkout@v6
 
     # setup-zig@v2 は use-cache: true (デフォルト) で Zig global cache
-    # (~/.cache/zig 等) を OS ごとに自動キャッシュする。 actions/cache@v4
+    # (~/.cache/zig 等) を OS ごとに自動キャッシュする。 actions/cache@v5
     # での重ねがけは冗長 + 干渉リスクのため使用しない。
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
@@ -72,7 +72,7 @@ jobs:
     # キーには runner.os / runner.arch / Zig version を含め、
     # 環境変更時に古い壊れた cache を復元しないようにする。
     - name: Cache Zig local cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .zig-cache
         key: ${{ runner.os }}-${{ runner.arch }}-zig-${{ env.ZIG_VERSION }}-local-${{ hashFiles('build.zig.zon', 'build.zig', 'src/**', 'tools/**') }}
