@@ -429,7 +429,7 @@ test "getSequence returns current buffer" {
 test "sequenceFiveKeys: leader_sequence が MAX_SEQUENCE_LEN 満杯時に正しく一致判定" {
     // 境界値: leader_sequence バッファが MAX_SEQUENCE_LEN ちょうどで満杯のとき
     // getSequence() 経由で sequenceFiveKeys が境界長で正しく動作する統合検証
-    // (既存 line 381 の sequenceFiveKeys テストはリテラル配列のみで、 leader バッファ満杯時の経路は別)
+    // (既存 "sequenceFiveKeys matches correctly" はリテラル配列のみで、 leader バッファ満杯時の経路は別)
     reset();
     leaderStart();
 
