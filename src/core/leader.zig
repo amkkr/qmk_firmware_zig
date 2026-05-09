@@ -444,7 +444,7 @@ test "sequenceFiveKeys: leader_sequence が MAX_SEQUENCE_LEN 満杯時に正し�
 
     try testing.expect(sequenceFiveKeys(seq, KC.A, KC.B, KC.C, KC.D, KC.E));
     try testing.expect(!sequenceFiveKeys(seq, KC.A, KC.B, KC.C, KC.D, KC.F));
-    // 長さ不一致 (4 キー) の sequenceFourKeys は false
+    // sequenceFourKeys は内部で kc5=0 を渡すが seq[4]=KC.E のため false
     try testing.expect(!sequenceFourKeys(seq, KC.A, KC.B, KC.C, KC.D));
 
     reset();
