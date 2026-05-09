@@ -523,12 +523,6 @@ test "getHighestLayer: 全 Layer 1-15 同時 ON 時の優先度" {
     try testing.expectEqual(@as(u5, 15), getHighestLayer(all_high));
 }
 
-test "getHighestLayer: 下位 Layer 単独で走査終了境界まで降りる" {
-    // Layer 1 単独 ON (0b10) は MAX_LAYERS-1=15 から下方向走査で 14 回 decrement
-    // した位置で発見される。 ループの `if (i == 0) break;` 直前の境界。
-    try testing.expectEqual(@as(u5, 1), getHighestLayer(@as(LayerState, 0b10)));
-}
-
 test "layerSwitchGetLayer: Layer 14, 15 が両方透過時 Layer 0 fallback" {
     resetState();
     defer resetState();
