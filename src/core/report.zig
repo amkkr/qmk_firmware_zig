@@ -408,3 +408,69 @@ test "keycodeToModBit" {
     try testing.expectEqual(@as(u8, 0x80), keycodeToModBit(0xE7)); // RGUI
     try testing.expectEqual(@as(u8, 0x00), keycodeToModBit(0x04)); // KC_A (not a mod)
 }
+
+test "KeyboardReport addKey kc=0 returns false" {
+    var report = KeyboardReport{};
+    // KC.NO (kc=0) は無効キーなので false を返し、レポートは空のまま
+    try testing.expect(!report.addKey(0));
+    try testing.expect(report.isEmpty());
+}
+
+test "KeyboardReport all 8 modifier bits ON" {
+    var report = KeyboardReport{};
+    report.mods = ModBit.LCTRL | ModBit.LSHIFT | ModBit.LALT | ModBit.LGUI |
+        ModBit.RCTRL | ModBit.RSHIFT | ModBit.RALT | ModBit.RGUI;
+    // 8 個の ModBit を OR すると u8 全体 (0xFF) を覆う
+    try testing.expectEqual(@as(u8, 0xFF), report.mods);
+    try testing.expect(!report.isEmpty());
+}
+
+test "KeyboardReport 6KRO slot reuse after removeKey" {
+    var report = KeyboardReport{};
+    var i: u8 = 0;
+    while (i < KEYBOARD_REPORT_KEYS) : (i += 1) {
+        try testing.expect(report.addKey(0x04 + i));
+    }
+    // (KEYBOARD_REPORT_KEYS + 1) 個目は full で失敗
+    const overflow_kc: u8 = 0x04 + KEYBOARD_REPORT_KEYS;
+    try testing.expect(!report.addKey(overflow_kc));
+    // 1 つ空けると同じ枠に新しいキーが入る
+    report.removeKey(0x04);
+    try testing.expect(report.addKey(overflow_kc));
+    try testing.expect(!report.hasKey(0x04));
+    try testing.expect(report.hasKey(overflow_kc));
+}
+
+test "KeyboardReport addKey duplicate uses single slot" {
+    var report = KeyboardReport{};
+    // 同じキーを 2 回 addKey しても両方 true、ただし占有スロットは 1 つだけ
+    try testing.expect(report.addKey(0x04));
+    try testing.expect(report.addKey(0x04));
+    // 残り KEYBOARD_REPORT_KEYS-1 スロットが空いているため、別キーを全て追加できる
+    var i: u8 = 0;
+    while (i < KEYBOARD_REPORT_KEYS - 1) : (i += 1) {
+        try testing.expect(report.addKey(0x05 + i));
+    }
+    // ここでレポートは満杯
+    const overflow_kc: u8 = 0x05 + (KEYBOARD_REPORT_KEYS - 1);
+    try testing.expect(!report.addKey(overflow_kc));
+    // 重複 addKey は 1 スロットしか占有しないため、1 度の removeKey で 0x04 は完全に消える
+    report.removeKey(0x04);
+    try testing.expect(!report.hasKey(0x04));
+}
+
+test "NkroReport last valid bit (code=239)" {
+    var nkro = NkroReport{};
+    // NKRO_REPORT_BITS バイト中の最終ビット (byte_idx=29, bit=7)
+    const last_code: u8 = NKRO_REPORT_BITS * 8 - 1;
+    try testing.expect(nkro.addKey(last_code));
+    try testing.expect(nkro.hasKey(last_code));
+    try testing.expectEqual(@as(u8, 0x80), nkro.bits[NKRO_REPORT_BITS - 1]);
+    nkro.removeKey(last_code);
+    try testing.expectEqual(@as(u8, 0), nkro.bits[NKRO_REPORT_BITS - 1]);
+}
+
+test "keycodeToModBit middle range values" {
+    try testing.expectEqual(@as(u8, 0x20), keycodeToModBit(0xE5)); // RSHIFT
+    try testing.expectEqual(@as(u8, 0x40), keycodeToModBit(0xE6)); // RALT
+}
