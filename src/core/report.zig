@@ -408,3 +408,76 @@ test "keycodeToModBit" {
     try testing.expectEqual(@as(u8, 0x80), keycodeToModBit(0xE7)); // RGUI
     try testing.expectEqual(@as(u8, 0x00), keycodeToModBit(0x04)); // KC_A (not a mod)
 }
+
+test "KeyboardReport addKey kc=0 returns false" {
+    var report = KeyboardReport{};
+    // KC.NO (kc=0) は無効キーなので false を返し、レポートは空のまま
+    try testing.expect(!report.addKey(0));
+    try testing.expect(report.isEmpty());
+}
+
+test "KeyboardReport all 8 modifier bits ON" {
+    var report = KeyboardReport{};
+    report.mods = ModBit.LCTRL | ModBit.LSHIFT | ModBit.LALT | ModBit.LGUI |
+        ModBit.RCTRL | ModBit.RSHIFT | ModBit.RALT | ModBit.RGUI;
+    try testing.expectEqual(@as(u8, 0xFF), report.mods);
+    // mods != 0 なので isEmpty は false
+    try testing.expect(!report.isEmpty());
+    // 各 ModBit が個別に立っていること
+    try testing.expect((report.mods & ModBit.LCTRL) != 0);
+    try testing.expect((report.mods & ModBit.LSHIFT) != 0);
+    try testing.expect((report.mods & ModBit.LALT) != 0);
+    try testing.expect((report.mods & ModBit.LGUI) != 0);
+    try testing.expect((report.mods & ModBit.RCTRL) != 0);
+    try testing.expect((report.mods & ModBit.RSHIFT) != 0);
+    try testing.expect((report.mods & ModBit.RALT) != 0);
+    try testing.expect((report.mods & ModBit.RGUI) != 0);
+}
+
+test "KeyboardReport 6KRO slot reuse after removeKey" {
+    var report = KeyboardReport{};
+    var i: u8 = 0;
+    while (i < KEYBOARD_REPORT_KEYS) : (i += 1) {
+        try testing.expect(report.addKey(0x04 + i));
+    }
+    // 7 個目は full で失敗
+    try testing.expect(!report.addKey(0x0A));
+    // 1 つ空けると同じ枠に新しいキーが入る
+    report.removeKey(0x04);
+    try testing.expect(report.addKey(0x0A));
+    try testing.expect(!report.hasKey(0x04));
+    try testing.expect(report.hasKey(0x0A));
+}
+
+test "KeyboardReport addKey duplicate uses single slot" {
+    var report = KeyboardReport{};
+    // 同じキーを 2 回 addKey しても両方 true、ただし占有スロットは 1 つだけ
+    try testing.expect(report.addKey(0x04));
+    try testing.expect(report.addKey(0x04));
+    // 残り KEYBOARD_REPORT_KEYS-1 スロットが空いているため、別キーを全て追加できる
+    var i: u8 = 0;
+    while (i < KEYBOARD_REPORT_KEYS - 1) : (i += 1) {
+        try testing.expect(report.addKey(0x05 + i));
+    }
+    // ここでレポートは満杯
+    try testing.expect(!report.addKey(0x0B));
+    // line 81-89 の仕様: 最初の一致のみクリアされるため、1 度の removeKey で 0x04 は消える
+    report.removeKey(0x04);
+    try testing.expect(!report.hasKey(0x04));
+}
+
+test "NkroReport last valid bit (code=239)" {
+    var nkro = NkroReport{};
+    // NKRO_REPORT_BITS バイト中の最終ビット (byte_idx=29, bit=7)
+    const last_code: u8 = NKRO_REPORT_BITS * 8 - 1;
+    try testing.expect(nkro.addKey(last_code));
+    try testing.expect(nkro.hasKey(last_code));
+    try testing.expectEqual(@as(u8, 0x80), nkro.bits[NKRO_REPORT_BITS - 1]);
+    nkro.removeKey(last_code);
+    try testing.expectEqual(@as(u8, 0), nkro.bits[NKRO_REPORT_BITS - 1]);
+}
+
+test "keycodeToModBit middle range values" {
+    try testing.expectEqual(@as(u8, 0x20), keycodeToModBit(0xE5)); // RSHIFT
+    try testing.expectEqual(@as(u8, 0x40), keycodeToModBit(0xE6)); // RALT
+}
