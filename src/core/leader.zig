@@ -272,8 +272,19 @@ test "leaderSequenceTimedOut respects LEADER_TIMEOUT" {
     timer.mockReset();
     leaderStart();
     try testing.expect(!leaderSequenceTimedOut());
-    timer.mockAdvance(LEADER_TIMEOUT + 1);
+
+    // 直前 (LEADER_TIMEOUT - 1 経過): タイムアウトしない
+    timer.mockSet(LEADER_TIMEOUT - 1);
+    try testing.expect(!leaderSequenceTimedOut());
+
+    // ちょうど (LEADER_TIMEOUT 経過): "> LEADER_TIMEOUT" 比較のため false (Issue #438)
+    timer.mockSet(LEADER_TIMEOUT);
+    try testing.expect(!leaderSequenceTimedOut());
+
+    // 直後 (LEADER_TIMEOUT + 1 経過): タイムアウト
+    timer.mockSet(LEADER_TIMEOUT + 1);
     try testing.expect(leaderSequenceTimedOut());
+
     reset();
     timer.mockReset();
 }
@@ -326,6 +337,20 @@ test "processKeycode ignores release events" {
 test "processKeycode ends sequence when buffer full" {
     reset();
     timer.mockReset();
+
+    // overflow 時に leaderEnd が起動して callback が呼ばれることも検証 (Issue #438)
+    const TestHelper = struct {
+        var called: bool = false;
+        var captured_size: usize = 0;
+        fn cb(seq: []const u16) void {
+            called = true;
+            captured_size = seq.len;
+        }
+    };
+    TestHelper.called = false;
+    TestHelper.captured_size = 0;
+    setEndCallback(TestHelper.cb);
+
     _ = processKeycode(keycode_mod.QK_LEAD, true);
     for (0..MAX_SEQUENCE_LEN) |i| {
         _ = processKeycode(@intCast(KC.A + i), true);
@@ -334,6 +359,11 @@ test "processKeycode ends sequence when buffer full" {
     // overflow キーは消費されず action pipeline に渡る（C版互換: return false）
     try testing.expect(!processKeycode(KC.Z, true));
     try testing.expect(!leaderSequenceActive());
+    // leaderEnd 起動 → callback 呼び出し済み + sequence_size == MAX_SEQUENCE_LEN
+    try testing.expect(TestHelper.called);
+    try testing.expectEqual(MAX_SEQUENCE_LEN, TestHelper.captured_size);
+
+    clearEndCallback();
     reset();
     timer.mockReset();
 }
@@ -393,5 +423,29 @@ test "getSequence returns current buffer" {
     try testing.expectEqual(@as(usize, 2), seq.len);
     try testing.expectEqual(KC.X, seq[0]);
     try testing.expectEqual(KC.Y, seq[1]);
+    reset();
+}
+
+test "sequenceFiveKeys: leader_sequence が MAX_SEQUENCE_LEN 満杯時に正しく一致判定" {
+    // 境界値: leader_sequence バッファが MAX_SEQUENCE_LEN ちょうどで満杯のとき
+    // getSequence() 経由で sequenceFiveKeys が境界長で正しく動作する統合検証
+    // (既存 "sequenceFiveKeys matches correctly" はリテラル配列のみで、 leader バッファ満杯時の経路は別)
+    reset();
+    leaderStart();
+
+    const seq_keys = [MAX_SEQUENCE_LEN]u16{ KC.A, KC.B, KC.C, KC.D, KC.E };
+    for (seq_keys) |kc| {
+        try testing.expect(leaderSequenceAdd(kc));
+    }
+    try testing.expectEqual(@as(usize, MAX_SEQUENCE_LEN), leader_sequence_size);
+
+    const seq = getSequence();
+    try testing.expectEqual(@as(usize, MAX_SEQUENCE_LEN), seq.len);
+
+    try testing.expect(sequenceFiveKeys(seq, KC.A, KC.B, KC.C, KC.D, KC.E));
+    try testing.expect(!sequenceFiveKeys(seq, KC.A, KC.B, KC.C, KC.D, KC.F));
+    // sequenceFourKeys は内部で kc5=0 を渡すが seq[4]=KC.E のため false
+    try testing.expect(!sequenceFourKeys(seq, KC.A, KC.B, KC.C, KC.D));
+
     reset();
 }
