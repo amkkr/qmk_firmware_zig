@@ -420,18 +420,9 @@ test "KeyboardReport all 8 modifier bits ON" {
     var report = KeyboardReport{};
     report.mods = ModBit.LCTRL | ModBit.LSHIFT | ModBit.LALT | ModBit.LGUI |
         ModBit.RCTRL | ModBit.RSHIFT | ModBit.RALT | ModBit.RGUI;
+    // 8 個の ModBit を OR すると u8 全体 (0xFF) を覆う
     try testing.expectEqual(@as(u8, 0xFF), report.mods);
-    // mods != 0 なので isEmpty は false
     try testing.expect(!report.isEmpty());
-    // 各 ModBit が個別に立っていること
-    try testing.expect((report.mods & ModBit.LCTRL) != 0);
-    try testing.expect((report.mods & ModBit.LSHIFT) != 0);
-    try testing.expect((report.mods & ModBit.LALT) != 0);
-    try testing.expect((report.mods & ModBit.LGUI) != 0);
-    try testing.expect((report.mods & ModBit.RCTRL) != 0);
-    try testing.expect((report.mods & ModBit.RSHIFT) != 0);
-    try testing.expect((report.mods & ModBit.RALT) != 0);
-    try testing.expect((report.mods & ModBit.RGUI) != 0);
 }
 
 test "KeyboardReport 6KRO slot reuse after removeKey" {
@@ -440,13 +431,14 @@ test "KeyboardReport 6KRO slot reuse after removeKey" {
     while (i < KEYBOARD_REPORT_KEYS) : (i += 1) {
         try testing.expect(report.addKey(0x04 + i));
     }
-    // 7 個目は full で失敗
-    try testing.expect(!report.addKey(0x0A));
+    // (KEYBOARD_REPORT_KEYS + 1) 個目は full で失敗
+    const overflow_kc: u8 = 0x04 + KEYBOARD_REPORT_KEYS;
+    try testing.expect(!report.addKey(overflow_kc));
     // 1 つ空けると同じ枠に新しいキーが入る
     report.removeKey(0x04);
-    try testing.expect(report.addKey(0x0A));
+    try testing.expect(report.addKey(overflow_kc));
     try testing.expect(!report.hasKey(0x04));
-    try testing.expect(report.hasKey(0x0A));
+    try testing.expect(report.hasKey(overflow_kc));
 }
 
 test "KeyboardReport addKey duplicate uses single slot" {
@@ -460,8 +452,9 @@ test "KeyboardReport addKey duplicate uses single slot" {
         try testing.expect(report.addKey(0x05 + i));
     }
     // ここでレポートは満杯
-    try testing.expect(!report.addKey(0x0B));
-    // line 81-89 の仕様: 最初の一致のみクリアされるため、1 度の removeKey で 0x04 は消える
+    const overflow_kc: u8 = 0x05 + (KEYBOARD_REPORT_KEYS - 1);
+    try testing.expect(!report.addKey(overflow_kc));
+    // 重複 addKey は 1 スロットしか占有しないため、1 度の removeKey で 0x04 は完全に消える
     report.removeKey(0x04);
     try testing.expect(!report.hasKey(0x04));
 }
