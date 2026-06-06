@@ -38,10 +38,10 @@ jobs:
     name: zig fmt --check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Setup Zig
-      uses: mlugg/setup-zig@v2
+      uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       with:
         version: ${{ env.ZIG_VERSION }}
 
@@ -58,13 +58,13 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     # setup-zig@v2 は use-cache: true (デフォルト) で Zig global cache
     # (~/.cache/zig 等) を OS ごとに自動キャッシュする。 actions/cache@v5
     # での重ねがけは冗長 + 干渉リスクのため使用しない。
     - name: Setup Zig
-      uses: mlugg/setup-zig@v2
+      uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       with:
         version: ${{ env.ZIG_VERSION }}
 
@@ -72,7 +72,7 @@ jobs:
     # キーには runner.os / runner.arch / Zig version を含め、
     # 環境変更時に古い壊れた cache を復元しないようにする。
     - name: Cache Zig local cache
-      uses: actions/cache@v5
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: .zig-cache
         key: ${{ runner.os }}-${{ runner.arch }}-zig-${{ env.ZIG_VERSION }}-local-${{ hashFiles('build.zig.zon', 'build.zig', 'src/**', 'tools/**') }}
