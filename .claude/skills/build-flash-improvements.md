@@ -135,7 +135,7 @@ build.zig 使用 API について 0.16.0 リリースノート確認 + ローカ
 1. `strategy.matrix.os: [ubuntu-latest, macos-latest, windows-latest]`
 2. `zig fmt --check src tools build.zig` ステップ追加
 3. `zig build test` + `zig build` を `zig build verify` に統合
-4. `actions/cache@v4` で `~/.cache/zig`, `.zig-cache` をキャッシュ
+4. `actions/cache` で `~/.cache/zig`, `.zig-cache` をキャッシュ
 
 **Acceptance Criteria**
 - [ ] 3 OS で `zig build verify` が緑（ユニットテスト + cross-compile）

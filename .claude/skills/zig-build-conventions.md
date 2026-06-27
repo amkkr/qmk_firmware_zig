@@ -228,7 +228,7 @@ runs-on: ${{ matrix.os }}
 
 ### キャッシュ
 ```yaml
-- uses: actions/cache@v4
+- uses: actions/cache
   with:
     path: |
       ~/.cache/zig
@@ -245,7 +245,7 @@ runs-on: ${{ matrix.os }}
 `test` + `build` 別呼出より効率的（共通モジュールの再コンパイル削減）。
 
 ### shallow clone と git rev-parse (issue Q3)
-GitHub Actions の `actions/checkout@v6` のデフォルトは `fetch-depth: 1`。`git rev-parse --short HEAD` は動くが `git describe` 系 tag ベースは動かない。
+GitHub Actions の `actions/checkout` のデフォルトは `fetch-depth: 1`。`git rev-parse --short HEAD` は動くが `git describe` 系 tag ベースは動かない。
 
 ```zig
 // build.zig 内で git 実行
