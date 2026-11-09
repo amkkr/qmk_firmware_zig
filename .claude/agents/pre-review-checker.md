@@ -23,10 +23,10 @@ model: sonnet
 git diff --name-only HEAD~1
 ```
 
-PRレビュー前チェックでは、masterブランチからの全変更を対象にする方が適切な場合がある:
+PRレビュー前チェックでは、mainブランチからの全変更を対象にする方が適切な場合がある:
 
 ```bash
-git diff --name-only origin/master...HEAD
+git diff --name-only origin/main...HEAD
 ```
 
 または未コミットの変更がある場合:
