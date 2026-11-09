@@ -262,7 +262,7 @@ zig build test
 
 ## Git Branch Operation Rules
 
-1. **masterへの直接コミット禁止**
+1. **mainへの直接コミット禁止**
 2. **ブランチ必須**: `feat/`, `fix/`, `chore/`, `refactor/`, `update/` プレフィックス
 3. **PR必須**: 直接マージ禁止、必ず GitHub PR を通す
 4. **rebase禁止**: コンフリクト解決は `git merge` を使用
@@ -270,16 +270,16 @@ zig build test
 6. **PRタイトル**: ブランチ名と同様のプレフィックスをつける（例: `feat: USB HIDドライバの実装`）
 7. **レビュー依頼**: PR作成後またはPRにコミットをpushした後は、PRに `@claude` メンションのみのコメントでレビューを依頼すること
 8. **レビュー依頼前の確認**: レビュー依頼の前に以下を確認すること
-    1. masterブランチとコンフリクトが発生していないこと
+    1. mainブランチとコンフリクトが発生していないこと
     2. CIが通っていること（GitHub Actionsのステータスを確認）
 
 ### コンフリクト解決手順
 
 ```bash
-git checkout master
-git pull origin master
+git checkout main
+git pull origin main
 git checkout <branch>
-git merge master
+git merge main
 # コンフリクト解決後
 git add <files>
 git commit

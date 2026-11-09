@@ -14,7 +14,7 @@ model: sonnet
 - PRの説明にClaude Codeへの言及を含めないこと。
 - force-pushは絶対に行わないこと。
 - rebaseは使用しないこと。コンフリクト解決時はgit mergeを使用すること。
-- masterブランチに直接コミットしないこと。
+- mainブランチに直接コミットしないこと。
 
 ## 作業フロー
 
