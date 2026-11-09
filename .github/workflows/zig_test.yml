@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     branches:
-    - master
+    - main
     paths:
     - 'src/**'
     - 'build.zig'
@@ -22,7 +22,7 @@ on:
     - '.github/workflows/zig_test.yml'
 
 # PR 連発・push 連発時の冗長な run を抑制。
-# PR では同一 ref への新 push で進行中の run をキャンセル、 push (master) では待機。
+# PR では同一 ref への新 push で進行中の run をキャンセル、 push (main) では待機。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
